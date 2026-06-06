@@ -4,13 +4,13 @@ overview: "The existing uv monorepo plan is the right foundation for a Build Sma
 todos:
   - id: fix-readme-yaml
     content: "Put HF Space YAML frontmatter (sdk: docker, app_port: 7860) in root README.md, not only apps/gradio-space/README.md"
-    status: pending
+    status: completed
   - id: phase1-bootstrap
     content: "Phase 1: uv workspace + inference lib (llama_cpp only) + minimal gr.ChatInterface app"
-    status: pending
+    status: completed
   - id: phase1-docker
     content: "Phase 1: root Dockerfile (uv sync, UID 1000, port 7860) and create Space under build-small-hackathon"
-    status: pending
+    status: in_progress
   - id: phase1-verify
     content: "Phase 1: local uv sync + Gradio smoke test + confirm Space builds on CPU basic"
     status: pending

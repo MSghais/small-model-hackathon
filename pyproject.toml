@@ -1,0 +1,26 @@
+[project]
+name = "small-model-hackathon"
+version = "0.1.0"
+description = "Build Small Hackathon — Gradio Space with local llama.cpp inference"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gradio-space",
+    "inference",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "pytest>=8.0.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "apps/*",
+    "libs/*",
+]
+
+[tool.uv.sources]
+gradio-space = { workspace = true }
+inference = { workspace = true }
