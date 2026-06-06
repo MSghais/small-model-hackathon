@@ -1,0 +1,24 @@
+[project]
+name = "inference"
+version = "0.1.0"
+description = "Swappable local inference backends for the hackathon Space"
+readme = "README.md"
+authors = [
+    { name = "MSGhais", email = "msghais135@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=0.27.0",
+    "llama-cpp-python>=0.3.0",
+]
+
+[project.optional-dependencies]
+transformers = [
+    "accelerate>=1.2.0",
+    "torch>=2.5.0",
+    "transformers>=4.47.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"
