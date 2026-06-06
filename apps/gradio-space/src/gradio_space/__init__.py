@@ -1,3 +1,7 @@
-from gradio_space.app import build_demo, demo, main
+__all__ = ["main"]
 
-__all__ = ["build_demo", "demo", "main"]
+
+def main() -> None:
+    from gradio_space.app import main as _main
+
+    _main()
