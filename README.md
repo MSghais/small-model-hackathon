@@ -13,6 +13,8 @@ license: apache-2.0
 
 Gradio chat Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon). Runs local inference with **llama.cpp** (GGUF) by default; optional **transformers** backend via env.
 
+See **[USAGE.md](USAGE.md)** for local run, Docker smoke test, and HF Space deployment steps.
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/)
