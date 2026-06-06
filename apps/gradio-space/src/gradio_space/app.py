@@ -46,6 +46,19 @@ def chat(message: str, history: list) -> str:
     return _backend.chat(messages)
 
 
+def warmup() -> str:
+    if _model_ready:
+        return "Model ready."
+
+    if _load_error:
+        return _load_error
+
+    return (
+        "Model not loaded yet. It will download from Hugging Face Hub on the "
+        "first chat message — this can take a few minutes on CPU."
+    )
+
+
 def build_demo() -> gr.Blocks:
     model_repo = os.environ.get("MODEL_REPO", "Qwen/Qwen2.5-3B-Instruct-GGUF")
     model_file = os.environ.get("MODEL_FILE", "qwen2.5-3b-instruct-q4_k_m.gguf")
@@ -56,7 +69,7 @@ def build_demo() -> gr.Blocks:
             f"""
 # Small Model Chat
 
-Local inference via **{backend_name}**. Model loads on first message.
+Local inference via **{backend_name}**.
 
 - **Repo:** `{model_repo}`
 - **File:** `{model_file}`
@@ -64,10 +77,12 @@ Local inference via **{backend_name}**. Model loads on first message.
 Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 """
         )
+        status = gr.Markdown(warmup())
         gr.ChatInterface(
             fn=chat,
             examples=["Hello! What can you help me with?", "Explain llama.cpp in one sentence."],
         )
+        demo.load(warmup, outputs=status)
 
     return demo
 
