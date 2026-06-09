@@ -13,7 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock .python-version README.md ./
+COPY pyproject.toml uv.lock .python-version README.md models.yaml ./
 COPY apps/gradio-space/pyproject.toml apps/gradio-space/README.md apps/gradio-space/
 COPY libs/inference/pyproject.toml libs/inference/README.md libs/inference/
 COPY apps/gradio-space/src apps/gradio-space/src

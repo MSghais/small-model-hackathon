@@ -1,0 +1,47 @@
+# Model preset registry for dev and Hugging Face Space.
+# Select active preset with ACTIVE_MODEL; override any field via .env (see .env.example).
+
+defaults:
+  active_model: qwen3b-gguf
+  # Dev: set ALLOW_MODEL_SWITCH=true in .env to expose a dropdown in Gradio.
+  # Space: keep false so visitors use one pinned model.
+  allow_model_switch: false
+
+models:
+  qwen3b-gguf:
+    label: Qwen 2.5 3B Instruct (GGUF, default)
+    backend: llama_cpp
+    model_repo: Qwen/Qwen2.5-3B-Instruct-GGUF
+    model_file: qwen2.5-3b-instruct-q4_k_m.gguf
+    n_ctx: 4096
+    n_gpu_layers: 0
+
+  llama32-3b-gguf:
+    label: Llama 3.2 3B Instruct (GGUF)
+    backend: llama_cpp
+    model_repo: bartowski/Llama-3.2-3B-Instruct-GGUF
+    model_file: Llama-3.2-3B-Instruct-Q4_K_M.gguf
+    n_ctx: 4096
+    n_gpu_layers: 0
+
+  minicpm5-1b:
+    label: MiniCPM5 1B (Transformers)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    trust_remote_code: true
+
+  gemma4-e2b-mobile:
+    label: Gemma 4 E2B IT QAT Mobile (Transformers)
+    backend: transformers
+    model_id: google/gemma-4-E2B-it-qat-mobile-transformers
+    trust_remote_code: true
+
+  gemma-merged-local:
+    label: Fine-tuned merged model (local path)
+    backend: transformers
+    model_id: ./gemma_merged_model
+
+  gemma-lora-local:
+    label: Fine-tuned LoRA adapter (local path)
+    backend: transformers
+    model_id: ./gemma_finetuned_model
