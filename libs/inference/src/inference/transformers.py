@@ -1,16 +1,20 @@
-import os
-
-from inference.base import InferenceBackend
+from inference.config import ModelConfig
 
 
 class TransformersBackend:
-    def __init__(self) -> None:
+    def __init__(self, config: ModelConfig) -> None:
+        self._config = config
         self._model = None
         self._tokenizer = None
 
     def load(self) -> None:
         if self._model is not None:
             return
+
+        if not self._config.model_id:
+            raise ValueError(
+                f"Preset {self._config.key!r} requires model_id for transformers backend"
+            )
 
         try:
             import torch
@@ -21,14 +25,17 @@ class TransformersBackend:
                 "Install with: uv sync --package inference --extra transformers"
             ) from exc
 
-        model_id = os.environ.get("MODEL_ID", "Qwen/Qwen2.5-3B-Instruct")
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self._tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self._config.model_id,
+            trust_remote_code=self._config.trust_remote_code,
+        )
         self._model = AutoModelForCausalLM.from_pretrained(
-            model_id,
+            self._config.model_id,
             torch_dtype=torch.float16 if device == "cuda" else torch.float32,
             device_map="auto" if device == "cuda" else None,
+            trust_remote_code=self._config.trust_remote_code,
         )
         if device == "cpu":
             self._model.to(device)
@@ -37,8 +44,8 @@ class TransformersBackend:
         self,
         prompt: str,
         *,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         self.load()
         assert self._model is not None
@@ -46,12 +53,15 @@ class TransformersBackend:
 
         import torch
 
+        max_new_tokens = max_tokens or self._config.max_tokens
+        temp = self._config.temperature if temperature is None else temperature
+
         inputs = self._tokenizer(prompt, return_tensors="pt").to(self._model.device)
         output = self._model.generate(
             **inputs,
-            max_new_tokens=max_tokens,
-            temperature=temperature,
-            do_sample=temperature > 0,
+            max_new_tokens=max_new_tokens,
+            temperature=temp,
+            do_sample=temp > 0,
         )
         generated = output[0][inputs["input_ids"].shape[-1] :]
         return self._tokenizer.decode(generated, skip_special_tokens=True).strip()
@@ -60,8 +70,8 @@ class TransformersBackend:
         self,
         messages: list[dict[str, str]],
         *,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         self.load()
         assert self._model is not None
@@ -83,7 +93,3 @@ class TransformersBackend:
             prompt = "\n".join(parts)
 
         return self.generate(prompt, max_tokens=max_tokens, temperature=temperature)
-
-
-# Satisfy static type checkers that expect InferenceBackend.
-_: InferenceBackend = TransformersBackend()

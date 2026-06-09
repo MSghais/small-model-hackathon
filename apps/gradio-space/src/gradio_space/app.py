@@ -101,8 +101,6 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
 """
         )
 
-        model_key = gr.State(_app_config.active_model)
-
         if _app_config.allow_model_switch and len(_app_config.models) > 1:
             model_dropdown = gr.Dropdown(
                 choices=_app_config.model_choices(),
@@ -116,10 +114,6 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
                 fn=model_status,
                 inputs=model_dropdown,
                 outputs=status,
-            ).then(
-                fn=lambda key: key,
-                inputs=model_dropdown,
-                outputs=model_key,
             )
 
             gr.ChatInterface(

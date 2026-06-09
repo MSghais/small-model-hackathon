@@ -4,31 +4,32 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 
-
-DEFAULT_MODEL_REPO = "Qwen/Qwen2.5-3B-Instruct-GGUF"
-DEFAULT_MODEL_FILE = "qwen2.5-3b-instruct-q4_k_m.gguf"
+from inference.config import ModelConfig
 
 
 class LlamaCppBackend:
-    def __init__(self) -> None:
+    def __init__(self, config: ModelConfig) -> None:
+        self._config = config
         self._model: Llama | None = None
         self._model_path: str | None = None
 
     def _resolve_model_path(self) -> str:
-        model_path = os.environ.get("MODEL_PATH")
-        if model_path:
-            path = Path(model_path)
+        if self._config.model_path:
+            path = Path(self._config.model_path)
             if not path.exists():
-                raise FileNotFoundError(f"MODEL_PATH does not exist: {model_path}")
+                raise FileNotFoundError(f"MODEL_PATH does not exist: {self._config.model_path}")
             return str(path)
 
-        model_repo = os.environ.get("MODEL_REPO", DEFAULT_MODEL_REPO)
-        model_file = os.environ.get("MODEL_FILE", DEFAULT_MODEL_FILE)
+        if not self._config.model_repo or not self._config.model_file:
+            raise ValueError(
+                f"Preset {self._config.key!r} requires model_repo and model_file for llama_cpp"
+            )
+
         cache_dir = os.environ.get("MODEL_CACHE_DIR")
 
         return hf_hub_download(
-            repo_id=model_repo,
-            filename=model_file,
+            repo_id=self._config.model_repo,
+            filename=self._config.model_file,
             cache_dir=cache_dir,
         )
 
@@ -37,13 +38,11 @@ class LlamaCppBackend:
             return
 
         self._model_path = self._resolve_model_path()
-        n_ctx = int(os.environ.get("N_CTX", "4096"))
-        n_gpu_layers = int(os.environ.get("N_GPU_LAYERS", "0"))
 
         self._model = Llama(
             model_path=self._model_path,
-            n_ctx=n_ctx,
-            n_gpu_layers=n_gpu_layers,
+            n_ctx=self._config.n_ctx,
+            n_gpu_layers=self._config.n_gpu_layers,
             verbose=False,
         )
 
@@ -51,16 +50,16 @@ class LlamaCppBackend:
         self,
         prompt: str,
         *,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         self.load()
         assert self._model is not None
 
         result = self._model(
             prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            max_tokens=max_tokens or self._config.max_tokens,
+            temperature=temperature if temperature is not None else self._config.temperature,
             echo=False,
         )
         return result["choices"][0]["text"].strip()
@@ -69,15 +68,15 @@ class LlamaCppBackend:
         self,
         messages: list[dict[str, str]],
         *,
-        max_tokens: int = 512,
-        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
     ) -> str:
         self.load()
         assert self._model is not None
 
         result = self._model.create_chat_completion(
             messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            max_tokens=max_tokens or self._config.max_tokens,
+            temperature=temperature if temperature is not None else self._config.temperature,
         )
         return result["choices"][0]["message"]["content"].strip()
