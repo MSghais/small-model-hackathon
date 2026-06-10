@@ -21,8 +21,8 @@ class TransformersBackend:
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as exc:
             raise ImportError(
-                "transformers backend requires optional deps. "
-                "Install with: uv sync --package inference --extra transformers"
+                "transformers backend requires torch and transformers. "
+                "Install with: uv sync --all-packages"
             ) from exc
 
         device = "cuda" if torch.cuda.is_available() else "cpu"

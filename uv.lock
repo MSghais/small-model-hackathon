@@ -498,28 +498,23 @@ name = "inference"
 version = "0.1.0"
 source = { editable = "libs/inference" }
 dependencies = [
+    { name = "accelerate" },
     { name = "huggingface-hub" },
     { name = "llama-cpp-python" },
     { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-transformers = [
-    { name = "accelerate" },
     { name = "torch" },
     { name = "transformers" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", marker = "extra == 'transformers'", specifier = ">=1.2.0" },
+    { name = "accelerate", specifier = ">=1.2.0" },
     { name = "huggingface-hub", specifier = ">=0.27.0" },
     { name = "llama-cpp-python", specifier = ">=0.3.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "torch", marker = "extra == 'transformers'", specifier = ">=2.5.0" },
-    { name = "transformers", marker = "extra == 'transformers'", specifier = ">=4.47.0" },
+    { name = "torch", specifier = ">=2.5.0" },
+    { name = "transformers", specifier = ">=5.7.0" },
 ]
-provides-extras = ["transformers"]
 
 [[package]]
 name = "iniconfig"
