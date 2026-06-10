@@ -45,7 +45,7 @@ MODEL_PATH=./models/qwen2.5-3b-instruct-q4_k_m.gguf
 uv run --package gradio-space python -m gradio_space.app
 ```
 
-Open http://localhost:7860.
+Open [http://localhost:7860](http://localhost:7860).
 
 The model loads on the **first chat message** unless you set `MODEL_PATH`. After code changes, restart the process to pick up updates.
 
@@ -61,16 +61,18 @@ uv run --package gradio-space python -c "from gradio_space.app import build_demo
 
 ### Local env reference
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `INFERENCE_BACKEND` | `llama_cpp` | `llama_cpp` or `transformers` |
-| `MODEL_REPO` | `Qwen/Qwen2.5-3B-Instruct-GGUF` | Hub repo for GGUF |
-| `MODEL_FILE` | `qwen2.5-3b-instruct-q4_k_m.gguf` | GGUF filename |
-| `MODEL_PATH` | — | Local GGUF path (skips Hub download) |
-| `N_CTX` | `4096` | Context window |
-| `N_GPU_LAYERS` | `0` | GPU layers for llama.cpp (`0` = CPU only) |
-| `PORT` | `7860` | Gradio listen port |
-| `MODEL_ID` | `Qwen/Qwen2.5-3B-Instruct` | Used when `INFERENCE_BACKEND=transformers` |
+
+| Variable            | Default                           | Description                                |
+| ------------------- | --------------------------------- | ------------------------------------------ |
+| `INFERENCE_BACKEND` | `llama_cpp`                       | `llama_cpp` or `transformers`              |
+| `MODEL_REPO`        | `Qwen/Qwen2.5-3B-Instruct-GGUF`   | Hub repo for GGUF                          |
+| `MODEL_FILE`        | `qwen2.5-3b-instruct-q4_k_m.gguf` | GGUF filename                              |
+| `MODEL_PATH`        | —                                 | Local GGUF path (skips Hub download)       |
+| `N_CTX`             | `4096`                            | Context window                             |
+| `N_GPU_LAYERS`      | `0`                               | GPU layers for llama.cpp (`0` = CPU only)  |
+| `PORT`              | `7860`                            | Gradio listen port                         |
+| `MODEL_ID`          | `Qwen/Qwen2.5-3B-Instruct`        | Used when `INFERENCE_BACKEND=transformers` |
+
 
 ### Optional: transformers backend
 
@@ -98,7 +100,7 @@ docker run --rm -p 7860:7860 \
   hackathon-space
 ```
 
-Open http://localhost:7860. Stop with `Ctrl+C`.
+Open [http://localhost:7860](http://localhost:7860). Stop with `Ctrl+C`.
 
 To use a pre-downloaded local model inside Docker, mount it and set `MODEL_PATH`:
 
@@ -142,22 +144,26 @@ hf repo create build-small-hackathon/<your-space-name> \
 
 ### 3. Configure hardware
 
-| Setting | Recommendation |
-|---------|----------------|
-| Hardware | **CPU basic** to start (llama.cpp with `N_GPU_LAYERS=0`) |
-| Upgrade | GPU Space if you set `N_GPU_LAYERS > 0` for faster inference |
+
+| Setting  | Recommendation                                               |
+| -------- | ------------------------------------------------------------ |
+| Hardware | **CPU basic** to start (llama.cpp with `N_GPU_LAYERS=0`)     |
+| Upgrade  | GPU Space if you set `N_GPU_LAYERS > 0` for faster inference |
+
 
 ### 4. Set Space environment variables
 
 In the Space **Settings → Variables and secrets**:
 
-| Variable | Value |
-|----------|-------|
-| `INFERENCE_BACKEND` | `llama_cpp` |
-| `MODEL_REPO` | `Qwen/Qwen2.5-3B-Instruct-GGUF` |
-| `MODEL_FILE` | `qwen2.5-3b-instruct-q4_k_m.gguf` |
-| `N_CTX` | `4096` |
-| `N_GPU_LAYERS` | `0` (or higher on GPU hardware) |
+
+| Variable            | Value                             |
+| ------------------- | --------------------------------- |
+| `INFERENCE_BACKEND` | `llama_cpp`                       |
+| `MODEL_REPO`        | `Qwen/Qwen2.5-3B-Instruct-GGUF`   |
+| `MODEL_FILE`        | `qwen2.5-3b-instruct-q4_k_m.gguf` |
+| `N_CTX`             | `4096`                            |
+| `N_GPU_LAYERS`      | `0` (or higher on GPU hardware)   |
+
 
 ### 5. Build and verify
 
@@ -177,14 +183,16 @@ If cold starts are too slow, attach a **Storage Bucket** in Space settings so do
 
 ## Troubleshooting
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| First chat hangs / slow | GGUF downloading from Hub | Pre-download locally; on Space, wait or use Storage Bucket |
-| `Failed to load model` in chat | Wrong `MODEL_REPO` / `MODEL_FILE` | Check env vars match a valid GGUF on Hub |
-| Docker build fails on `llama-cpp-python` | Missing build tools | Dockerfile already installs `build-essential` and `cmake` |
-| Space build fails | Missing `uv.lock` or README YAML | Ensure `sdk: docker` is in root `README.md` frontmatter |
-| `transformers` backend error | Optional deps not installed | Run `uv sync --package inference --extra transformers` |
-| Port already in use locally | Another process on 7860 | `PORT=7861 uv run --package gradio-space python -m gradio_space.app` |
+
+| Symptom                                  | Likely cause                      | Fix                                                                  |
+| ---------------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
+| First chat hangs / slow                  | GGUF downloading from Hub         | Pre-download locally; on Space, wait or use Storage Bucket           |
+| `Failed to load model` in chat           | Wrong `MODEL_REPO` / `MODEL_FILE` | Check env vars match a valid GGUF on Hub                             |
+| Docker build fails on `llama-cpp-python` | Missing build tools               | Dockerfile already installs `build-essential` and `cmake`            |
+| Space build fails                        | Missing `uv.lock` or README YAML  | Ensure `sdk: docker` is in root `README.md` frontmatter              |
+| `transformers` backend error             | Optional deps not installed       | Run `uv sync --package inference --extra transformers`               |
+| Port already in use locally              | Another process on 7860           | `PORT=7861 uv run --package gradio-space python -m gradio_space.app` |
+
 
 ---
 
@@ -196,8 +204,11 @@ All three environments use the same command:
 uv run --package gradio-space python -m gradio_space.app
 ```
 
-| Environment | How to run |
-|-------------|------------|
-| Local dev | `uv run --package gradio-space python -m gradio_space.app` |
-| Docker | `docker run -p 7860:7860 hackathon-space` |
-| HF Space | Built and started automatically from `Dockerfile` `CMD` |
+
+| Environment | How to run                                                 |
+| ----------- | ---------------------------------------------------------- |
+| Local dev   | `uv run --package gradio-space python -m gradio_space.app` |
+| Docker      | `docker run -p 7860:7860 hackathon-space`                  |
+| HF Space    | Built and started automatically from `Dockerfile` `CMD`    |
+
+

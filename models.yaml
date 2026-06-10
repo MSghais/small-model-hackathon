@@ -2,14 +2,20 @@
 # Select active preset with ACTIVE_MODEL; override any field via .env (see .env.example).
 
 defaults:
-  active_model: qwen3b-gguf
+  active_model: minicpm-v-4.6
   # Dev: set ALLOW_MODEL_SWITCH=true in .env to expose a dropdown in Gradio.
   # Space: keep false so visitors use one pinned model.
   allow_model_switch: false
 
 models:
+  minicpm-v-4.6:
+    label: MiniCPM-V 4.6 (Transformers, ~0.8B, default)
+    backend: transformers
+    model_id: openbmb/MiniCPM-V-4.6
+    trust_remote_code: true
+
   qwen3b-gguf:
-    label: Qwen 2.5 3B Instruct (GGUF, default)
+    label: Qwen 2.5 3B Instruct (GGUF)
     backend: llama_cpp
     model_repo: Qwen/Qwen2.5-3B-Instruct-GGUF
     model_file: qwen2.5-3b-instruct-q4_k_m.gguf
