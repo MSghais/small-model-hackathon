@@ -24,6 +24,7 @@ class ModelConfig:
     model_path: str | None = None
     model_id: str | None = None
     trust_remote_code: bool = False
+    multimodal: bool = False
     n_ctx: int = 4096
     n_gpu_layers: int = 0
     max_tokens: int = 512
@@ -37,6 +38,7 @@ class ModelConfig:
             self.model_path,
             self.model_id,
             self.trust_remote_code,
+            self.multimodal,
             self.n_ctx,
             self.n_gpu_layers,
         )
@@ -148,6 +150,7 @@ def _parse_model_entry(key: str, raw: dict[str, Any]) -> ModelConfig:
         model_path=raw.get("model_path"),
         model_id=raw.get("model_id"),
         trust_remote_code=bool(raw.get("trust_remote_code", False)),
+        multimodal=bool(raw.get("multimodal", False)),
         n_ctx=int(raw.get("n_ctx", 4096)),
         n_gpu_layers=int(raw.get("n_gpu_layers", 0)),
         max_tokens=int(raw.get("max_tokens", 512)),

@@ -13,6 +13,7 @@ models:
     backend: transformers
     model_id: openbmb/MiniCPM-V-4.6
     trust_remote_code: true
+    multimodal: true
 
   qwen3b-gguf:
     label: Qwen 2.5 3B Instruct (GGUF)

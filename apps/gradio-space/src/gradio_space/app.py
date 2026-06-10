@@ -57,19 +57,42 @@ def chat(message: str, history: list, model_key: str) -> str:
     return get_backend(model_key).chat(messages)
 
 
+def _runtime_device_hint(model_key: str) -> str:
+    model = get_model_config(model_key)
+    if model.backend == "transformers":
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                return f"GPU ({torch.cuda.get_device_name(0)})"
+        except ImportError:
+            pass
+        return "CPU"
+    if model.n_gpu_layers > 0:
+        return f"llama.cpp GPU offload ({model.n_gpu_layers} layers)"
+    return "CPU"
+
+
 def warmup(model_key: str | None = None) -> str:
     key = model_key or _app_config.active_model
     model = get_model_config(key)
 
     if _load_state.get(key):
-        return f"Model ready: {model.label}"
+        backend = get_backend(key)
+        device = (
+            backend.device_label
+            if hasattr(backend, "device_label")
+            else _runtime_device_hint(key)
+        )
+        return f"Model ready: {model.label} on {device}"
 
     if key in _load_errors:
         return _load_errors[key]
 
+    device_hint = _runtime_device_hint(key)
     return (
-        f"Preset `{key}` selected ({model.backend}). "
-        "Weights load on the first chat message — this can take a few minutes on CPU."
+        f"Preset `{key}` selected ({model.backend}, {device_hint}). "
+        "Weights load on the first chat message."
     )
 
 
