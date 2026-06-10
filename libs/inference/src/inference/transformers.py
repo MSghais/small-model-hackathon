@@ -53,7 +53,7 @@ class TransformersBackend:
         }
         model_kwargs = {
             **common_kwargs,
-            "torch_dtype": torch_dtype,
+            "dtype": torch_dtype,
             "device_map": device_map,
         }
 
