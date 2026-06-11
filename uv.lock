@@ -19,6 +19,7 @@ members = [
     "ensemble",
     "gradio-space",
     "inference",
+    "slm-evals",
     "small-model-hackathon",
 ]
 
@@ -2268,6 +2269,35 @@ wheels = [
 ]
 
 [[package]]
+name = "slm-evals"
+version = "0.1.0"
+source = { editable = "research/evals" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "bitsandbytes" },
+    { name = "datasets" },
+    { name = "huggingface-hub" },
+    { name = "pandas" },
+    { name = "pyyaml" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "transformers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "accelerate", specifier = ">=0.30.0" },
+    { name = "bitsandbytes", specifier = ">=0.43.0" },
+    { name = "datasets", specifier = ">=2.19.0" },
+    { name = "huggingface-hub", specifier = ">=0.22.0" },
+    { name = "pandas", specifier = ">=2.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "torch", specifier = ">=2.2.0" },
+    { name = "tqdm", specifier = ">=4.66.0" },
+    { name = "transformers", specifier = ">=4.41.0" },
+]
+
+[[package]]
 name = "small-model-hackathon"
 version = "0.1.0"
 source = { virtual = "." }
@@ -2287,6 +2317,9 @@ ensemble = [
     { name = "accelerate" },
     { name = "peft" },
     { name = "transformers" },
+]
+evals = [
+    { name = "slm-evals" },
 ]
 finetune = [
     { name = "bitsandbytes" },
@@ -2312,6 +2345,7 @@ ensemble = [
     { name = "peft", specifier = ">=0.14.0" },
     { name = "transformers", specifier = ">=5.7.0" },
 ]
+evals = [{ name = "slm-evals", editable = "research/evals" }]
 finetune = [
     { name = "bitsandbytes", specifier = ">=0.46.1" },
     { name = "datasets", specifier = ">=3.0.0" },
