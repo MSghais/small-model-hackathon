@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: cleanup-shims
     content: Remove or thin re-export old top-level research/*.py files; verify smoke + toy harness pass
-    status: in_progress
+    status: completed
 isProject: false
 ---
 

@@ -16,6 +16,7 @@ resolution-markers = [
 [manifest]
 members = [
     "agent",
+    "ensemble",
     "gradio-space",
     "inference",
     "small-model-hackathon",
@@ -545,6 +546,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc45
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550, upload-time = "2023-08-31T06:11:58.822Z" },
 ]
+
+[[package]]
+name = "ensemble"
+version = "0.1.0"
+source = { editable = "research/ensemble" }
+dependencies = [
+    { name = "torch" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "torch", specifier = ">=2.5.0" }]
 
 [[package]]
 name = "fastapi"
@@ -2261,6 +2273,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agent" },
+    { name = "ensemble" },
     { name = "gradio-space" },
     { name = "inference" },
 ]
@@ -2269,6 +2282,11 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+]
+ensemble = [
+    { name = "accelerate" },
+    { name = "peft" },
+    { name = "transformers" },
 ]
 finetune = [
     { name = "bitsandbytes" },
@@ -2279,6 +2297,7 @@ finetune = [
 [package.metadata]
 requires-dist = [
     { name = "agent", editable = "libs/agent" },
+    { name = "ensemble", editable = "research/ensemble" },
     { name = "gradio-space", editable = "apps/gradio-space" },
     { name = "inference", editable = "libs/inference" },
 ]
@@ -2287,6 +2306,11 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.9.0" },
+]
+ensemble = [
+    { name = "accelerate", specifier = ">=1.2.0" },
+    { name = "peft", specifier = ">=0.14.0" },
+    { name = "transformers", specifier = ">=5.7.0" },
 ]
 finetune = [
     { name = "bitsandbytes", specifier = ">=0.46.1" },
