@@ -1,20 +1,22 @@
 [project]
-name = "gradio-space"
+name = "agent"
 version = "0.1.0"
-description = "Gradio chat UI for the Build Small Hackathon Space"
+description = "Skill-based local agent loop for hackathon tasks"
 readme = "README.md"
 authors = [
     { name = "MSGhais", email = "msghais135@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "agent",
-    "gradio>=5.0.0",
     "inference",
+    "pillow>=10.0.0",
+    "pydantic>=2.0.0",
+    "python-docx>=1.1.0",
+    "python-pptx>=1.0.0",
+    "pyyaml>=6.0.2",
 ]
 
 [tool.uv.sources]
-agent = { workspace = true }
 inference = { workspace = true }
 
 [build-system]

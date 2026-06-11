@@ -1,6 +1,8 @@
 # Usage
 
-How to run the Gradio chat app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
+How to run the **Lesson Agent** Gradio app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
+
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -23,11 +25,11 @@ uv sync --all-packages
 cp .env.example .env
 ```
 
-Edit `.env` if you want a different model or local GGUF path. Defaults work out of the box.
+Edit `.env` if you want a different model preset. Default is `minicpm5-1b` (transformers).
 
-### 3. Pre-download the model (recommended)
+### 3. Pre-download the model (optional for GGUF presets)
 
-The app can download the GGUF on first chat, but pre-downloading avoids a long wait during your first message:
+If using a GGUF preset (`qwen3b-gguf`), pre-download avoids a long wait on first use:
 
 ```bash
 uv run python scripts/download_model.py
@@ -47,7 +49,13 @@ uv run --package gradio-space python -m gradio_space.app
 
 Open [http://localhost:7860](http://localhost:7860).
 
-The model loads on the **first chat message** unless you set `MODEL_PATH`. After code changes, restart the process to pick up updates.
+The model loads on the **first Generate** (Lesson slides) or chat message. Agent traces are written to `outputs/traces/`. After code changes, restart the process to pick up updates.
+
+### 5. Upload agent trace (Sharing is Caring badge)
+
+```bash
+uv run python scripts/upload_trace.py --repo-id YOUR_USER/build-small-agent-traces
+```
 
 ### 5. Quick sanity checks
 
