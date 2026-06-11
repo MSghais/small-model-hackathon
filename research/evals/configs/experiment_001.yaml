@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Template config for a local SLM agentic benchmark run.
 # Copy and edit this file for each new experiment.
-# Run with: python run_benchmark.py --config configs/experiment_001.yaml
+# Run with: uv run --package slm-evals slm-benchmark --config research/evals/configs/experiment_001.yaml
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Model ─────────────────────────────────────────────────────────────────────

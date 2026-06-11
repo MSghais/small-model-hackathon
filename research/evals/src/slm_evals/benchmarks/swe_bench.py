@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from benchmarks.base import BaseBenchmark
+from slm_evals.benchmarks.base import BaseBenchmark
 
 
 SYSTEM_PROMPT = """\

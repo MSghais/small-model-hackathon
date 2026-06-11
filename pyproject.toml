@@ -26,12 +26,16 @@ ensemble = [
     "peft>=0.14.0",
     "transformers>=5.7.0",
 ]
+evals = [
+    "slm-evals",
+]
 
 [tool.uv.workspace]
 members = [
     "apps/*",
     "libs/*",
     "research/ensemble",
+    "research/evals",
 ]
 
 [tool.uv.sources]
@@ -39,3 +43,4 @@ agent = { workspace = true }
 ensemble = { workspace = true }
 gradio-space = { workspace = true }
 inference = { workspace = true }
+slm-evals = { workspace = true }

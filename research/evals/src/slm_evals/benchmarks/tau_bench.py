@@ -23,7 +23,7 @@ import re
 import copy
 from typing import Any
 
-from benchmarks.base import BaseBenchmark
+from slm_evals.benchmarks.base import BaseBenchmark
 
 
 AGENT_SYSTEM = """\

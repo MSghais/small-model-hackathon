@@ -1,0 +1,24 @@
+[project]
+name = "slm-evals"
+version = "0.1.0"
+description = "SLM agentic benchmark suite (BFCL, tau-bench, GAIA, SWE-bench)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=0.30.0",
+    "bitsandbytes>=0.43.0",
+    "datasets>=2.19.0",
+    "huggingface-hub>=0.22.0",
+    "pandas>=2.0.0",
+    "pyyaml>=6.0",
+    "torch>=2.2.0",
+    "tqdm>=4.66.0",
+    "transformers>=4.41.0",
+]
+
+[project.scripts]
+slm-benchmark = "slm_evals.run_benchmark:main"
+
+[build-system]
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"
