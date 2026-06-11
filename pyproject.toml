@@ -5,6 +5,7 @@ description = "Build Small Hackathon — Gradio Space with local llama.cpp infer
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "agent",
     "gradio-space",
     "inference",
 ]
@@ -22,5 +23,6 @@ members = [
 ]
 
 [tool.uv.sources]
+agent = { workspace = true }
 gradio-space = { workspace = true }
 inference = { workspace = true }

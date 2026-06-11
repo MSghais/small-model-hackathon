@@ -76,3 +76,26 @@ def warmup(model_key: str | None = None) -> str:
 def model_status(model_key: str) -> str:
     model = get_model_config(model_key)
     return f"**{model.label}**\n\n- Backend: `{model.backend}`\n- {warmup(model_key)}"
+
+
+def _history_to_messages(history: list) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    for item in history:
+        if isinstance(item, dict):
+            messages.append({"role": item["role"], "content": item["content"]})
+        else:
+            user_msg, assistant_msg = item
+            messages.append({"role": "user", "content": user_msg})
+            if assistant_msg:
+                messages.append({"role": "assistant", "content": assistant_msg})
+    return messages
+
+
+def chat(message: str, history: list, model_key: str) -> str:
+    load_error = ensure_model_loaded(model_key)
+    if load_error:
+        return load_error
+
+    messages = _history_to_messages(history)
+    messages.append({"role": "user", "content": message})
+    return get_backend(model_key).chat(messages)

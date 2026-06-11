@@ -2,7 +2,6 @@ import os
 
 import gradio as gr
 
-from gradio_space.model_loading import warmup
 from gradio_space.tabs import build_chat_tab, build_education_pptx_tab
 from inference.config import get_app_config
 
@@ -37,8 +36,6 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
                 build_education_pptx_tab()
             with gr.Tab("Chat (debug)"):
                 build_chat_tab()
-
-        demo.load(lambda: warmup(_app_config.active_model))
 
     return demo
 

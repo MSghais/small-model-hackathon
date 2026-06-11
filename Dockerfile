@@ -16,8 +16,11 @@ WORKDIR /app
 COPY pyproject.toml uv.lock .python-version README.md models.yaml ./
 COPY apps/gradio-space/pyproject.toml apps/gradio-space/README.md apps/gradio-space/
 COPY libs/inference/pyproject.toml libs/inference/README.md libs/inference/
+COPY libs/agent/pyproject.toml libs/agent/README.md libs/agent/
 COPY apps/gradio-space/src apps/gradio-space/src
 COPY libs/inference/src libs/inference/src
+COPY libs/agent/src libs/agent/src
+COPY skills skills
 
 RUN useradd -m -u 1000 user && \
     uv sync --frozen --no-dev --package gradio-space && \
@@ -25,7 +28,11 @@ RUN useradd -m -u 1000 user && \
 
 USER user
 ENV HOME=/home/user \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    AGENT_OUTPUTS_DIR=/tmp/agent_outputs \
+    AGENT_TRACES_DIR=/tmp/agent_traces
+
+RUN mkdir -p /tmp/agent_outputs /tmp/agent_traces
 
 EXPOSE 7860
 

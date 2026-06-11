@@ -8,11 +8,13 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "agent",
     "gradio>=5.0.0",
     "inference",
 ]
 
 [tool.uv.sources]
+agent = { workspace = true }
 inference = { workspace = true }
 
 [build-system]

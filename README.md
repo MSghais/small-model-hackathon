@@ -1,7 +1,7 @@
 ---
 
-## title: Small Model Hackathon
-emoji: 🦙
+## title: Lesson Agent
+emoji: 📚
 colorFrom: blue
 colorTo: green
 sdk: docker
@@ -9,11 +9,13 @@ app_port: 7860
 pinned: false
 license: apache-2.0
 
-# Small Model Hackathon
+# Lesson Agent
 
-Gradio chat Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon). Runs local inference with **llama.cpp** (GGUF) by default; optional **transformers** backend via env.
+**Backyard AI** Gradio Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-See **[USAGE.md](USAGE.md)** for local run, Docker smoke test, and HF Space deployment steps.
+A local skill-based agent helps a teacher you know turn a **topic + grade level** into a downloadable **PowerPoint** — powered by a small transformers model (`MiniCPM5-1B` by default), no cloud LLM API.
+
+See **[USAGE.md](USAGE.md)** for local run, Docker smoke test, and HF Space deployment.
 
 ## Prerequisites
 
@@ -26,81 +28,75 @@ See **[USAGE.md](USAGE.md)** for local run, Docker smoke test, and HF Space depl
 uv sync --all-packages
 cp .env.example .env   # optional: edit model settings
 
-# Download GGUF for offline dev (optional)
-uv run python scripts/download_model.py
-
 # Run Gradio locally
 uv run --package gradio-space python -m gradio_space.app
 ```
 
-Open [http://localhost:7860](http://localhost:7860). The model downloads from Hugging Face Hub on the first chat message (or set `MODEL_PATH` to a local GGUF).
+Open [http://localhost:7860](http://localhost:7860). Use the **Lesson slides** tab: enter a topic, grade, and slide count. The model loads on first generate.
+
+## How it works
+
+1. **Skill** — `skills/education-pptx/SKILL.md` (Hermes / agentskills.io format)
+2. **LLM** — local model drafts a JSON slide outline
+3. **Tool** — `create_pptx` builds the file with `python-pptx`
+4. **Trace** — JSON log saved under `outputs/traces/` for the Sharing is Caring badge
+
+```text
+apps/gradio-space/   # Gradio tabs (Lesson slides + Chat debug)
+libs/agent/          # Skill agent runner, tools, trace recorder
+libs/inference/      # Transformers + llama.cpp backends
+skills/              # SKILL.md task definitions
+```
 
 ## Environment variables
 
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `ACTIVE_MODEL` | `minicpm5-1b` | Preset key from `models.yaml` |
+| `AGENT_OUTPUTS_DIR` | `/tmp/agent_outputs` | Generated `.pptx` files |
+| `AGENT_TRACES_DIR` | `outputs/traces` | Agent trace JSON |
+| `SKILLS_DIR` | `./skills` | Skill definitions root |
 
-| Variable            | Default                           | Description                                |
-| ------------------- | --------------------------------- | ------------------------------------------ |
-| `INFERENCE_BACKEND` | `llama_cpp`                       | `llama_cpp` or `transformers`              |
-| `MODEL_REPO`        | `Qwen/Qwen2.5-3B-Instruct-GGUF`   | Hub repo for GGUF                          |
-| `MODEL_FILE`        | `qwen2.5-3b-instruct-q4_k_m.gguf` | GGUF filename                              |
-| `MODEL_PATH`        | —                                 | Local GGUF path (skips Hub download)       |
-| `N_CTX`             | `4096`                            | Context window                             |
-| `N_GPU_LAYERS`      | `0`                               | GPU layers for llama.cpp (0 = CPU)         |
-| `MODEL_ID`          | `Qwen/Qwen2.5-3B-Instruct`        | Used when `INFERENCE_BACKEND=transformers` |
-
-
-See `[.env.example](.env.example)` for a full template.
-
-## Monorepo layout
-
-```text
-apps/gradio-space/   # Gradio UI (HF Space entrypoint)
-libs/inference/      # Swappable inference backends
-scripts/             # Dev utilities
-```
-
-### Common commands
-
-```bash
-uv add --package gradio-space <package>
-uv add --package inference <package>
-uv run --package gradio-space python -m gradio_space.app
-uv run python -c "from inference.factory import get_backend"
-```
+See [`.env.example`](.env.example) and [`models.yaml`](models.yaml) for model presets.
 
 ## Hugging Face Space deployment
 
 1. Create a Space under [build-small-hackathon](https://huggingface.co/build-small-hackathon) with **Docker** SDK.
 2. Link this repository (root `Dockerfile` + root `README.md` YAML above).
-3. Hardware: start with **CPU basic**; upgrade to GPU if you set `N_GPU_LAYERS > 0`.
-4. Add Space secrets: `MODEL_REPO`, `MODEL_FILE`, `N_CTX`, `N_GPU_LAYERS`.
+3. Hardware: **GPU basic** recommended for transformers (`minicpm5-1b`).
+4. Optional secrets: `ACTIVE_MODEL`, `N_GPU_LAYERS` (if using GGUF preset).
 
 ```bash
-# Optional local Docker smoke test
 docker build -t hackathon-space .
-docker run --rm -p 7860:7860 -e MODEL_REPO=Qwen/Qwen2.5-3B-Instruct-GGUF hackathon-space
+docker run --rm -p 7860:7860 -e ACTIVE_MODEL=minicpm5-1b hackathon-space
 ```
 
 ## Hackathon checklist
 
-- Choose a track (Backyard AI or Thousand Token Wood)
+- **Track:** Backyard AI — lesson slide builder for a teacher you know
 - Space live under build-small-hackathon
-- Demo video recorded
+- Demo video: real user enters topic → download `.pptx` → show agent trace
 - Social post published
-- Submission locked in by **June 15, 2026**
+- Submission by **June 15, 2026**
 
 ### Badge targets
 
-- **Off-the-Grid** — local llama.cpp inference (default setup)
-- **Llama Champion** — llama.cpp + GGUF model
-- **Off-Brand** — custom UI via `gr.Server` (Phase 2)
-- **Sharing is Caring** — agent traces dataset (Phase 2)
+- **Best Agent** — skill loop + `create_pptx` tool
+- **Tiny Titan** — MiniCPM5 1B (≤4B)
+- **OpenBMB** — `openbmb/MiniCPM5-1B`
+- **Sharing is Caring** — upload traces with `scripts/upload_trace.py`
+- **Off-the-Grid** — local inference only (no cloud LLM API)
+- **Well-Tuned** — optional fine-tuned preset in `models.yaml` (Phase 2)
 
-## Transformers backend (optional)
+## Agent trace upload
 
 ```bash
-uv sync --package inference --extra transformers
-INFERENCE_BACKEND=transformers MODEL_ID=Qwen/Qwen2.5-3B-Instruct \
-  uv run --package gradio-space python -m gradio_space.app
+uv run python scripts/upload_trace.py --repo-id YOUR_USER/build-small-agent-traces
 ```
 
+## Demo video script
+
+1. Introduce the teacher and the problem (building a 5-slide lesson takes 30+ minutes).
+2. Open **Lesson slides**, enter topic + grade, click **Generate**.
+3. Show outline preview and download the `.pptx`.
+4. Expand the agent trace JSON — local model, no cloud API.
