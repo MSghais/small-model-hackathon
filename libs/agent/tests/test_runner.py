@@ -5,6 +5,33 @@ from agent.tools.docx import create_docx, create_html_export
 from agent.tools.pptx import create_pptx
 
 
+def test_parse_outline_pads_when_model_returns_too_few():
+    runner = AgentRunner()
+    raw = (
+        '{"title": "AI Agents", "slides": ['
+        '{"title": "Intro", "bullets": ["What is an agent?"]},'
+        '{"title": "Uses", "bullets": ["Automation"]}'
+        "]}"
+    )
+    outline = runner._parse_outline(raw, expected_slides=5)
+    assert len(outline.slides) == 5
+    assert outline.title == "AI Agents"
+
+
+def test_parse_outline_trims_when_model_returns_too_many():
+    runner = AgentRunner()
+    raw = (
+        '{"title": "Topic", "slides": ['
+        '{"title": "A", "bullets": ["a"]},'
+        '{"title": "B", "bullets": ["b"]},'
+        '{"title": "C", "bullets": ["c"]},'
+        '{"title": "D", "bullets": ["d"]}'
+        "]}"
+    )
+    outline = runner._parse_outline(raw, expected_slides=3)
+    assert len(outline.slides) == 3
+
+
 def test_extract_json_from_fenced_block():
     raw = '```json\n{"title": "T", "slides": [{"title": "S", "bullets": ["a"]}]}\n```'
     data = AgentRunner._extract_json(raw)

@@ -10,6 +10,11 @@ from pptx.util import Inches, Pt
 from agent.models import SlideOutline
 
 
+def get_outputs_dir() -> Path:
+    """Directory for generated artifacts (pptx, docx, preview images)."""
+    return _outputs_dir()
+
+
 def _outputs_dir() -> Path:
     import os
     import tempfile

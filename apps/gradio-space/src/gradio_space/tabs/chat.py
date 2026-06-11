@@ -1,6 +1,6 @@
 import gradio as gr
 
-from gradio_space.model_loading import chat, model_status, warmup
+from gradio_space.model_loading import chat, model_status
 from inference.config import get_app_config
 
 _app_config = get_app_config()

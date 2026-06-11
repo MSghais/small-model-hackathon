@@ -40,10 +40,19 @@ def education_outline_user(req: EducationPptxInput) -> str:
     )
 
 
-def education_outline_repair(invalid_output: str, error: str) -> str:
+def education_outline_repair(
+    invalid_output: str,
+    error: str,
+    *,
+    expected_slides: int | None = None,
+) -> str:
+    count_line = ""
+    if expected_slides is not None:
+        count_line = f"\nYou must include exactly {expected_slides} items in the slides array.\n"
     return (
         "The previous response was invalid JSON or did not match the schema.\n"
         f"Validation error: {error}\n"
+        f"{count_line}"
         f"Previous output:\n{invalid_output}\n\n"
         "Return corrected JSON only, no explanation."
     )

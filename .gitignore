@@ -9,3 +9,5 @@ models/
 *.egg-info/
 dist/
 build/
+
+outputs/traces

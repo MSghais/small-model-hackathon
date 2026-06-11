@@ -2,7 +2,9 @@ import os
 
 import gradio as gr
 
+from gradio_space.model_loading import preload_active_model
 from gradio_space.tabs import build_chat_tab, build_education_pptx_tab
+from gradio_space.tabs.education_pptx import gradio_allowed_paths
 from inference.config import get_app_config
 
 _app_config = get_app_config()
@@ -40,13 +42,13 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
     return demo
 
 
-demo = build_demo()
-
-
 def main() -> None:
+    preload_active_model()
+    demo = build_demo()
     demo.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", "7860")),
+        allowed_paths=gradio_allowed_paths(),
     )
 
 

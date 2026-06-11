@@ -7,7 +7,7 @@ from typing import Any
 
 from inference.base import InferenceBackend
 
-from agent.models import EducationPptxInput, SlideOutline
+from agent.models import EducationPptxInput, SlideOutline, SlideSpec
 from agent.preview import outline_to_html, render_slide_images
 from agent.prompts import (
     education_outline_repair,
@@ -125,33 +125,93 @@ class AgentRunner:
         trace.log_llm(prompt_text, raw)
 
         try:
-            return self._parse_outline(raw, req.slide_count)
+            return self._parse_outline(raw, req.slide_count, trace)
         except (json.JSONDecodeError, ValueError) as first_error:
             repair_messages = messages + [
                 {"role": "assistant", "content": raw},
                 {
                     "role": "user",
-                    "content": education_outline_repair(raw, str(first_error)),
+                    "content": education_outline_repair(
+                        raw, str(first_error), expected_slides=req.slide_count
+                    ),
                 },
             ]
+            repair_prompt = education_outline_repair(
+                raw, str(first_error), expected_slides=req.slide_count
+            )
             repaired = backend.chat(repair_messages, max_tokens=2048, temperature=0.1)
-            trace.log_llm(education_outline_repair(raw, str(first_error)), repaired)
-            return self._parse_outline(repaired, req.slide_count)
+            trace.log_llm(repair_prompt, repaired)
+            return self._parse_outline(repaired, req.slide_count, trace)
 
-    def _parse_outline(self, raw: str, expected_slides: int) -> SlideOutline:
-        data = self._extract_json(raw)
+    def _parse_outline(
+        self,
+        raw: str,
+        expected_slides: int,
+        trace: TraceRecorder | None = None,
+    ) -> SlideOutline:
+        data = self._sanitize_outline_data(self._extract_json(raw))
         outline = SlideOutline.model_validate(data)
-        if len(outline.slides) != expected_slides:
-            if len(outline.slides) > expected_slides:
-                outline = SlideOutline(
-                    title=outline.title,
-                    slides=outline.slides[:expected_slides],
-                )
-            else:
-                raise ValueError(
-                    f"Expected {expected_slides} slides, got {len(outline.slides)}"
-                )
+        original_count = len(outline.slides)
+        outline = self._normalize_slide_count(outline, expected_slides)
+        if trace and original_count != expected_slides:
+            trace.log_note(
+                "Adjusted slide count to match request",
+                requested=expected_slides,
+                model_returned=original_count,
+                final=len(outline.slides),
+            )
         return outline
+
+    @staticmethod
+    def _sanitize_outline_data(data: dict[str, Any]) -> dict[str, Any]:
+        title = str(data.get("title") or "Lesson").strip() or "Lesson"
+        slides_in = data.get("slides") or []
+        slides_out: list[dict[str, Any]] = []
+        for index, slide in enumerate(slides_in):
+            if not isinstance(slide, dict):
+                continue
+            slide_title = str(slide.get("title") or f"Slide {index + 1}").strip()
+            bullets_raw = slide.get("bullets") or []
+            if isinstance(bullets_raw, str):
+                bullets_raw = [bullets_raw]
+            bullets = [str(b).strip() for b in bullets_raw if str(b).strip()]
+            if not bullets:
+                bullets = ["Discuss this topic with the class"]
+            slides_out.append(
+                {
+                    "title": slide_title or f"Slide {index + 1}",
+                    "bullets": bullets,
+                    "speaker_note": str(slide.get("speaker_note") or ""),
+                }
+            )
+        if not slides_out:
+            slides_out.append(
+                {
+                    "title": "Introduction",
+                    "bullets": ["Overview of the topic", "Why it matters"],
+                    "speaker_note": "",
+                }
+            )
+        return {"title": title, "slides": slides_out}
+
+    @staticmethod
+    def _normalize_slide_count(outline: SlideOutline, expected: int) -> SlideOutline:
+        slides = list(outline.slides)
+        if len(slides) > expected:
+            slides = slides[:expected]
+        while len(slides) < expected:
+            number = len(slides) + 1
+            slides.append(
+                SlideSpec(
+                    title=f"More about {outline.title}",
+                    bullets=[
+                        "Key idea to expand in class",
+                        "Question for students",
+                    ],
+                    speaker_note="Add details for this slide during the lesson.",
+                )
+            )
+        return SlideOutline(title=outline.title, slides=slides)
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:

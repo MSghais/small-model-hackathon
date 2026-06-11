@@ -32,6 +32,9 @@ class TraceRecorder:
             }
         )
 
+    def log_note(self, message: str, **details: Any) -> None:
+        self.steps.append({"type": "note", "message": message, **details})
+
     def log_tool(self, name: str, arguments: dict[str, Any], result: str) -> None:
         self.steps.append(
             {

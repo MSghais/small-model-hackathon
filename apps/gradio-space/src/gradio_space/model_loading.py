@@ -69,8 +69,21 @@ def warmup(model_key: str | None = None) -> str:
     device_hint = runtime_device_hint(key)
     return (
         f"Preset `{key}` selected ({model.backend}, {device_hint}). "
-        "Weights load on the first request."
+        "Loading weights…"
     )
+
+
+def preload_active_model() -> str:
+    """Load the active preset at startup so the first request is fast."""
+    key = get_active_model_key()
+    print(f"[startup] Loading model preset `{key}`…", flush=True)
+    error = ensure_model_loaded(key)
+    if error:
+        print(f"[startup] {error}", flush=True)
+        return error
+    status = warmup(key)
+    print(f"[startup] {status}", flush=True)
+    return status
 
 
 def model_status(model_key: str) -> str:

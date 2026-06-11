@@ -1,22 +1,37 @@
+from pathlib import Path
+
 import gradio as gr
 
 from agent.runner import AgentRunner
+from agent.tools.pptx import get_outputs_dir
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from inference.factory import get_backend
+
+def _error_html(message: str) -> str:
+    safe = (
+        message.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return (
+        f'<div style="padding:12px;border:1px solid #c44;border-radius:8px;'
+        f'background:#fff5f5;color:#8a1f1f;">{safe}</div>'
+    )
+
 
 def generate_lesson_slides(
     topic: str,
     grade: str,
     slide_count: int,
-) -> tuple[str, str, list[tuple[str, str]], str | None, str | None, str | None, str, str]:
+) -> tuple[str, str, list[str], str | None, str | None, str | None, str, str]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        return load_error, "", [], None, None, None, load_error, load_error
+        return load_error, _error_html(load_error), [], None, None, None, load_error, load_error
 
     if not topic.strip():
         message = "Please enter a lesson topic."
-        return message, "", [], None, None, None, message, message
+        return message, _error_html(message), [], None, None, None, message, message
 
     try:
         runner = AgentRunner()
@@ -29,9 +44,9 @@ def generate_lesson_slides(
         )
     except Exception as exc:  # noqa: BLE001 — show agent errors in UI
         message = f"Agent error: {exc}"
-        return message, "", [], None, None, None, message, message
+        return message, _error_html(message), [], None, None, None, message, message
 
-    gallery = [(path, f"Slide {i}") for i, path in enumerate(result.preview_images)]
+    gallery = [str(Path(p).resolve()) for p in result.preview_images]
     trace_summary = (
         f"Run `{result.trace.run_id}` · skill `{result.trace.skill}` · "
         f"model `{result.trace.model}`\n\n"
@@ -41,9 +56,9 @@ def generate_lesson_slides(
         result.markdown_preview,
         result.html_preview,
         gallery,
-        result.pptx_path,
-        result.docx_path,
-        result.html_export_path,
+        str(Path(result.pptx_path).resolve()),
+        str(Path(result.docx_path).resolve()),
+        str(Path(result.html_export_path).resolve()),
         trace_summary,
         result.trace.to_json(),
     )
@@ -88,8 +103,9 @@ the agent then builds a downloadable PowerPoint — no cloud LLM API.
             slide_gallery = gr.Gallery(
                 label="Slide thumbnails",
                 columns=2,
-                height="auto",
+                height=420,
                 object_fit="contain",
+                preview=True,
             )
         with gr.Tab("Outline"):
             outline_preview = gr.Markdown(label="Outline (markdown)")
@@ -137,3 +153,9 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
             trace_box,
         ],
     )
+
+
+def gradio_allowed_paths() -> list[str]:
+    """Paths Gradio must be allowed to read for previews and downloads."""
+    root = get_outputs_dir().resolve()
+    return [str(root)]

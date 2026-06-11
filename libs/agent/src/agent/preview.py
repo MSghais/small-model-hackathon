@@ -215,12 +215,17 @@ def _draw_slide_image(
 
     y = margin
     if is_title:
-        draw.text((margin, height // 2 - 80), _wrap_text(title, 28), fill=fg, font=title_font)
+        y_title = height // 2 - 80
+        for part in _wrap_text(title, 28).split("\n"):
+            draw.text((margin, y_title), part, fill=fg, font=title_font)
+            y_title += 64
         if subtitle:
             draw.text((margin, height // 2 + 40), subtitle, fill=accent, font=small_font)
     else:
-        draw.text((margin, y), _wrap_text(title, 32), fill=fg, font=title_font)
-        y += 90
+        for part in _wrap_text(title, 32).split("\n"):
+            draw.text((margin, y), part, fill=fg, font=title_font)
+            y += 52
+        y += 20
         for bullet in bullets:
             line = _wrap_text(f"• {bullet}", 48)
             for part in line.split("\n"):
