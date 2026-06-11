@@ -2,6 +2,8 @@
 
 JEPA and world-model ensemble experiments. Stays under `research/` — not wired into the Gradio agent.
 
+See also: [../USAGE.md](../USAGE.md) · [../docs/overview.md](../docs/overview.md)
+
 ## Install
 
 ```bash

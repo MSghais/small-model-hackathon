@@ -1,6 +1,8 @@
 # SLM Agentic Benchmark Suite
 
-A uv workspace package to evaluate **local HuggingFace models** against agentic benchmarks:
+A uv workspace package to evaluate **local HuggingFace models** against agentic benchmarks.
+
+**Docs:** [USAGE.md](USAGE.md) (commands and workflows) · [docs/benchmarks.md](docs/benchmarks.md) (per-benchmark reference) · [../USAGE.md](../USAGE.md) (full research tree)
 
 | Benchmark | What it measures | Dataset |
 |---|---|---|
