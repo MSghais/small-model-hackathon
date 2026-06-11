@@ -1,5 +1,6 @@
 ---
-title: Small Model Hackathon
+
+## title: Small Model Hackathon
 emoji: 🦙
 colorFrom: blue
 colorTo: green
@@ -7,7 +8,6 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: apache-2.0
----
 
 # Small Model Hackathon
 
@@ -33,21 +33,23 @@ uv run python scripts/download_model.py
 uv run --package gradio-space python -m gradio_space.app
 ```
 
-Open http://localhost:7860. The model downloads from Hugging Face Hub on the first chat message (or set `MODEL_PATH` to a local GGUF).
+Open [http://localhost:7860](http://localhost:7860). The model downloads from Hugging Face Hub on the first chat message (or set `MODEL_PATH` to a local GGUF).
 
 ## Environment variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `INFERENCE_BACKEND` | `llama_cpp` | `llama_cpp` or `transformers` |
-| `MODEL_REPO` | `Qwen/Qwen2.5-3B-Instruct-GGUF` | Hub repo for GGUF |
-| `MODEL_FILE` | `qwen2.5-3b-instruct-q4_k_m.gguf` | GGUF filename |
-| `MODEL_PATH` | — | Local GGUF path (skips Hub download) |
-| `N_CTX` | `4096` | Context window |
-| `N_GPU_LAYERS` | `0` | GPU layers for llama.cpp (0 = CPU) |
-| `MODEL_ID` | `Qwen/Qwen2.5-3B-Instruct` | Used when `INFERENCE_BACKEND=transformers` |
 
-See [`.env.example`](.env.example) for a full template.
+| Variable            | Default                           | Description                                |
+| ------------------- | --------------------------------- | ------------------------------------------ |
+| `INFERENCE_BACKEND` | `llama_cpp`                       | `llama_cpp` or `transformers`              |
+| `MODEL_REPO`        | `Qwen/Qwen2.5-3B-Instruct-GGUF`   | Hub repo for GGUF                          |
+| `MODEL_FILE`        | `qwen2.5-3b-instruct-q4_k_m.gguf` | GGUF filename                              |
+| `MODEL_PATH`        | —                                 | Local GGUF path (skips Hub download)       |
+| `N_CTX`             | `4096`                            | Context window                             |
+| `N_GPU_LAYERS`      | `0`                               | GPU layers for llama.cpp (0 = CPU)         |
+| `MODEL_ID`          | `Qwen/Qwen2.5-3B-Instruct`        | Used when `INFERENCE_BACKEND=transformers` |
+
+
+See `[.env.example](.env.example)` for a full template.
 
 ## Monorepo layout
 
@@ -81,11 +83,11 @@ docker run --rm -p 7860:7860 -e MODEL_REPO=Qwen/Qwen2.5-3B-Instruct-GGUF hackath
 
 ## Hackathon checklist
 
-- [ ] Choose a track (Backyard AI or Thousand Token Wood)
-- [ ] Space live under build-small-hackathon
-- [ ] Demo video recorded
-- [ ] Social post published
-- [ ] Submission locked in by **June 15, 2026**
+- Choose a track (Backyard AI or Thousand Token Wood)
+- Space live under build-small-hackathon
+- Demo video recorded
+- Social post published
+- Submission locked in by **June 15, 2026**
 
 ### Badge targets
 
@@ -101,3 +103,4 @@ uv sync --package inference --extra transformers
 INFERENCE_BACKEND=transformers MODEL_ID=Qwen/Qwen2.5-3B-Instruct \
   uv run --package gradio-space python -m gradio_space.app
 ```
+
