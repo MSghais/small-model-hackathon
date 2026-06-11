@@ -6,32 +6,44 @@ Install:
     pip install torch transformers datasets peft accelerate
     pip install bitsandbytes        # only needed for --mode qlora
 
+Model resolution (first match wins)
+------------------------------------
+1. --model <hf-id-or-path>
+2. --preset <key> from models.yaml (or FINETUNE_PRESET env)
+3. MODEL_ID / BASE env (raw Hugging Face id or local path)
+4. ACTIVE_MODEL preset from models.yaml (text transformers presets only)
+
+Outputs are saved under ./models/finetuned/<preset>-<mode>/ by default.
+
 Examples
 --------
+# LoRA on the lesson-agent chat dataset using models.yaml preset
+python research/finetune.py --preset minicpm5-1b --mode lora --epochs 1
+
+# Same, but read ACTIVE_MODEL / BASE from .env (auto-loaded from repo root)
+python research/finetune.py --mode lora --max_steps 50
+
 # LoRA on an instruction dataset from the Hub
-python finetune.py \
+python research/finetune.py \
     --model Qwen/Qwen2.5-0.5B-Instruct \
     --dataset tatsu-lab/alpaca --format alpaca \
-    --mode lora --epochs 1 --out ./out-lora
+    --mode lora --epochs 1
 
 # QLoRA (4-bit) on a local JSONL chat file: {"messages": [{"role":..,"content":..}, ...]}
-python finetune.py \
+python research/finetune.py \
     --model meta-llama/Llama-3.2-1B-Instruct \
     --dataset ./data/chats.jsonl --format chat \
-    --mode qlora --out ./out-qlora
+    --mode qlora
 
 # FULL fine-tune on raw text files (continued pretraining style)
-python finetune.py \
+python research/finetune.py \
     --model HuggingFaceTB/SmolLM2-360M \
     --dataset ./data/corpus.txt --format text \
-    --mode full --lr 2e-5 --out ./out-full
+    --mode full --lr 2e-5
 
-# Local model path works the same way
-python finetune.py --model /models/llama-3.2-1b --dataset ./data.jsonl \
-    --format chat --mode lora --out ./out
-
-# After LoRA training, optionally merge adapter into the base weights:
-python finetune.py --merge ./out-lora --out ./merged-model
+# After LoRA training, merge adapter into standalone weights:
+python research/finetune.py --merge ./models/finetuned/minicpm5-1b-lora \
+    --out ./models/finetuned/minicpm5-1b-merged
 
 Dataset formats (--format)
 --------------------------
@@ -44,8 +56,10 @@ Local files: .json, .jsonl, .csv, .txt. Hub ids: any datasets repo.
 """
 
 import argparse
-import os
 import math
+import os
+import sys
+from pathlib import Path
 
 import torch
 from datasets import load_dataset
@@ -59,19 +73,148 @@ from transformers import (
 
 IGNORE_INDEX = -100
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_DATASET = _REPO_ROOT / "research/data/education-lesson-chat.jsonl"
+_FINETUNE_ROOT = _REPO_ROOT / "models/finetuned"
+_FALLBACK_FINETUNE_PRESET = "minicpm5-1b"
+
+
+def _load_dotenv(path: Path) -> None:
+    """Load KEY=VALUE pairs from .env without overriding existing env vars."""
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+def _ensure_repo_on_path() -> None:
+    libs = _REPO_ROOT / "libs" / "inference" / "src"
+    if str(libs) not in sys.path:
+        sys.path.insert(0, str(libs))
+
+
+def _is_finetuneable_preset(model) -> bool:
+    return model.backend == "transformers" and not model.multimodal and bool(
+        model.model_id
+    )
+
+
+def resolve_model_and_preset(
+    *,
+    model_arg: str | None,
+    preset_arg: str | None,
+) -> tuple[str, str | None, bool]:
+    """Return (model_id_or_path, preset_key, trust_remote_code)."""
+    if model_arg:
+        trust = os.environ.get("TRUST_REMOTE_CODE", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        return model_arg, preset_arg, trust
+
+    for env_name in ("FINETUNE_MODEL", "MODEL_ID", "BASE"):
+        raw = os.environ.get(env_name)
+        if raw:
+            trust = os.environ.get("TRUST_REMOTE_CODE", "").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            return raw, preset_arg, trust
+
+    _ensure_repo_on_path()
+    from inference.config import get_app_config, get_model_config
+
+    app_config = get_app_config(reload=True)
+    preset_key = (
+        preset_arg
+        or os.environ.get("FINETUNE_PRESET")
+        or os.environ.get("ACTIVE_MODEL")
+    )
+
+    if preset_key and preset_key in app_config.models:
+        model = get_model_config(preset_key)
+        if not _is_finetuneable_preset(model):
+            print(
+                f"Preset {preset_key!r} is {model.backend}"
+                + (" multimodal" if model.multimodal else "")
+                + "; falling back to a text transformers preset for fine-tuning."
+            )
+            preset_key = None
+
+    if preset_key is None:
+        for candidate in (_FALLBACK_FINETUNE_PRESET, *app_config.models):
+            if candidate not in app_config.models:
+                continue
+            model = get_model_config(candidate)
+            if _is_finetuneable_preset(model):
+                preset_key = candidate
+                break
+
+    if not preset_key:
+        raise SystemExit(
+            "No fine-tunable transformers preset found. Pass --model or set BASE/MODEL_ID."
+        )
+
+    model = get_model_config(preset_key)
+    if not _is_finetuneable_preset(model):
+        raise SystemExit(
+            f"Preset {preset_key!r} cannot be fine-tuned "
+            f"(backend={model.backend}, multimodal={model.multimodal})."
+        )
+    return model.model_id, preset_key, model.trust_remote_code
+
+
+def default_output_dir(preset_key: str | None, mode: str) -> str:
+    label = preset_key or "custom"
+    return str((_FINETUNE_ROOT / f"{label}-{mode}").resolve())
+
 
 # ----------------------------------------------------------------------------
 # Args
 # ----------------------------------------------------------------------------
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--model", type=str, help="HF id or local path of base model")
-    p.add_argument("--dataset", type=str, help="HF dataset id or local file path")
-    p.add_argument("--format", type=str, default="alpaca",
-                   choices=["alpaca", "chat", "prompt", "text"])
+    p.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="HF id or local path (overrides models.yaml / env)",
+    )
+    p.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        help="Preset key from models.yaml (default: FINETUNE_PRESET or ACTIVE_MODEL)",
+    )
+    p.add_argument(
+        "--dataset",
+        type=str,
+        default=None,
+        help="HF dataset id or local file path",
+    )
+    p.add_argument(
+        "--format",
+        type=str,
+        default=os.environ.get("FINETUNE_FORMAT", "chat"),
+        choices=["alpaca", "chat", "prompt", "text"],
+    )
     p.add_argument("--mode", type=str, default="lora",
                    choices=["full", "lora", "qlora"])
-    p.add_argument("--out", type=str, default="./finetuned")
+    p.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Output directory (default: ./models/finetuned/<preset>-<mode>)",
+    )
     # training hparams
     p.add_argument("--epochs", type=float, default=1.0)
     p.add_argument("--max_steps", type=int, default=-1)
@@ -198,7 +341,8 @@ class CausalCollator:
 # Model loading for each mode
 # ----------------------------------------------------------------------------
 def load_model_and_tokenizer(args):
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    common = {"trust_remote_code": args.trust_remote_code}
+    tokenizer = AutoTokenizer.from_pretrained(args.model, **common)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -216,13 +360,14 @@ def load_model_and_tokenizer(args):
             bnb_4bit_compute_dtype=torch.bfloat16 if bf16_ok else torch.float16,
         )
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, quantization_config=bnb, device_map="auto")
+            args.model, quantization_config=bnb, device_map="auto", **common)
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model)
     else:
         model = AutoModelForCausalLM.from_pretrained(
             args.model, torch_dtype=dtype,
-            device_map="auto" if torch.cuda.is_available() else None)
+            device_map="auto" if torch.cuda.is_available() else None,
+            **common)
 
     if args.mode in ("lora", "qlora"):
         from peft import LoraConfig, get_peft_model
@@ -262,13 +407,38 @@ def merge_adapter(adapter_dir, out_dir):
 # Main
 # ----------------------------------------------------------------------------
 def main():
+    _load_dotenv(_REPO_ROOT / ".env")
     args = parse_args()
 
     if args.merge:
-        merge_adapter(args.merge, args.out)
+        out_dir = args.out or default_output_dir(None, "merged")
+        merge_adapter(args.merge, out_dir)
         return
 
-    assert args.model and args.dataset, "--model and --dataset are required"
+    model_id, preset_key, trust_remote_code = resolve_model_and_preset(
+        model_arg=args.model,
+        preset_arg=args.preset,
+    )
+    args.model = model_id
+    args.trust_remote_code = trust_remote_code
+    if not args.dataset:
+        args.dataset = (
+            os.environ.get("FINETUNE_DATASET")
+            or str(_DEFAULT_DATASET)
+        )
+    if not args.out:
+        args.out = os.environ.get("FINETUNE_OUT") or default_output_dir(
+            preset_key, args.mode
+        )
+
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+
+    print(f"Base model: {args.model}")
+    if preset_key:
+        print(f"Preset: {preset_key}")
+    print(f"Dataset: {args.dataset}")
+    print(f"Output: {args.out}")
+
     lr = args.lr or (2e-5 if args.mode == "full" else 2e-4)
 
     model, tokenizer, bf16_ok = load_model_and_tokenizer(args)
@@ -331,9 +501,13 @@ def main():
         print(f"\neval_loss={metrics['eval_loss']:.4f}  perplexity={ppl:.2f}")
 
     if args.mode in ("lora", "qlora"):
+        merged = f"{args.out}-merged"
         print(f"\nAdapter saved to {args.out}")
-        print(f"Merge into standalone weights with:\n"
-              f"  python finetune.py --merge {args.out} --out {args.out}-merged")
+        print(
+            "Use in Gradio: set ACTIVE_MODEL to the matching *-lora preset "
+            "in models.yaml, or merge with:\n"
+            f"  python research/finetune.py --merge {args.out} --out {merged}"
+        )
     else:
         print(f"\nFull model saved to {args.out}")
 
