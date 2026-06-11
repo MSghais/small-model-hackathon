@@ -4,7 +4,7 @@ overview: Add a Hermes-style skill agent library on top of your existing Transfo
 todos:
   - id: agent-lib
     content: "Create libs/agent: SkillRegistry, ToolRegistry, AgentRunner, TraceRecorder, pydantic outline models"
-    status: pending
+    status: in_progress
   - id: pptx-skill
     content: Add skills/education-pptx/SKILL.md and create_pptx tool (python-pptx)
     status: pending
