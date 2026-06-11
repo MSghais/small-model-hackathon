@@ -4,28 +4,28 @@ overview: Compare Option A vs Option B, then reorganize the three research scrip
 todos:
   - id: scaffold-package
     content: "Create research/ensemble/ package: pyproject.toml, workspace member, ensemble dependency group"
-    status: pending
+    status: completed
   - id: extract-shared
     content: Extract shared modules (backends, memory, jepa, bridge, eval/metrics) from the three existing scripts
-    status: pending
+    status: completed
   - id: migrate-jepa
     content: Move Ensemble + demo into jepa_ensemble.py; migrate eval_harness to eval/jepa_harness.py
-    status: pending
+    status: completed
   - id: migrate-world
     content: Move WorldEnsemble into world_ensemble.py; add world_model.py and energy.py
-    status: pending
+    status: completed
   - id: world-harness
     content: Add eval/world_harness.py with energy vs random vs oracle selector comparison
-    status: pending
+    status: completed
   - id: benchmark-data
     content: Add research/data/benchmark-qa.jsonl and benchmark-kb.jsonl from lesson topics
-    status: pending
+    status: completed
   - id: run-docs
     content: Add research/ensemble/README.md, scripts/smoke.sh, and .env.example ensemble vars with Tier 1–3 commands
-    status: pending
+    status: completed
   - id: cleanup-shims
     content: Remove or thin re-export old top-level research/*.py files; verify smoke + toy harness pass
-    status: pending
+    status: in_progress
 isProject: false
 ---
 
