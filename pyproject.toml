@@ -16,6 +16,7 @@ dev = [
     "pytest>=8.0.0",
 ]
 finetune = [
+    "bitsandbytes>=0.46.1",
     "datasets>=3.0.0",
     "peft>=0.14.0",
 ]

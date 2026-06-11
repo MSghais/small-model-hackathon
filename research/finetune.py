@@ -425,6 +425,13 @@ def load_model_and_tokenizer(args):
     if args.mode == "qlora":
         if not use_cuda:
             raise SystemExit("QLoRA requires CUDA. Use --mode lora with --device cpu.")
+        try:
+            import bitsandbytes  # noqa: F401
+        except ImportError as exc:
+            raise SystemExit(
+                "QLoRA requires bitsandbytes. Install with:\n"
+                "  uv sync --group finetune"
+            ) from exc
         from transformers import BitsAndBytesConfig
         bnb = BitsAndBytesConfig(
             load_in_4bit=True,
