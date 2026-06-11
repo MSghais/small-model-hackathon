@@ -1,0 +1,22 @@
+# Core inference
+torch>=2.2.0
+transformers>=4.41.0
+accelerate>=0.30.0
+
+# Quantization (optional — needed for int4/int8 dtype)
+bitsandbytes>=0.43.0
+
+# Dataset loading
+datasets>=2.19.0
+huggingface_hub>=0.22.0
+
+# Config & reporting
+pyyaml>=6.0
+pandas>=2.0.0        # optional, for CSV analysis helpers
+
+# SWE-bench full eval (optional — only if full_eval: true)
+# swebench>=2.0.0
+# docker>=7.0.0
+
+# Utilities
+tqdm>=4.66.0
