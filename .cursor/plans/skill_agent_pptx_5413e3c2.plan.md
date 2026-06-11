@@ -10,13 +10,13 @@ todos:
     status: completed
   - id: gradio-tabs
     content: "Refactor Gradio app into Tabs: Education PPTX (primary) + Chat (debug)"
-    status: in_progress
+    status: completed
   - id: docker-workspace
     content: Wire agent package into uv workspace, Dockerfile, models.yaml active_model
-    status: pending
+    status: completed
   - id: trace-demo
     content: Add trace JSON export + README demo script for hackathon submission
-    status: pending
+    status: completed
 isProject: false
 ---
 
