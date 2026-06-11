@@ -76,6 +76,18 @@ class TransformersBackend:
                 **model_kwargs,
             )
 
+        if self._config.adapter_path:
+            from pathlib import Path
+
+            from peft import PeftModel
+
+            adapter = Path(self._config.adapter_path)
+            if not adapter.is_dir():
+                raise FileNotFoundError(
+                    f"LoRA adapter not found for preset {self._config.key!r}: {adapter}"
+                )
+            self._model = PeftModel.from_pretrained(self._model, str(adapter))
+
         if device == "cpu":
             self._model.to(device)
 

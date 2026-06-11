@@ -55,3 +55,16 @@ models:
     label: Fine-tuned LoRA adapter (local path)
     backend: transformers
     model_id: ./gemma_finetuned_model
+
+  minicpm5-1b-lesson-lora:
+    label: MiniCPM5 1B lesson LoRA (local)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    adapter_path: ./models/finetuned/minicpm5-1b-lora
+    trust_remote_code: true
+
+  minicpm5-1b-lesson-merged:
+    label: MiniCPM5 1B lesson merged (local)
+    backend: transformers
+    model_id: ./models/finetuned/minicpm5-1b-lora-merged
+    trust_remote_code: true
