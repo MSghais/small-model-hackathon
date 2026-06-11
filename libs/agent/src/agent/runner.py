@@ -8,6 +8,7 @@ from typing import Any
 from inference.base import InferenceBackend
 
 from agent.models import EducationPptxInput, SlideOutline
+from agent.preview import outline_to_html, render_slide_images
 from agent.prompts import (
     education_outline_repair,
     education_outline_system,
@@ -15,6 +16,7 @@ from agent.prompts import (
     outline_to_markdown,
 )
 from agent.skills import SkillRegistry
+from agent.tools.docx import create_docx, create_html_export
 from agent.tools_registry import ToolRegistry
 from agent.trace import TraceRecorder
 
@@ -24,7 +26,11 @@ EDUCATION_PPTX_SKILL = "education-pptx"
 @dataclass
 class AgentResult:
     markdown_preview: str
+    html_preview: str
+    preview_images: list[str]
     pptx_path: str
+    docx_path: str
+    html_export_path: str
     trace: TraceRecorder
     trace_path: str
     outline: SlideOutline
@@ -66,15 +72,36 @@ class AgentRunner:
             {"title": outline.title, "slide_count": len(outline.slides)},
             pptx_path,
         )
+
+        docx_path = create_docx(outline, run_id=trace.run_id)
+        trace.log_tool(
+            "create_docx",
+            {"title": outline.title, "slide_count": len(outline.slides)},
+            str(docx_path),
+        )
+
+        html_export_path = create_html_export(outline, run_id=trace.run_id)
+        trace.log_tool(
+            "create_html_export",
+            {"title": outline.title},
+            str(html_export_path),
+        )
+
         trace.set_artifact(pptx_path)
 
         slides_dicts = [s.model_dump() for s in outline.slides]
         markdown = outline_to_markdown(outline.title, slides_dicts)
+        html_preview = outline_to_html(outline)
+        preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
         trace_path = trace.save()
 
         return AgentResult(
             markdown_preview=markdown,
+            html_preview=html_preview,
+            preview_images=preview_images,
             pptx_path=pptx_path,
+            docx_path=str(docx_path),
+            html_export_path=str(html_export_path),
             trace=trace,
             trace_path=str(trace_path),
             outline=outline,

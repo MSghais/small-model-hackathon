@@ -4,20 +4,19 @@ from agent.runner import AgentRunner
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from inference.factory import get_backend
 
-
 def generate_lesson_slides(
     topic: str,
     grade: str,
     slide_count: int,
-) -> tuple[str, str | None, str, str]:
+) -> tuple[str, str, list[tuple[str, str]], str | None, str | None, str | None, str, str]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        return load_error, None, "", load_error
+        return load_error, "", [], None, None, None, load_error, load_error
 
     if not topic.strip():
         message = "Please enter a lesson topic."
-        return message, None, "", message
+        return message, "", [], None, None, None, message, message
 
     try:
         runner = AgentRunner()
@@ -30,14 +29,24 @@ def generate_lesson_slides(
         )
     except Exception as exc:  # noqa: BLE001 — show agent errors in UI
         message = f"Agent error: {exc}"
-        return message, None, "", message
+        return message, "", [], None, None, None, message, message
 
+    gallery = [(path, f"Slide {i}") for i, path in enumerate(result.preview_images)]
     trace_summary = (
         f"Run `{result.trace.run_id}` · skill `{result.trace.skill}` · "
         f"model `{result.trace.model}`\n\n"
         f"Trace saved: `{result.trace_path}`"
     )
-    return result.markdown_preview, result.pptx_path, trace_summary, result.trace.to_json()
+    return (
+        result.markdown_preview,
+        result.html_preview,
+        gallery,
+        result.pptx_path,
+        result.docx_path,
+        result.html_export_path,
+        trace_summary,
+        result.trace.to_json(),
+    )
 
 
 def build_education_pptx_tab() -> None:
@@ -73,8 +82,37 @@ the agent then builds a downloadable PowerPoint — no cloud LLM API.
 
     generate_btn = gr.Button("Generate lesson slides", variant="primary")
 
-    outline_preview = gr.Markdown(label="Outline preview")
-    pptx_file = gr.File(label="Download PowerPoint", interactive=False)
+    with gr.Tabs():
+        with gr.Tab("Slide preview"):
+            slide_preview = gr.HTML(label="Slides")
+            slide_gallery = gr.Gallery(
+                label="Slide thumbnails",
+                columns=2,
+                height="auto",
+                object_fit="contain",
+            )
+        with gr.Tab("Outline"):
+            outline_preview = gr.Markdown(label="Outline (markdown)")
+
+    with gr.Row():
+        pptx_file = gr.File(label="Download PowerPoint (.pptx)", interactive=False)
+        docx_file = gr.File(
+            label="Download Word / Google Docs (.docx)",
+            interactive=False,
+        )
+        html_file = gr.File(
+            label="Download HTML (import to Google Docs)",
+            interactive=False,
+        )
+
+    gr.Markdown(
+        """
+**Open in Google Docs:** download the `.docx` file, upload it to [Google Drive](https://drive.google.com),
+then choose **Open with → Google Docs**. You can also upload the `.html` file via
+**Google Docs → File → Open → Upload**.
+"""
+    )
+
     trace_box = gr.Textbox(
         label="Agent trace (JSON)",
         lines=12,
@@ -88,5 +126,14 @@ the agent then builds a downloadable PowerPoint — no cloud LLM API.
     generate_btn.click(
         fn=generate_lesson_slides,
         inputs=[topic, grade, slide_count],
-        outputs=[outline_preview, pptx_file, trace_summary, trace_box],
+        outputs=[
+            outline_preview,
+            slide_preview,
+            slide_gallery,
+            pptx_file,
+            docx_file,
+            html_file,
+            trace_summary,
+            trace_box,
+        ],
     )
