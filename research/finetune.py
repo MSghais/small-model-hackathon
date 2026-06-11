@@ -35,6 +35,18 @@ python research/finetune.py \
     --dataset ./data/chats.jsonl --format chat \
     --mode qlora
 
+# Hugging Face Hub datasets (--dataset is the repo id; optional --dataset-config / --split)
+python research/finetune.py \
+    --preset minicpm5-1b --mode qlora \
+    --dataset tatsu-lab/alpaca --format alpaca --dataset-split train
+
+python research/finetune.py \
+    --preset minicpm5-1b --mode lora \
+    --dataset HuggingFaceTB/smoltalk --format chat \
+    --dataset-config all --dataset-split train[:500]
+
+# Env vars also work: FINETUNE_DATASET, FINETUNE_DATASET_CONFIG, FINETUNE_DATASET_SPLIT
+
 # FULL fine-tune on raw text files (continued pretraining style)
 python research/finetune.py \
     --model HuggingFaceTB/SmolLM2-360M \
@@ -53,10 +65,20 @@ Dataset formats (--format)
   text   : column  text  — or a plain .txt file (one doc per line / whole file)
 
 Local files: .json, .jsonl, .csv, .txt. Hub ids: any datasets repo.
+
+Hub datasets useful for the lesson / teacher agent (--format must match columns):
+  tatsu-lab/alpaca              alpaca   instruction tuning (general)
+  HuggingFaceTB/smoltalk        chat     multi-turn chat (use config: all)
+  Open-Orca/OpenOrca            prompt   instruction + response pairs
+  databricks/databricks-dolly-15k alpaca   short Q&A, good for small models
+
+After training, metrics are written to <out>/training_results.json
+(train/eval loss, perplexity, result_score 0–100).
 """
 
 import argparse
 import gc
+import json
 import math
 import os
 import sys
@@ -202,7 +224,27 @@ def parse_args():
         "--dataset",
         type=str,
         default=None,
-        help="HF dataset id or local file path",
+        help="HF Hub repo id (e.g. tatsu-lab/alpaca) or local file path",
+    )
+    p.add_argument(
+        "--dataset-config",
+        type=str,
+        default=os.environ.get("FINETUNE_DATASET_CONFIG"),
+        help="HF dataset config/subset name (optional)",
+    )
+    p.add_argument(
+        "--dataset-split",
+        type=str,
+        default=os.environ.get("FINETUNE_DATASET_SPLIT", "train"),
+        help="HF split name or slice, e.g. train or train[:1000]",
+    )
+    p.add_argument(
+        "--dataset-max-samples",
+        type=int,
+        default=int(os.environ["FINETUNE_MAX_SAMPLES"])
+        if os.environ.get("FINETUNE_MAX_SAMPLES")
+        else None,
+        help="Cap examples after loading (useful for Hub smoke tests)",
     )
     p.add_argument(
         "--format",
@@ -259,17 +301,116 @@ def parse_args():
 # ----------------------------------------------------------------------------
 # Dataset loading + normalization to (prompt, response) or raw text
 # ----------------------------------------------------------------------------
-def load_raw_dataset(path: str):
+def load_raw_dataset(
+    path: str,
+    *,
+    config: str | None = None,
+    split: str = "train",
+    max_samples: int | None = None,
+):
+    """Load from a local file or Hugging Face Hub (datasets.load_dataset)."""
     if os.path.exists(path):
         ext = os.path.splitext(path)[1].lower()
         if ext in (".json", ".jsonl"):
-            return load_dataset("json", data_files=path, split="train")
-        if ext == ".csv":
-            return load_dataset("csv", data_files=path, split="train")
-        if ext == ".txt":
-            return load_dataset("text", data_files=path, split="train")
-        raise ValueError(f"Unsupported local file type: {ext}")
-    return load_dataset(path, split="train")          # Hub id
+            ds = load_dataset("json", data_files=path, split="train")
+        elif ext == ".csv":
+            ds = load_dataset("csv", data_files=path, split="train")
+        elif ext == ".txt":
+            ds = load_dataset("text", data_files=path, split="train")
+        else:
+            raise ValueError(f"Unsupported local file type: {ext}")
+    else:
+        kwargs: dict = {"path": path, "split": split}
+        if config:
+            kwargs["name"] = config
+        print(f"Loading Hub dataset: {path}" + (f" (config={config})" if config else "")
+              + f" split={split}")
+        ds = load_dataset(**kwargs)
+
+    if max_samples is not None and max_samples > 0:
+        ds = ds.select(range(min(max_samples, len(ds))))
+    return ds
+
+
+def _last_metric(history: list[dict], key: str) -> float | None:
+    for entry in reversed(history):
+        if key in entry:
+            return float(entry[key])
+    return None
+
+
+def _result_score(eval_loss: float | None, train_loss: float | None) -> float | None:
+    """Higher is better (0–100). Derived from eval loss, else train loss."""
+    loss = eval_loss if eval_loss is not None else train_loss
+    if loss is None:
+        return None
+    # exp(-loss) maps typical LM losses (~0.5–3) into a readable 0–100 band.
+    return round(min(100.0, max(0.0, 100.0 * math.exp(-loss))), 2)
+
+
+def save_training_results(
+    out_dir: str,
+    *,
+    args,
+    preset_key: str | None,
+    train_count: int,
+    eval_count: int,
+    train_result,
+    log_history: list[dict],
+    eval_metrics: dict | None,
+) -> Path:
+    history = train_result.metrics if hasattr(train_result, "metrics") else {}
+
+    final_train_loss = _last_metric(log_history, "loss")
+    if final_train_loss is None and "train_loss" in history:
+        final_train_loss = float(history["train_loss"])
+
+    eval_loss = None
+    perplexity = None
+    if eval_metrics:
+        eval_loss = float(eval_metrics.get("eval_loss", 0))
+        if eval_loss < 20:
+            perplexity = round(math.exp(eval_loss), 4)
+
+    result_score = _result_score(eval_loss, final_train_loss)
+
+    payload = {
+        "model": args.model,
+        "preset": preset_key,
+        "dataset": args.dataset,
+        "dataset_config": args.dataset_config,
+        "dataset_split": args.dataset_split,
+        "format": args.format,
+        "mode": args.mode,
+        "output_dir": out_dir,
+        "samples": {"train": train_count, "eval": eval_count},
+        "metrics": {
+            "final_train_loss": round(final_train_loss, 6)
+            if final_train_loss is not None
+            else None,
+            "eval_loss": round(eval_loss, 6) if eval_loss is not None else None,
+            "perplexity": perplexity,
+            "loss_score": round(eval_loss, 6)
+            if eval_loss is not None
+            else (
+                round(final_train_loss, 6) if final_train_loss is not None else None
+            ),
+            "result_score": result_score,
+        },
+        "training": {
+            "epochs": args.epochs,
+            "max_steps": args.max_steps,
+            "global_step": getattr(train_result, "global_step", None),
+            "train_runtime_sec": round(history.get("train_runtime", 0), 2)
+            if history
+            else None,
+            "train_samples_per_second": history.get("train_samples_per_second"),
+        },
+    }
+
+    path = Path(out_dir) / "training_results.json"
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return path
 
 
 def to_prompt_response(example, fmt, tokenizer):
@@ -541,7 +682,12 @@ def main():
     if _training_uses_cuda(args):
         print(f"GPU after model load: {_gpu_memory_summary()}")
 
-    ds = load_raw_dataset(args.dataset)
+    ds = load_raw_dataset(
+        args.dataset,
+        config=args.dataset_config,
+        split=args.dataset_split,
+        max_samples=args.dataset_max_samples,
+    )
     ds = ds.shuffle(seed=args.seed)
     tokenize = build_tokenize_fn(tokenizer, args.format, args.max_len,
                                  args.mask_prompt)
@@ -586,17 +732,41 @@ def main():
         data_collator=CausalCollator(tokenizer),
     )
 
-    trainer.train(resume_from_checkpoint=args.resume)
+    train_result = trainer.train(resume_from_checkpoint=args.resume)
 
     # ---- save -----------------------------------------------------------
     model.config.use_cache = True
     trainer.save_model(args.out)            # full weights OR adapter only
     tokenizer.save_pretrained(args.out)
 
+    eval_metrics = None
     if eval_ds is not None:
-        metrics = trainer.evaluate()
-        ppl = math.exp(metrics["eval_loss"]) if metrics["eval_loss"] < 20 else float("inf")
-        print(f"\neval_loss={metrics['eval_loss']:.4f}  perplexity={ppl:.2f}")
+        eval_metrics = trainer.evaluate()
+        ppl = (
+            math.exp(eval_metrics["eval_loss"])
+            if eval_metrics["eval_loss"] < 20
+            else float("inf")
+        )
+        print(
+            f"\neval_loss={eval_metrics['eval_loss']:.4f}  "
+            f"perplexity={ppl:.2f}"
+        )
+
+    results_path = save_training_results(
+        args.out,
+        args=args,
+        preset_key=preset_key,
+        train_count=len(train_ds),
+        eval_count=len(eval_ds) if eval_ds is not None else 0,
+        train_result=train_result,
+        log_history=trainer.state.log_history,
+        eval_metrics=eval_metrics,
+    )
+    m = json.loads(results_path.read_text())["metrics"]
+    print(f"\n--- scores ---")
+    print(f"loss_score   = {m['loss_score']}  (lower is better)")
+    print(f"result_score = {m['result_score']}  (0–100, higher is better)")
+    print(f"Saved to {results_path}")
 
     if args.mode in ("lora", "qlora"):
         merged = f"{args.out}-merged"
