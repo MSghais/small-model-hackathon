@@ -56,10 +56,13 @@ Local files: .json, .jsonl, .csv, .txt. Hub ids: any datasets repo.
 """
 
 import argparse
+import gc
 import math
 import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 from datasets import load_dataset
@@ -239,6 +242,13 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--bf16", action="store_true", default=None)
     p.add_argument("--gradient_checkpointing", action="store_true", default=True)
+    p.add_argument(
+        "--device",
+        type=str,
+        default=os.environ.get("FINETUNE_DEVICE", "auto"),
+        choices=["auto", "cpu", "cuda"],
+        help="Training device (default: auto; set FINETUNE_DEVICE=cpu to avoid GPU OOM)",
+    )
     p.add_argument("--resume", type=str, default=None)
     # merge mode
     p.add_argument("--merge", type=str, default=None,
@@ -340,18 +350,81 @@ class CausalCollator:
 # ----------------------------------------------------------------------------
 # Model loading for each mode
 # ----------------------------------------------------------------------------
+def _training_uses_cuda(args) -> bool:
+    if args.device == "cpu":
+        return False
+    if args.device == "cuda":
+        return True
+    return torch.cuda.is_available()
+
+
+def _gpu_memory_summary() -> str:
+    if not torch.cuda.is_available():
+        return "CUDA not available"
+    free, total = torch.cuda.mem_get_info()
+    alloc = torch.cuda.memory_allocated()
+    reserved = torch.cuda.memory_reserved()
+    return (
+        f"{free // 2**20} MiB free / {total // 2**20} MiB total "
+        f"(allocated {alloc // 2**20} MiB, reserved {reserved // 2**20} MiB)"
+    )
+
+
+def _validate_cuda_device(args) -> None:
+    if not _training_uses_cuda(args):
+        return
+    if torch.cuda.is_available():
+        return
+    raise SystemExit(
+        "CUDA training was requested (--device cuda or auto with a visible GPU) "
+        "but PyTorch cannot use the GPU.\n"
+        f"  torch.cuda.is_available() = False\n"
+        f"  torch.cuda.device_count() = {torch.cuda.device_count()}\n"
+        "Run `nvidia-smi` and check for driver errors (ERR! fields). "
+        "If the GPU is busy or broken, free it or reboot, then retry.\n"
+        "Fallback: pass --device cpu (slower, higher RAM use)."
+    )
+
+
+def clear_gpu_memory(*, reset_peak: bool = True) -> None:
+    """Release cached CUDA allocations before loading a model."""
+    gc.collect()
+    if not torch.cuda.is_available():
+        return
+    torch.cuda.empty_cache()
+    try:
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+    if reset_peak:
+        torch.cuda.reset_peak_memory_stats()
+    torch.cuda.synchronize()
+
+
+def _cuda_device_map() -> str | dict[str, int]:
+    """Keep weights on one GPU; avoid CPU offload on small cards."""
+    if torch.cuda.device_count() <= 1:
+        return {"": 0}
+    return "auto"
+
+
 def load_model_and_tokenizer(args):
     common = {"trust_remote_code": args.trust_remote_code}
     tokenizer = AutoTokenizer.from_pretrained(args.model, **common)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    bf16_ok = (args.bf16 if args.bf16 is not None
-               else torch.cuda.is_available()
-               and torch.cuda.is_bf16_supported())
+    use_cuda = _training_uses_cuda(args)
+    bf16_ok = (
+        args.bf16
+        if args.bf16 is not None
+        else use_cuda and torch.cuda.is_bf16_supported()
+    )
     dtype = torch.bfloat16 if bf16_ok else torch.float32
 
     if args.mode == "qlora":
+        if not use_cuda:
+            raise SystemExit("QLoRA requires CUDA. Use --mode lora with --device cpu.")
         from transformers import BitsAndBytesConfig
         bnb = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -360,14 +433,22 @@ def load_model_and_tokenizer(args):
             bnb_4bit_compute_dtype=torch.bfloat16 if bf16_ok else torch.float16,
         )
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, quantization_config=bnb, device_map="auto", **common)
+            args.model,
+            quantization_config=bnb,
+            device_map=_cuda_device_map(),
+            **common,
+        )
         from peft import prepare_model_for_kbit_training
         model = prepare_model_for_kbit_training(model)
     else:
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, torch_dtype=dtype,
-            device_map="auto" if torch.cuda.is_available() else None,
-            **common)
+            args.model,
+            dtype=dtype,
+            device_map=_cuda_device_map() if use_cuda else None,
+            **common,
+        )
+        if not use_cuda:
+            model.to("cpu")
 
     if args.mode in ("lora", "qlora"):
         from peft import LoraConfig, get_peft_model
@@ -438,10 +519,20 @@ def main():
         print(f"Preset: {preset_key}")
     print(f"Dataset: {args.dataset}")
     print(f"Output: {args.out}")
+    print(f"Device: {args.device}")
+
+    _validate_cuda_device(args)
+    if _training_uses_cuda(args):
+        print(f"GPU before cleanup: {_gpu_memory_summary()}")
+        clear_gpu_memory()
+        print(f"GPU after cleanup:  {_gpu_memory_summary()}")
 
     lr = args.lr or (2e-5 if args.mode == "full" else 2e-4)
 
     model, tokenizer, bf16_ok = load_model_and_tokenizer(args)
+
+    if _training_uses_cuda(args):
+        print(f"GPU after model load: {_gpu_memory_summary()}")
 
     ds = load_raw_dataset(args.dataset)
     ds = ds.shuffle(seed=args.seed)
@@ -474,7 +565,7 @@ def main():
         save_steps=500,
         save_total_limit=2,
         bf16=bf16_ok,
-        fp16=(not bf16_ok and torch.cuda.is_available()),
+        fp16=(not bf16_ok and _training_uses_cuda(args)),
         gradient_checkpointing=args.gradient_checkpointing,
         report_to="none",
         seed=args.seed,
@@ -521,7 +612,8 @@ def main():
                 tokenize=False, add_generation_prompt=True)
         else:
             text = prompt
-        ids = tokenizer(text, return_tensors="pt").to(model.device)
+        device = next(model.parameters()).device
+        ids = tokenizer(text, return_tensors="pt").to(device)
         out = model.generate(**ids, max_new_tokens=60, do_sample=True,
                              temperature=0.7,
                              pad_token_id=tokenizer.pad_token_id)
@@ -530,6 +622,10 @@ def main():
                                skip_special_tokens=True))
     except Exception as e:                  # smoke test is best-effort
         print(f"(sample generation skipped: {e})")
+
+    if _training_uses_cuda(args):
+        clear_gpu_memory()
+        print(f"GPU after training: {_gpu_memory_summary()}")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "torch>=2.5.0",
     "torchvision>=0.20.0",
+    "peft>=0.14.0",
     "transformers>=5.7.0",
 ]
 
