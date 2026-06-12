@@ -32,7 +32,10 @@ cp .env.example .env   # optional: edit model settings
 uv run --package gradio-space python -m gradio_space.app
 ```
 
-Open [http://localhost:7860](http://localhost:7860). Use the **Lesson slides** tab: enter a topic, grade, and slide count. The model loads on first generate.
+Open [http://localhost:7860](http://localhost:7860).
+
+- **Lesson slides** — topic, grade, slide count → downloadable PowerPoint
+- **Research Agent** — scrape/index sources into MemRAG, then ask questions offline with citations
 
 ## How it works
 
@@ -42,12 +45,20 @@ Open [http://localhost:7860](http://localhost:7860). Use the **Lesson slides** t
 4. **Trace** — JSON log saved under `outputs/traces/` for the Sharing is Caring badge
 
 ```text
-apps/gradio-space/   # Gradio tabs (Lesson slides + Chat debug)
+apps/gradio-space/   # Gradio tabs (Lesson slides, Research Agent, Chat debug)
 libs/agent/          # Skill agent runner, tools, trace recorder
+libs/researchmind/   # Scraper, chunk/embed, MemRAG SQLite store, retrieval
 libs/inference/      # Transformers + llama.cpp backends
-skills/              # SKILL.md task definitions
+skills/              # SKILL.md + references/ + scripts/ per task
 research/            # Fine-tune, ensemble experiments, agentic evals (optional)
 ```
+
+### ResearchMind (offline after ingest)
+
+1. **Skills** — `skills/scrape-web`, `scrape-pdf`, `extract-content`, `research-mind`
+2. **Ingest** — URL/PDF/DOCX or topic → (optional LLM URL suggest + confirm, or auto search) → chunk + embed → SQLite
+3. **Q&A** — local model + retrieved chunks with `[n]` citations (no network at chat time)
+4. **Memory** — persists under `RESEARCHMIND_DATA_DIR` (default `outputs/researchmind`)
 
 Optional research tooling (not required for the Space): see [research/USAGE.md](research/USAGE.md).
 
@@ -59,6 +70,9 @@ Optional research tooling (not required for the Space): see [research/USAGE.md](
 | `AGENT_OUTPUTS_DIR` | `/tmp/agent_outputs` | Generated `.pptx` files |
 | `AGENT_TRACES_DIR` | `outputs/traces` | Agent trace JSON |
 | `SKILLS_DIR` | `./skills` | Skill definitions root |
+| `RESEARCHMIND_DATA_DIR` | `outputs/researchmind` | MemRAG DB and raw snapshots |
+| `RESEARCHMIND_EMBED_MODEL` | `all-MiniLM-L6-v2` | Sentence embedding model |
+| `RESEARCHMIND_AUTO_SEARCH` | `false` | Default auto DuckDuckGo ingest |
 
 See [`.env.example`](.env.example) and [`models.yaml`](models.yaml) for model presets.
 

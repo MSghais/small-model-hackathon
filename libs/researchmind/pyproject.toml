@@ -1,7 +1,7 @@
 [project]
-name = "agent"
+name = "researchmind"
 version = "0.1.0"
-description = "Skill-based local agent loop for hackathon tasks"
+description = "Local scraper + RAG + MemRAG store for ResearchMind agent"
 readme = "README.md"
 authors = [
     { name = "MSGhais", email = "msghais135@gmail.com" }
@@ -9,17 +9,16 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "inference",
-    "researchmind",
-    "pillow>=10.0.0",
+    "ddgs>=9.0.0",
+    "googlesearch-python>=1.3.0",
+    "httpx>=0.28.0",
+    "numpy>=2.0.0",
     "pydantic>=2.0.0",
+    "pypdf>=5.0.0",
     "python-docx>=1.1.0",
-    "python-pptx>=1.0.0",
-    "pyyaml>=6.0.2",
+    "sentence-transformers>=3.0.0",
+    "trafilatura>=2.0.0",
 ]
-
-[tool.uv.sources]
-inference = { workspace = true }
-researchmind = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.8.13,<0.9.0"]

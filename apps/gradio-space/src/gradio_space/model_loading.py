@@ -1,5 +1,6 @@
 from inference.config import get_app_config, get_model_config
 from inference.factory import get_backend, reset_backend
+from inference.response_clean import strip_reasoning_output
 
 _app_config = get_app_config()
 _current_model_key: str | None = None
@@ -111,4 +112,5 @@ def chat(message: str, history: list, model_key: str) -> str:
 
     messages = _history_to_messages(history)
     messages.append({"role": "user", "content": message})
-    return get_backend(model_key).chat(messages)
+    reply = get_backend(model_key).chat(messages)
+    return strip_reasoning_output(reply)
