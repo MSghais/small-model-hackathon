@@ -57,3 +57,9 @@ def test_clean_model_answer_strips_reference_spam():
     assert "**References**" not in cleaned
     assert "[1][2][3]" not in cleaned
     assert "Summary here" in cleaned
+
+
+def test_clean_model_answer_strips_thinking_block():
+    raw = "``\n\nAgents use tools and memory [1]."
+    cleaned = clean_model_answer(raw)
+    assert cleaned == "Agents use tools and memory [1]."

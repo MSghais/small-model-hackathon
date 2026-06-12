@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from inference.response_clean import strip_reasoning_output
+
 from researchmind.store import StoredChunk
 
 _EXCERPT_LEN = 400
@@ -73,10 +75,12 @@ def format_references(citations: list[Citation]) -> str:
 
 
 def clean_model_answer(answer: str) -> str:
-    """Remove duplicate reference blocks and citation-number spam from model output."""
-    text = answer.strip()
+    """Remove thinking traces, duplicate references, and citation spam from model output."""
+    text = strip_reasoning_output(answer)
     if "**References**" in text:
         text = text.split("**References**", maxsplit=1)[0].rstrip()
+    if "\nReferences\n" in text:
+        text = text.split("\nReferences\n", maxsplit=1)[0].rstrip()
     text = _CITATION_RUN.sub("", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
