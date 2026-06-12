@@ -32,20 +32,26 @@ def retrieve(
         sim = float(np.dot(q_vec, emb))
         scored.append((sim, chunk))
 
+    max_chunks = cfg.max_context_chunks
     scored.sort(key=lambda x: x[0], reverse=True)
     selected: list[StoredChunk] = []
     seen_ids: set[str] = set()
 
     for _, chunk in scored[:k]:
+        if len(selected) >= max_chunks:
+            break
         if chunk.id not in seen_ids:
             selected.append(chunk)
             seen_ids.add(chunk.id)
-        if expand_neighbors:
-            for nid in store.get_neighbor_chunk_ids(chunk.id):
+        if expand_neighbors and len(selected) < max_chunks:
+            for nid in store.get_neighbor_chunk_ids(chunk.id)[:1]:
+                if len(selected) >= max_chunks:
+                    break
                 if nid not in seen_ids:
                     neighbors = store.get_chunks_by_ids([nid])
                     for n in neighbors:
                         selected.append(n)
                         seen_ids.add(n.id)
+                        break
 
-    return selected[: k + k]
+    return selected[:max_chunks]

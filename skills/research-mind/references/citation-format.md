@@ -1,6 +1,6 @@
 # Citation format
 
-- Inline citations use bracket numbers: `[1]`, `[2]`, …
-- Each number maps to a retrieved chunk in the context block.
-- End with a **References** list: title and source URI per citation.
-- If the context does not support an answer, say so — do not invent sources.
+- Context uses **one number per source document**: `[1]`, `[2]`, …
+- Cite inline sparingly (typically 1–3 markers per answer), not after every phrase.
+- Bracket numbers inside scraped paper text are not citation indices — ignore them.
+- Do not output long runs of `[1][2][3]…` or duplicate **References** lists.

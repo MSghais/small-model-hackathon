@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from researchmind.store import StoredChunk
+
+_EXCERPT_LEN = 400
+_PASSAGE_LEN = 700
+_CITATION_RUN = re.compile(r"(?:\[\d{1,4}\]\s*){3,}")
 
 
 @dataclass(frozen=True)
@@ -14,21 +19,45 @@ class Citation:
     excerpt: str
 
 
+def _clean_passage(text: str) -> str:
+    """Collapse long runs of in-text [n] markers from scraped papers."""
+    cleaned = _CITATION_RUN.sub("[…] ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) > _PASSAGE_LEN:
+        return cleaned[:_PASSAGE_LEN] + "…"
+    return cleaned
+
+
 def format_context_block(chunks: list[StoredChunk]) -> tuple[str, list[Citation]]:
+    """Build LLM context with one citation index per source document."""
+    groups: list[tuple[str, str, list[StoredChunk]]] = []
+    seen_uris: set[str] = set()
+    for chunk in chunks:
+        if chunk.doc_uri in seen_uris:
+            for uri, _title, group in groups:
+                if uri == chunk.doc_uri:
+                    group.append(chunk)
+                    break
+        else:
+            seen_uris.add(chunk.doc_uri)
+            groups.append((chunk.doc_uri, chunk.doc_title, [chunk]))
+
     citations: list[Citation] = []
     blocks: list[str] = []
-    for i, chunk in enumerate(chunks, start=1):
-        excerpt = chunk.text[:400] + ("..." if len(chunk.text) > 400 else "")
+    for i, (uri, title, doc_chunks) in enumerate(groups, start=1):
+        passages = [_clean_passage(c.text) for c in doc_chunks if c.text.strip()]
+        merged = "\n\n".join(passages)
+        excerpt = merged[:_EXCERPT_LEN] + ("..." if len(merged) > _EXCERPT_LEN else "")
         citations.append(
             Citation(
                 index=i,
-                chunk_id=chunk.id,
-                doc_title=chunk.doc_title,
-                doc_uri=chunk.doc_uri,
+                chunk_id=doc_chunks[0].id,
+                doc_title=title,
+                doc_uri=uri,
                 excerpt=excerpt,
             )
         )
-        blocks.append(f"[{i}] ({chunk.doc_title})\n{chunk.text}")
+        blocks.append(f"[{i}] **{title}**\n{uri}\n\n{merged}")
 
     context = "\n\n---\n\n".join(blocks)
     return context, citations

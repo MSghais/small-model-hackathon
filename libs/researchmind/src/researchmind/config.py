@@ -11,6 +11,7 @@ class ResearchMindConfig:
     embed_model: str
     auto_search: bool
     top_k: int
+    max_context_chunks: int
     chunk_size: int
     chunk_overlap: int
 
@@ -25,6 +26,7 @@ def get_config() -> ResearchMindConfig:
         auto_search=os.environ.get("RESEARCHMIND_AUTO_SEARCH", "false").lower()
         in ("1", "true", "yes"),
         top_k=int(os.environ.get("RESEARCHMIND_TOP_K", "5")),
+        max_context_chunks=int(os.environ.get("RESEARCHMIND_MAX_CONTEXT_CHUNKS", "8")),
         chunk_size=int(os.environ.get("RESEARCHMIND_CHUNK_SIZE", "512")),
         chunk_overlap=int(os.environ.get("RESEARCHMIND_CHUNK_OVERLAP", "128")),
     )
