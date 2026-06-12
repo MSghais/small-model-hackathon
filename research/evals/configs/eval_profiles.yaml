@@ -1,0 +1,160 @@
+# Eval profile catalog — match your model claim to a profile, then run with:
+#   slm-lm-eval --list-profiles
+#   slm-lm-eval --profile reasoning --preset minicpm5-1b --experiment-name my-run
+#
+# See research/evals/docs/eval_profiles.md for full guide.
+
+profiles:
+  smoke:
+    tool: slm-lm-eval
+    claim: Quick sanity check
+    description: Fast validation before a long run (2 tasks, capped samples).
+    config: lm_eval_smoke.yaml
+    tasks:
+      - arc_easy
+      - hellaswag
+
+  reasoning:
+    tool: slm-lm-eval
+    claim: Better reasoning
+    description: Math + commonsense + science QA (generation + multiple-choice).
+    config: lm_eval_reasoning.yaml
+    tasks:
+      - gsm8k
+      - arc_easy
+      - arc_challenge
+      - hellaswag
+
+  understanding:
+    tool: slm-lm-eval
+    claim: Better language understanding
+    description: NLU / reading comprehension (SuperGLUE-style multiple-choice).
+    config: lm_eval_understanding.yaml
+    tasks:
+      - boolq
+      - piqa
+      - copa
+      - rte
+
+  code:
+    tool: slm-lm-eval
+    claim: Better code generation
+    description: Python function synthesis (HumanEval + MBPP via lm-eval).
+    config: lm_eval_code.yaml
+    tasks:
+      - humaneval
+      - mbpp
+
+  instructions:
+    tool: slm-lm-eval
+    claim: Better instruction following
+    description: Verifiable instruction constraints (IFEval).
+    config: lm_eval_instructions.yaml
+    tasks:
+      - ifeval
+
+  general_slm:
+    tool: slm-lm-eval
+    claim: General ~1B SLM baseline
+    description: Balanced academic mix for before/after fine-tune on chat data.
+    config: lm_eval_minicpm5.yaml
+    tasks:
+      - arc_easy
+      - arc_challenge
+      - hellaswag
+      - piqa
+      - boolq
+      - gsm8k
+
+  compare_study:
+    tool: slm-lm-eval
+    claim: Baseline vs finetune comparison
+    description: Same tasks as general_slm with limit 100 for paired studies.
+    config: lm_eval_compare_study.yaml
+    tasks:
+      - arc_easy
+      - arc_challenge
+      - hellaswag
+      - piqa
+      - boolq
+      - gsm8k
+
+suites:
+  agentic_tool_use:
+    tool: slm-benchmark
+    claim: Tool use and function calling
+    description: BFCL + tau-bench for agents that call tools.
+    command: >-
+      uv run --package slm-evals slm-benchmark
+      --model <model> --benchmarks bfcl tau_bench --max-samples 50
+    benchmarks:
+      - bfcl
+      - tau_bench
+
+  agentic_gaia:
+    tool: slm-benchmark
+    claim: End-to-end assistant tasks
+    description: GAIA — multi-step reasoning with optional tools.
+    command: >-
+      uv run --package slm-evals slm-benchmark
+      --model <model> --benchmarks gaia --max-samples 20
+    benchmarks:
+      - gaia
+
+  agentic_code:
+    tool: slm-benchmark
+    claim: Real-world code repair
+    description: SWE-bench Verified patch generation (lightweight mode by default).
+    command: >-
+      uv run --package slm-evals slm-benchmark
+      --model <model> --benchmarks swe_bench --max-samples 10
+    benchmarks:
+      - swe_bench
+
+  agentic_all:
+    tool: slm-benchmark
+    claim: Full agentic suite
+    description: All four slm-benchmark benchmarks.
+    command: >-
+      uv run --package slm-evals slm-benchmark
+      --model <model> --benchmarks all --max-samples 50
+    benchmarks:
+      - bfcl
+      - tau_bench
+      - gaia
+      - swe_bench
+
+  jepa_selector:
+    tool: jepa_harness
+    claim: JEPA / draft selector quality
+    description: >-
+      Domain QA on benchmark-qa.jsonl; compares first vs random vs JEPA vs oracle
+      draft selection. Use for ensemble checkpoints, not base LLM alone.
+    command: >-
+      uv run --package ensemble python -m ensemble.eval.jepa_harness
+      --checkpoint ./models/ensemble/<name> --data research/data/benchmark-qa.jsonl
+
+  world_model:
+    tool: world_harness
+    claim: World model / energy-based planning
+    description: Energy-ranked draft selection on domain QA (world-model track).
+    command: >-
+      uv run --package ensemble python -m ensemble.eval.world_harness
+      --checkpoint ./models/ensemble/<name> --data research/data/benchmark-qa.jsonl
+
+external:
+  embeddings_mteb:
+    tool: mteb
+    claim: Better embeddings
+    description: MTEB, BEIR, STS — not wired in this repo; use embeddings-benchmark/mteb.
+    tasks_note: 56+ embedding tasks; requires a dedicated encoder model.
+
+  chat_judge:
+    tool: mt_bench_alpacaeval
+    claim: Chat / instruction quality (judge-based)
+    description: MT-Bench, AlpacaEval — require LLM-as-judge APIs; not in slm-lm-eval.
+
+  rl_envs:
+    tool: babyai_minigrid
+    claim: Embodied planning
+    description: BabyAI, MiniGrid — separate RL env evals; not integrated here.

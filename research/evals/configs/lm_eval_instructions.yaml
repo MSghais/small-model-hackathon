@@ -1,0 +1,18 @@
+# Instruction following profile — IFEval (verifiable constraints)
+# Run: slm-lm-eval --profile instructions --preset minicpm5-1b
+# Requires lm-eval extras; install with: uv sync --group lm-eval
+
+profile: instructions
+claim: Better instruction following
+
+tasks:
+  - ifeval
+
+num_fewshot: 0
+limit: 100
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval

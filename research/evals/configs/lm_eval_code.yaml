@@ -1,0 +1,19 @@
+# Code generation profile — HumanEval + MBPP
+# Run: slm-lm-eval --profile code --preset minicpm5-1b-lesson-lora
+# Note: small models often score low; use --limit 25 for smoke tests.
+
+profile: code
+claim: Better code generation
+
+tasks:
+  - humaneval
+  - mbpp
+
+num_fewshot: 0
+limit: 50
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval

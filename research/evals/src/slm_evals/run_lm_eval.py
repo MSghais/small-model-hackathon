@@ -26,6 +26,11 @@ import yaml
 # Register custom ensemble backend before simple_evaluate().
 import slm_evals.lm_eval.ensemble_lm  # noqa: F401
 from slm_evals.lm_eval.preset_resolver import resolve_model_spec
+from slm_evals.lm_eval.profiles import (
+    config_path_for_profile,
+    format_lm_eval_tasks,
+    format_profiles_table,
+)
 
 
 def _ensure_lm_eval_models_registered() -> None:
@@ -52,7 +57,40 @@ _METRIC_PRIORITY = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run lm-evaluation-harness benchmarks via slm-evals"
+        description="Run lm-evaluation-harness benchmarks via slm-evals",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Profiles: slm-lm-eval --list-profiles\n"
+            "          slm-lm-eval --profile reasoning --preset minicpm5-1b\n"
+            "All tasks: slm-lm-eval --list-tasks (requires uv sync --group lm-eval)"
+        ),
+    )
+    parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="Show claim-matched lm-eval profiles and other eval suites",
+    )
+    parser.add_argument(
+        "--list-profiles-all",
+        action="store_true",
+        help="Like --list-profiles but include agentic suites and external notes",
+    )
+    parser.add_argument(
+        "--list-tasks",
+        action="store_true",
+        help="List lm-eval task names (from harness, or catalog fallback)",
+    )
+    parser.add_argument(
+        "--list-tasks-all",
+        action="store_true",
+        help="List all lm-eval task names (can be long)",
+    )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Shorthand for --config (e.g. reasoning, understanding, code, smoke)",
     )
     parser.add_argument("--config", type=str, default=None, help="YAML config path")
     parser.add_argument("--preset", type=str, default=None, help="models.yaml preset key")
@@ -108,8 +146,13 @@ def load_lm_eval_config(path: str) -> dict[str, Any]:
 
 def merge_config(args: argparse.Namespace) -> dict[str, Any]:
     cfg: dict[str, Any] = {}
-    if args.config:
-        cfg = load_lm_eval_config(args.config)
+    config_path = args.config
+    if args.profile:
+        if config_path:
+            raise SystemExit("Pass only one of --profile or --config, not both.")
+        config_path = str(config_path_for_profile(args.profile))
+    if config_path:
+        cfg = load_lm_eval_config(config_path)
 
     if args.tasks:
         cfg["tasks"] = args.tasks
@@ -265,6 +308,20 @@ def compare_results(
 
 def main() -> int:
     args = parse_args()
+
+    if args.list_profiles or args.list_profiles_all:
+        print(
+            format_profiles_table(
+                include_suites=args.list_profiles_all,
+                include_external=args.list_profiles_all,
+            )
+        )
+        return 0
+
+    if args.list_tasks or args.list_tasks_all:
+        print(format_lm_eval_tasks(limit=0 if args.list_tasks_all else 80))
+        return 0
+
     cfg = merge_config(args)
 
     if not cfg.get("preset") and not cfg.get("model_path"):

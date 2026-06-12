@@ -1,0 +1,20 @@
+# Language understanding profile — NLU / reading comprehension
+# Run: slm-lm-eval --profile understanding --preset minicpm5-1b
+
+profile: understanding
+claim: Better language understanding
+
+tasks:
+  - boolq
+  - piqa
+  - copa
+  - rte
+
+num_fewshot: 0
+limit: 100
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval
