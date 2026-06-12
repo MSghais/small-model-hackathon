@@ -81,6 +81,7 @@ import gc
 import json
 import math
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -295,6 +296,23 @@ def parse_args():
     # merge mode
     p.add_argument("--merge", type=str, default=None,
                    help="path to a LoRA adapter dir to merge into its base model")
+    p.add_argument(
+        "--lm-eval-after",
+        action="store_true",
+        help="run slm-lm-eval on the saved checkpoint after training",
+    )
+    p.add_argument(
+        "--lm-eval-config",
+        type=str,
+        default=str(_REPO_ROOT / "research/evals/configs/lm_eval_smoke.yaml"),
+        help="YAML config for post-training lm-eval (default: lm_eval_smoke.yaml)",
+    )
+    p.add_argument(
+        "--lm-eval-baseline",
+        type=str,
+        default=None,
+        help="optional baseline preset key; runs lm-eval on base model and compares",
+    )
     return p.parse_args()
 
 
@@ -632,6 +650,74 @@ def merge_adapter(adapter_dir, out_dir):
     print(f"Merged model saved to {out_dir}")
 
 
+def run_post_lm_eval(
+    *,
+    checkpoint_path: str,
+    config_path: str,
+    experiment_name: str,
+    baseline_preset: str | None = None,
+    adapter_path: str | None = None,
+) -> dict | None:
+    """Run slm-lm-eval via subprocess; return paths written under post_eval."""
+    baseline_results: Path | None = None
+    if baseline_preset:
+        baseline_name = f"{baseline_preset}__lm-eval-baseline"
+        baseline_cmd = [
+            "uv",
+            "run",
+            "--package",
+            "slm-evals",
+            "slm-lm-eval",
+            "--config",
+            config_path,
+            "--preset",
+            baseline_preset,
+            "--experiment-name",
+            baseline_name,
+        ]
+        print(f"\n--- lm-eval baseline ({baseline_preset}) ---")
+        subprocess.run(baseline_cmd, cwd=_REPO_ROOT, check=False)
+        baseline_results = (
+            _REPO_ROOT / "results" / "lm_eval" / baseline_name / "results.json"
+        )
+
+    cmd = [
+        "uv",
+        "run",
+        "--package",
+        "slm-evals",
+        "slm-lm-eval",
+        "--config",
+        config_path,
+        "--model",
+        checkpoint_path,
+        "--experiment-name",
+        experiment_name,
+    ]
+    if adapter_path:
+        cmd.extend(["--adapter", adapter_path])
+    if baseline_results and baseline_results.is_file():
+        cmd.extend(["--compare-to", str(baseline_results)])
+
+    print(f"\n--- lm-eval candidate ({experiment_name}) ---")
+    proc = subprocess.run(cmd, cwd=_REPO_ROOT, check=False)
+    out_root = _REPO_ROOT / "results" / "lm_eval" / experiment_name
+    post_eval = {
+        "experiment_name": experiment_name,
+        "config": config_path,
+        "checkpoint_path": checkpoint_path,
+        "adapter_path": adapter_path,
+        "baseline_preset": baseline_preset,
+        "results_json": str(out_root / "results.json"),
+        "summary_md": str(out_root / "summary.md"),
+        "comparison_md": str(out_root / "comparison.md")
+        if (out_root / "comparison.md").is_file()
+        else None,
+        "exit_code": proc.returncode,
+    }
+    return post_eval if proc.returncode == 0 else post_eval
+
+
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
@@ -799,6 +885,29 @@ def main():
                                skip_special_tokens=True))
     except Exception as e:                  # smoke test is best-effort
         print(f"(sample generation skipped: {e})")
+
+    if args.lm_eval_after:
+        exp_name = f"{Path(args.out).name}__lm-eval-posttrain"
+        if args.mode in ("lora", "qlora"):
+            post_eval = run_post_lm_eval(
+                checkpoint_path=args.model,
+                config_path=args.lm_eval_config,
+                experiment_name=exp_name,
+                baseline_preset=args.lm_eval_baseline or preset_key,
+                adapter_path=args.out,
+            )
+        else:
+            post_eval = run_post_lm_eval(
+                checkpoint_path=args.out,
+                config_path=args.lm_eval_config,
+                experiment_name=exp_name,
+                baseline_preset=args.lm_eval_baseline or preset_key,
+            )
+        if post_eval:
+            payload = json.loads(results_path.read_text())
+            payload["post_eval"] = post_eval
+            results_path.write_text(json.dumps(payload, indent=2))
+            print(f"Appended post_eval to {results_path}")
 
     if _training_uses_cuda(args):
         clear_gpu_memory()

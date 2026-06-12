@@ -27,6 +27,16 @@ import yaml
 import slm_evals.lm_eval.ensemble_lm  # noqa: F401
 from slm_evals.lm_eval.preset_resolver import resolve_model_spec
 
+
+def _ensure_lm_eval_models_registered() -> None:
+    """Import lm-eval model backends so registry includes hf and ensemble-lm."""
+    import lm_eval.models  # noqa: F401 — registers bundled backends when available
+
+    try:
+        import lm_eval.models.huggingface  # noqa: F401
+    except ImportError:
+        pass
+
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _DEFAULT_OUTPUT = _REPO_ROOT / "results" / "lm_eval"
 
@@ -281,6 +291,8 @@ def main() -> int:
             file=sys.stderr,
         )
         raise SystemExit(1) from exc
+
+    _ensure_lm_eval_models_registered()
 
     seed = int(cfg.get("seed", 42))
     eval_results = lm_eval.simple_evaluate(

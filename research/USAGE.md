@@ -14,12 +14,13 @@ The Lesson Agent app lives in `apps/gradio-space/` — see root [USAGE.md](../US
 
 ```bash
 # All research tooling
-uv sync --group finetune --group ensemble --group evals
+uv sync --group finetune --group ensemble --group evals --group lm-eval
 
 # Or one at a time
 uv sync --group finetune
 uv sync --group ensemble
 uv sync --group evals
+uv sync --group lm-eval
 ```
 
 | Group | Package / script | What it adds |
@@ -27,6 +28,7 @@ uv sync --group evals
 | `finetune` | `research/finetune.py` | `peft`, `datasets`, `bitsandbytes` (QLoRA) |
 | `ensemble` | `ensemble` workspace member | JEPA / world-model ensemble + harnesses |
 | `evals` | `slm-evals` workspace member | `slm-benchmark` CLI |
+| `lm-eval` | `slm-evals[lm-eval]` | `slm-lm-eval` CLI (GSM8K, ARC, HellaSwag, …) |
 
 ---
 
@@ -190,6 +192,46 @@ Full reference: [evals/USAGE.md](evals/USAGE.md).
 
 ---
 
+## 4. Academic benchmarks (`slm-lm-eval`)
+
+Standard lm-evaluation-harness tasks (ARC, HellaSwag, GSM8K, …) for base presets, LoRA adapters, merged checkpoints, and ensemble manifests.
+
+Install: `uv sync --group lm-eval`
+
+```bash
+# Smoke (25 samples, arc_easy + hellaswag)
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_smoke.yaml \
+  --preset minicpm5-1b \
+  --experiment-name minicpm5-1b__smoke
+
+# Full profile
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_minicpm5.yaml \
+  --preset minicpm5-1b-lesson-lora \
+  --experiment-name minicpm5-1b-lora__v1 \
+  --compare-to results/lm_eval/minicpm5-1b__baseline/results.json
+
+# Ensemble checkpoint
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_smoke.yaml \
+  --model ./models/ensemble/jepa-lesson-pretrain \
+  --experiment-name ensemble-jepa__lm-eval
+```
+
+Post-training hook:
+
+```bash
+uv run python research/finetune.py \
+  --preset minicpm5-1b --mode lora --max_steps 50 \
+  --lm-eval-after \
+  --lm-eval-baseline minicpm5-1b
+```
+
+Full reference: [evals/USAGE.md](evals/USAGE.md#lm-evaluation-harness-slm-lm-eval).
+
+---
+
 ## Shared data (`research/data/`)
 
 | File | Used by | Format |
@@ -202,28 +244,46 @@ Full reference: [evals/USAGE.md](evals/USAGE.md).
 
 ## Suggested end-to-end pipeline
 
-1. **Baseline eval** — score the base preset before training:
+1. **Baseline lm-eval** — academic benchmarks on the base preset (pinned seed):
+   ```bash
+   uv run --package slm-evals slm-lm-eval \
+     --config research/evals/configs/lm_eval_compare_study.yaml \
+     --preset minicpm5-1b \
+     --experiment-name minicpm5-1b__baseline
+   ```
+
+2. **Baseline agentic eval** (optional):
    ```bash
    uv run --package slm-evals slm-benchmark \
      --model openbmb/MiniCPM5-1B --benchmarks bfcl --max-samples 50
    ```
 
-2. **Fine-tune** on lesson data:
+3. **Fine-tune** on lesson data:
    ```bash
    uv run python research/finetune.py --preset minicpm5-1b --mode lora --epochs 1
    ```
 
-3. **Re-eval** the merged or adapter-backed checkpoint:
+4. **Re-eval candidate** with the same lm-eval config:
    ```bash
-   uv run --package slm-evals slm-benchmark \
-     --model ./models/finetuned/minicpm5-1b-lora \
-     --benchmarks bfcl tau_bench --max-samples 50
+   uv run --package slm-evals slm-lm-eval \
+     --config research/evals/configs/lm_eval_compare_study.yaml \
+     --preset minicpm5-1b-lesson-lora \
+     --experiment-name minicpm5-1b-lora__v1 \
+     --compare-to results/lm_eval/minicpm5-1b__baseline/results.json
    ```
 
-4. **Optional** — probe ensemble ideas on the same QA/KB files:
+5. **Optional** — probe ensemble ideas on the same QA/KB files:
    ```bash
    bash research/ensemble/scripts/smoke.sh
    ```
+
+### Verification checklist
+
+- Use the **same** lm-eval YAML (`tasks`, `num_fewshot`, `limit`, `seed`) for baseline and candidate runs.
+- Compare lm-eval `results.json` files with `--compare-to`; do not compare `training_results.json` `result_score` to lm-eval accuracy.
+- For LoRA checkpoints, prefer `--preset minicpm5-1b-lesson-lora` (base + adapter) over passing the adapter dir alone to `--model`.
+- Report mean ± std only after multiple training seeds; single-seed deltas are indicative, not conclusive.
+- Ensemble `loglikelihood` tasks score the underlying LLM head; generative tasks (`gsm8k`) use the full JEPA+RAG stack.
 
 ---
 
@@ -233,6 +293,7 @@ Full reference: [evals/USAGE.md](evals/USAGE.md).
 | ------- | --- |
 | `No module named 'ensemble'` | `uv sync --group ensemble` |
 | `slm-benchmark: command not found` | `uv sync --group evals` |
+| `slm-lm-eval: command not found` | `uv sync --group lm-eval` |
 | CUDA OOM during finetune | Use `--mode qlora` or reduce batch size in script args |
 | BFCL / GAIA download slow | Set `max_samples` low first; cache HF datasets under `~/.cache/huggingface` |
 | SWE-bench Docker errors | Keep `full_eval: false` in YAML unless `swebench` + Docker are installed |

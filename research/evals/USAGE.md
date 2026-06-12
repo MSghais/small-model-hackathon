@@ -12,7 +12,13 @@ From the repo root:
 uv sync --group evals
 ```
 
-This installs the `slm-evals` workspace package and registers the `slm-benchmark` console script.
+For academic benchmarks (lm-evaluation-harness):
+
+```bash
+uv sync --group lm-eval
+```
+
+This installs the `slm-evals` workspace package and registers the `slm-benchmark` and `slm-lm-eval` console scripts.
 
 ## Quick start
 
@@ -139,6 +145,122 @@ See [docs/benchmarks.md](docs/benchmarks.md) for scoring semantics.
 
 ---
 
+## lm-evaluation-harness (`slm-lm-eval`)
+
+Run standard academic benchmarks (ARC, HellaSwag, PIQA, BoolQ, GSM8K) via [EleutherAI lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness).
+
+Install: `uv sync --group lm-eval`
+
+### Quick start
+
+```bash
+# Smoke profile (25 samples)
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_smoke.yaml \
+  --preset minicpm5-1b \
+  --experiment-name minicpm5-1b__smoke
+
+# LoRA adapter via preset (base + peft resolved automatically)
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_minicpm5.yaml \
+  --preset minicpm5-1b-lesson-lora \
+  --experiment-name minicpm5-1b-lora__v1
+
+# Explicit base + adapter
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_smoke.yaml \
+  --model openbmb/MiniCPM5-1B \
+  --adapter ./models/finetuned/minicpm5-1b-lora \
+  --experiment-name minicpm5-1b-lora__manual
+
+# Ensemble checkpoint (manifest.json auto-detected)
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_smoke.yaml \
+  --model ./models/ensemble/jepa-lesson-pretrain \
+  --experiment-name ensemble-jepa__lm-eval
+```
+
+### Compare baseline vs candidate
+
+Use the **same config** for both runs; only change `--preset` / `--experiment-name`:
+
+```bash
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_compare_study.yaml \
+  --preset minicpm5-1b \
+  --experiment-name minicpm5-1b__baseline
+
+uv run --package slm-evals slm-lm-eval \
+  --config research/evals/configs/lm_eval_compare_study.yaml \
+  --preset minicpm5-1b-lesson-lora \
+  --experiment-name minicpm5-1b-lora__v1 \
+  --compare-to results/lm_eval/minicpm5-1b__baseline/results.json
+```
+
+### Config templates
+
+| File | Purpose |
+| ---- | ------- |
+| `configs/lm_eval_smoke.yaml` | Fast validation (`limit: 25`, 2 tasks) |
+| `configs/lm_eval_minicpm5.yaml` | Full ~1B SLM profile (6 tasks) |
+| `configs/lm_eval_compare_study.yaml` | Baseline vs finetune comparison defaults |
+
+| Key | Description |
+| --- | ----------- |
+| `tasks` | lm-eval task names (e.g. `arc_easy`, `gsm8k`) |
+| `num_fewshot` | Few-shot count (gsm8k may use task default 8) |
+| `limit` | Max samples per task; `null` = full split |
+| `seed` | Random seed (applied to all lm-eval RNGs) |
+| `batch_size` | `auto` or integer |
+| `device` | `auto`, `cpu`, `cuda`, … |
+| `dtype` | `bfloat16`, `float16`, `int4`, … |
+| `trust_remote_code` | Required for MiniCPM / Gemma presets |
+| `output_dir` | Root for runs (default `results/lm_eval`) |
+
+### CLI reference
+
+```
+slm-lm-eval [OPTIONS]
+
+--config PATH           YAML config (tasks, seed, limit, …)
+--preset KEY            models.yaml preset (base, LoRA, merged, ensemble)
+--model PATH            HF Hub id, merged dir, or ensemble checkpoint
+--adapter PATH          LoRA adapter (alternative to preset adapter_path)
+--tasks NAMES           Override task list
+--num-fewshot N
+--limit N               Cap samples per task
+--seed N
+--batch-size VALUE
+--device MAP
+--dtype TYPE
+--output-dir DIR        Default: results/lm_eval
+--experiment-name TAG   Run folder name
+--compare-to PATH       Baseline results.json for delta table
+```
+
+### Results
+
+Each run writes to `<output_dir>/<experiment_name>/`:
+
+| File | Contents |
+| ---- | -------- |
+| `results.json` | lm-eval native payload + `run_meta` |
+| `summary.md` | Task → metric table |
+| `run_meta.json` | Preset, base model, adapter, tasks, seed |
+| `comparison.md` | Delta table (when `--compare-to` set) |
+
+### Ensemble backend notes
+
+- **`ensemble-lm`** loads JEPA checkpoints via `manifest.json`.
+- **`generate_until`** tasks (e.g. `gsm8k`) use the full ensemble stack (`generate_text`).
+- **`loglikelihood`** tasks (e.g. `arc_easy`, `hellaswag`) score the underlying HF LLM head (adapter 0), not the JEPA selector. Use [`jepa_harness`](../ensemble/README.md) to measure selector value on domain QA.
+
+### PEFT / LoRA
+
+lm-eval expects `pretrained=<base>,peft=<adapter>`. The preset resolver handles this for keys like `minicpm5-1b-lesson-lora`. Merged checkpoints use `--preset minicpm5-1b-lesson-merged` or `--model ./models/finetuned/...-merged`.
+
+---
+
 ## Adding a custom benchmark
 
 1. Create `src/slm_evals/benchmarks/my_bench.py` subclassing `BaseBenchmark`:
@@ -211,6 +333,8 @@ uv run --package slm-evals slm-benchmark \
 
 | Path | Role |
 | ---- | ---- |
-| `slm-benchmark` | Preferred CLI (from `pyproject.toml` scripts) |
-| `python -m slm_evals.run_benchmark` | Same `main()` |
+| `slm-benchmark` | Agentic benchmarks (BFCL, τ-bench, GAIA, SWE) |
+| `slm-lm-eval` | Academic benchmarks via lm-evaluation-harness |
+| `python -m slm_evals.run_benchmark` | Same as `slm-benchmark` |
+| `python -m slm_evals.run_lm_eval` | Same as `slm-lm-eval` |
 | `research/evals/run_benchmark.py` | Thin shim for backward compatibility |
