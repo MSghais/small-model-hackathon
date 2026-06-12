@@ -7,19 +7,19 @@ todos:
     status: completed
   - id: preset-resolver
     content: Implement preset_resolver.py mapping models.yaml presets to lm-eval model_args (base, LoRA, merged)
-    status: in_progress
+    status: completed
   - id: ensemble-lm-backend
     content: Implement ensemble-lm custom LM class (generate_until + loglikelihood via underlying HF LLM)
-    status: pending
+    status: completed
   - id: slm-lm-eval-cli
     content: Build run_lm_eval.py CLI with YAML config, simple_evaluate(), results + summary.md + --compare-to
-    status: pending
+    status: completed
   - id: lm-eval-configs
     content: Add lm_eval_minicpm5.yaml, lm_eval_smoke.yaml, lm_eval_compare_study.yaml under research/evals/configs/
-    status: pending
+    status: completed
   - id: docs-workflows
     content: Document finetune + ensemble lm-eval workflows in research/evals/USAGE.md and research/USAGE.md
-    status: pending
+    status: in_progress
   - id: finetune-hook
     content: "Optional: add --lm-eval-after to finetune.py after CLI smoke tests pass"
     status: pending

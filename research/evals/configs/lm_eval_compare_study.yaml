@@ -1,0 +1,42 @@
+# configs/lm_eval_compare_study.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared settings for baseline vs finetuned comparisons.
+# Use the SAME config for both runs; only change --preset / --experiment-name.
+#
+# Baseline:
+#   uv run --package slm-evals slm-lm-eval \
+#     --config research/evals/configs/lm_eval_compare_study.yaml \
+#     --preset minicpm5-1b \
+#     --experiment-name minicpm5-1b__baseline
+#
+# Candidate (after finetune):
+#   uv run --package slm-evals slm-lm-eval \
+#     --config research/evals/configs/lm_eval_compare_study.yaml \
+#     --preset minicpm5-1b-lesson-lora \
+#     --experiment-name minicpm5-1b-lora__v1 \
+#     --compare-to results/lm_eval/minicpm5-1b__baseline/results.json
+# ─────────────────────────────────────────────────────────────────────────────
+
+study:
+  baseline_preset: minicpm5-1b
+  candidate_preset: minicpm5-1b-lesson-lora
+  notes: >
+    Keep tasks, num_fewshot, limit, and seed identical across runs.
+    Do not compare training_results.json result_score to lm-eval accuracy.
+
+tasks:
+  - arc_easy
+  - arc_challenge
+  - hellaswag
+  - piqa
+  - boolq
+  - gsm8k
+
+num_fewshot: 5
+limit: 100
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval
