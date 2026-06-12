@@ -90,13 +90,16 @@ class HFBackend(LLMBackend):
 
     @torch.no_grad()
     def generate(self, ids, n_new=64, temperature=0.8):
-        out = self.model.generate(
+        gen_kwargs: dict = dict(
             input_ids=ids.to(self.device_),
             max_new_tokens=n_new,
-            do_sample=True,
-            temperature=temperature,
             pad_token_id=self.tokenizer.pad_token_id,
         )
+        if temperature <= 0:
+            gen_kwargs["do_sample"] = False
+        else:
+            gen_kwargs.update(do_sample=True, temperature=temperature)
+        out = self.model.generate(**gen_kwargs)
         return out
 
     def encode_text(self, text: str):
@@ -205,6 +208,71 @@ class TinyBackend(LLMBackend):
 def make_backend(llm: str, **kw) -> LLMBackend:
     """'tiny' -> toy model; anything else -> HF hub id or local path."""
     return TinyBackend() if llm == "tiny" else HFBackend(llm, **kw)
+
+
+def load_hf_backend_from_checkpoint(
+    base_llm: str,
+    adapter_dir: str | None,
+    *,
+    adapter_names: tuple[str, ...] = ("general",),
+    device: str | None = None,
+    load_in_4bit: bool = False,
+    lora_r: int = 16,
+    lora_alpha: int = 32,
+) -> HFBackend:
+    """Load a frozen base LM + saved PEFT adapters (ensemble checkpoint llm/)."""
+    from peft import LoraConfig, PeftModel, get_peft_model
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    tokenizer = AutoTokenizer.from_pretrained(adapter_dir or base_llm)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    kwargs: dict = {}
+    if load_in_4bit:
+        from transformers import BitsAndBytesConfig
+
+        kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+        )
+    elif resolved_device != "cpu":
+        kwargs["torch_dtype"] = torch.bfloat16
+
+    base = AutoModelForCausalLM.from_pretrained(base_llm, **kwargs)
+    if not load_in_4bit and resolved_device != "cpu":
+        base.to(resolved_device)
+    for p in base.parameters():
+        p.requires_grad_(False)
+
+    if adapter_dir:
+        model = PeftModel.from_pretrained(base, adapter_dir, is_trainable=False)
+        adapters = set(adapter_names)
+    else:
+        lora_cfg = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=0.05,
+            target_modules=["q_proj", "v_proj"],
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(base, lora_cfg, adapter_name="general")
+        adapters = {"general"}
+
+    backend = HFBackend.__new__(HFBackend)
+    nn.Module.__init__(backend)
+    backend.device_ = torch.device(resolved_device)
+    backend.tokenizer = tokenizer
+    backend.model = model
+    backend._lora_cfg = None
+    backend._adapters = adapters
+    backend.vocab_size = model.config.vocab_size
+    backend.hidden_size = model.config.hidden_size
+    if adapter_names:
+        backend.set_adapter(adapter_names[0])
+    return backend
 
 
 class TinyLLM(nn.Module):

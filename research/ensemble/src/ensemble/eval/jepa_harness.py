@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from ensemble.eval.metrics import em_score, f1_score, paired_bootstrap
+from ensemble.checkpoint import load_checkpoint
 from ensemble.jepa_ensemble import Ensemble
 
 
@@ -95,11 +96,11 @@ def run(args):
     torch.manual_seed(args.seed)
     rng = random.Random(args.seed)
 
-    ens = Ensemble(llm=args.llm)
     if args.ckpt:
-        state = torch.load(args.ckpt, map_location="cpu")
-        ens.load_state_dict(state, strict=False)
+        ens = load_checkpoint(args.ckpt)
         print(f"loaded ensemble checkpoint: {args.ckpt}")
+    else:
+        ens = Ensemble(llm=args.llm)
 
     is_text = args.llm != "tiny"
 

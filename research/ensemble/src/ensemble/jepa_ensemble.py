@@ -21,10 +21,11 @@ class Ensemble(nn.Module):
         adapter_names=("general",),
         d_emb: int = 64,
         d_jepa: int = 64,
+        llm_backend: HFBackend | None = None,
         **backend_kw,
     ):
         super().__init__()
-        self.llm = make_backend(llm, **backend_kw)
+        self.llm = llm_backend if llm_backend is not None else make_backend(llm, **backend_kw)
         V, H = self.llm.vocab_size, self.llm.hidden_size
 
         self.emb = Embedder(V, d_emb)
@@ -39,7 +40,14 @@ class Ensemble(nn.Module):
         self.router = Router(d_emb, len(self.adapter_names))
 
     @torch.no_grad()
-    def answer_ids(self, query_ids, n_new=32, tau_consistency=0.0, max_retries=2):
+    def answer_ids(
+        self,
+        query_ids,
+        n_new=32,
+        tau_consistency=0.0,
+        max_retries=2,
+        temperature: float = 0.7,
+    ):
         q_emb = self.emb(query_ids.cpu())
         a_idx = self.router(q_emb).item()
         self.llm.set_adapter(self.adapter_names[a_idx])
@@ -55,10 +63,11 @@ class Ensemble(nn.Module):
 
         best = None
         for attempt in range(max_retries + 1):
+            temp = temperature if attempt == 0 else max(temperature, 0.8 + 0.3 * attempt)
             draft = self.llm.generate(
                 ctx.to(self.llm.device),
                 n_new=n_new,
-                temperature=0.8 + 0.3 * attempt,
+                temperature=temp,
             )
             new_part = draft[:, ctx.size(1) :].cpu()
             score = F.cosine_similarity(
@@ -75,6 +84,24 @@ class Ensemble(nn.Module):
         ids = self.llm.encode_text(prompt)
         out, score, adapter, retries = self.answer_ids(ids, **kw)
         return self.llm.decode(out), score, adapter, retries
+
+    def generate_text(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int = 512,
+        temperature: float = 0.0,
+    ) -> str:
+        """Greedy or sampled generation through the full ensemble stack."""
+        ids = self.llm.encode_text(prompt)
+        out, _, _, _ = self.answer_ids(
+            ids,
+            n_new=max_new_tokens,
+            tau_consistency=-1.0,
+            max_retries=0 if temperature <= 0 else 1,
+            temperature=temperature,
+        )
+        return self.llm.decode(out)
 
     def memorize_ids(self, ids):
         self.store.add(self.emb(ids.cpu()), ids.cpu())

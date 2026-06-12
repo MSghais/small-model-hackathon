@@ -8,7 +8,7 @@ from typing import Any
 
 import torch
 
-from ensemble.backends import HFBackend, TinyBackend, make_backend
+from ensemble.backends import TinyBackend, load_hf_backend_from_checkpoint
 from ensemble.jepa_ensemble import Ensemble
 
 MANIFEST_FILE = "manifest.json"
@@ -92,7 +92,9 @@ def load_checkpoint(
     root = Path(ckpt_dir).resolve()
     manifest_path = root / MANIFEST_FILE
     if not manifest_path.is_file():
-        raise FileNotFoundError(f"Not an ensemble checkpoint (missing {MANIFEST_FILE}): {root}")
+        raise FileNotFoundError(
+            f"Not an ensemble checkpoint (missing {MANIFEST_FILE}): {root}"
+        )
 
     with open(manifest_path) as f:
         manifest = json.load(f)
@@ -110,17 +112,25 @@ def load_checkpoint(
             d_emb=d_emb,
             d_jepa=d_jepa,
         )
-        tiny_state = torch.load(root / TINY_LLM_FILE, map_location="cpu", weights_only=True)
+        tiny_state = torch.load(
+            root / TINY_LLM_FILE, map_location="cpu", weights_only=True
+        )
         ens.llm.load_state_dict(tiny_state)
     else:
-        ens = _load_hf_ensemble(
-            root,
-            base_llm=base_llm,
+        llm_dir = root / LLM_DIR
+        llm_backend = load_hf_backend_from_checkpoint(
+            base_llm,
+            str(llm_dir) if llm_dir.is_dir() else None,
+            adapter_names=adapter_names,
+            device=device,
+            load_in_4bit=load_in_4bit,
+        )
+        ens = Ensemble(
+            llm=base_llm,
             adapter_names=adapter_names,
             d_emb=d_emb,
             d_jepa=d_jepa,
-            device=device,
-            load_in_4bit=load_in_4bit,
+            llm_backend=llm_backend,
         )
 
     aux = torch.load(root / AUX_FILE, map_location="cpu", weights_only=True)
@@ -136,64 +146,4 @@ def load_checkpoint(
         ens.store.values = list(store["values"])
 
     ens.eval()
-    return ens
-
-
-def _load_hf_ensemble(
-    root: Path,
-    *,
-    base_llm: str,
-    adapter_names: tuple[str, ...],
-    d_emb: int,
-    d_jepa: int,
-    device: str | None,
-    load_in_4bit: bool,
-) -> Ensemble:
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
-    llm_dir = root / LLM_DIR
-    resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        llm_dir if llm_dir.is_dir() else base_llm
-    )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    kwargs: dict[str, Any] = {}
-    if load_in_4bit:
-        from transformers import BitsAndBytesConfig
-
-        kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
-        )
-    elif resolved_device != "cpu":
-        kwargs["torch_dtype"] = torch.bfloat16
-
-    base = AutoModelForCausalLM.from_pretrained(base_llm, **kwargs)
-    if not load_in_4bit and resolved_device != "cpu":
-        base.to(resolved_device)
-
-    if llm_dir.is_dir():
-        model = PeftModel.from_pretrained(base, str(llm_dir), is_trainable=False)
-    else:
-        model = base
-
-    ens = Ensemble(
-        llm=base_llm,
-        adapter_names=adapter_names,
-        d_emb=d_emb,
-        d_jepa=d_jepa,
-        load_in_4bit=load_in_4bit,
-        device=resolved_device,
-    )
-    ens.llm.model = model
-    ens.llm.tokenizer = tokenizer
-    for name in adapter_names:
-        if name not in ens.llm._adapters:
-            ens.llm.add_adapter(name)
-    ens.llm.set_adapter(adapter_names[0])
     return ens
