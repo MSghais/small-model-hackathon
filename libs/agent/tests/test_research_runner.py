@@ -60,6 +60,12 @@ def research_env(tmp_path, monkeypatch):
         return [f"https://example.com/{topic.replace(' ', '-')}"]
 
     monkeypatch.setattr("agent.tools.research_tools.search_urls", fake_search)
+
+    def fake_validate(url, *, check_reachable=True):
+        normalized = url if url.startswith("http") else f"https://{url}"
+        return True, "ok", normalized
+
+    monkeypatch.setattr("researchmind.url_validate.validate_url", fake_validate)
     return cfg
 
 

@@ -104,9 +104,16 @@ def discover_sources(
             backend=get_backend(model_key),
         )
         choices = discover.suggested_urls
-        summary = (
-            f"Suggested {len(choices)} URL(s). Select sources and click **Ingest selected**."
-        )
+        if not choices:
+            summary = (
+                "No verified URLs found. Try a more specific topic, paste URLs manually, "
+                "or switch to **Auto search & ingest**."
+            )
+        else:
+            summary = (
+                f"Found **{len(choices)} verified URL(s)** via web search "
+                f"(Google + fallbacks). Select sources and click **Ingest selected**."
+            )
         return (
             summary,
             gr.update(choices=choices, value=choices),
@@ -246,8 +253,8 @@ Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask
         with gr.Tab("Ingest"):
             gr.Markdown(
                 """
-- **Suggest mode:** local model proposes URLs → you confirm → ingest
-- **Auto search:** DuckDuckGo top URLs ingested immediately (network at ingest only)
+- **Suggest mode:** Google web search → verified URLs → you confirm → ingest
+- **Auto search:** same search, ingests top verified URLs immediately
 - **Direct:** paste URLs or upload PDF/DOCX
 """
             )

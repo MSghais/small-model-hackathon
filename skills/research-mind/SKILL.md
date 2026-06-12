@@ -16,8 +16,8 @@ flags:
 
 ### Ingest
 
-1. **Topic only (default):** call `suggest_urls` → user confirms URLs → scrape → `extract_and_index`.
-2. **Auto search:** when `auto_search` is true, run web search and ingest top URLs without confirmation.
+1. **Topic only (default):** run `search_urls` (Google + verification) → user confirms URLs → scrape → `extract_and_index`.
+2. **Auto search:** when `auto_search` is true, same search pipeline ingests top verified URLs without confirmation.
 3. **Direct URL / file:** scrape and index immediately.
 
 ### Q&A (offline after ingest)
