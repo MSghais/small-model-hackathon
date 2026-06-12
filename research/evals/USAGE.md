@@ -78,6 +78,7 @@ When `--config` is set, **YAML values override CLI flags**. Use configs for repr
 ```
 slm-benchmark [OPTIONS]
 
+--list-benchmarks       Show agentic benchmark keys and preset suites
 --model PATH            Local HF dir or Hub id (required unless --config)
 --benchmarks NAMES      bfcl tau_bench gaia swe_bench all  (default: all)
 --config PATH           YAML config (overrides other flags)
@@ -151,12 +152,36 @@ Run standard academic benchmarks (ARC, HellaSwag, PIQA, BoolQ, GSM8K) via [Eleut
 
 Install: `uv sync --group lm-eval`
 
+Full profile guide: [docs/eval_profiles.md](docs/eval_profiles.md)
+
+### Discover profiles and tasks
+
+```bash
+# Claim-matched lm-eval profiles (reasoning, code, smoke, …)
+uv run --package slm-evals slm-lm-eval --list-profiles
+
+# Also show agentic suites + external benchmark notes
+uv run --package slm-evals slm-lm-eval --list-profiles-all
+
+# lm-eval task names
+uv run --package slm-evals slm-lm-eval --list-tasks
+
+# Agentic benchmarks (BFCL, τ-bench, GAIA, SWE)
+uv run --package slm-evals slm-benchmark --list-benchmarks
+```
+
 ### Quick start
 
 ```bash
+# By profile name (recommended)
+uv run --package slm-evals slm-lm-eval \
+  --profile reasoning \
+  --preset minicpm5-1b \
+  --experiment-name minicpm5-1b__reasoning-baseline
+
 # Smoke profile (25 samples)
 uv run --package slm-evals slm-lm-eval \
-  --config research/evals/configs/lm_eval_smoke.yaml \
+  --profile smoke \
   --preset minicpm5-1b \
   --experiment-name minicpm5-1b__smoke
 
@@ -199,11 +224,17 @@ uv run --package slm-evals slm-lm-eval \
 
 ### Config templates
 
-| File | Purpose |
-| ---- | ------- |
-| `configs/lm_eval_smoke.yaml` | Fast validation (`limit: 25`, 2 tasks) |
-| `configs/lm_eval_minicpm5.yaml` | Full ~1B SLM profile (6 tasks) |
-| `configs/lm_eval_compare_study.yaml` | Baseline vs finetune comparison defaults |
+Catalog: `configs/eval_profiles.yaml` — maps **claim → profile → tasks**.
+
+| Profile (`--profile`) | Config file | Purpose |
+| --------------------- | ----------- | ------- |
+| `smoke` | `lm_eval_smoke.yaml` | Fast validation (`limit: 25`, 2 tasks) |
+| `reasoning` | `lm_eval_reasoning.yaml` | Math + commonsense (GSM8K, ARC, HellaSwag) |
+| `understanding` | `lm_eval_understanding.yaml` | NLU (BoolQ, PIQA, COPA, RTE) |
+| `code` | `lm_eval_code.yaml` | HumanEval + MBPP |
+| `instructions` | `lm_eval_instructions.yaml` | IFEval instruction following |
+| `general_slm` | `lm_eval_minicpm5.yaml` | Full ~1B SLM profile (6 tasks) |
+| `compare_study` | `lm_eval_compare_study.yaml` | Baseline vs finetune comparison defaults |
 
 | Key | Description |
 | --- | ----------- |
@@ -222,6 +253,11 @@ uv run --package slm-evals slm-lm-eval \
 ```
 slm-lm-eval [OPTIONS]
 
+--list-profiles         Show claim-matched profiles and example commands
+--list-profiles-all     Include agentic suites and external benchmark notes
+--list-tasks            List lm-eval task names (catalog fallback if not installed)
+--list-tasks-all        Full lm-eval task list
+--profile NAME          Shorthand for --config (reasoning, code, smoke, …)
 --config PATH           YAML config (tasks, seed, limit, …)
 --preset KEY            models.yaml preset (base, LoRA, merged, ensemble)
 --model PATH            HF Hub id, merged dir, or ensemble checkpoint

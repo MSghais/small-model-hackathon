@@ -198,10 +198,21 @@ Standard lm-evaluation-harness tasks (ARC, HellaSwag, GSM8K, …) for base prese
 
 Install: `uv sync --group lm-eval`
 
+Profile guide: [evals/docs/eval_profiles.md](evals/docs/eval_profiles.md)
+
 ```bash
+# List claim-matched profiles (reasoning, code, understanding, …)
+uv run --package slm-evals slm-lm-eval --list-profiles
+
+# Run by profile name
+uv run --package slm-evals slm-lm-eval \
+  --profile reasoning \
+  --preset minicpm5-1b \
+  --experiment-name minicpm5-1b__reasoning-baseline
+
 # Smoke (25 samples, arc_easy + hellaswag)
 uv run --package slm-evals slm-lm-eval \
-  --config research/evals/configs/lm_eval_smoke.yaml \
+  --profile smoke \
   --preset minicpm5-1b \
   --experiment-name minicpm5-1b__smoke
 

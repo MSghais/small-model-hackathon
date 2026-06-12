@@ -7,8 +7,8 @@ from typing import Any
 
 import yaml
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_CONFIGS_DIR = _REPO_ROOT / "research" / "evals" / "configs"
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_CONFIGS_DIR = Path(__file__).resolve().parents[3] / "configs"
 _PROFILES_FILE = _CONFIGS_DIR / "eval_profiles.yaml"
 
 

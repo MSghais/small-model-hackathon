@@ -102,11 +102,22 @@ def parse_args():
         default=0.0,
         help="Sampling temperature (0.0 = greedy)",
     )
+    parser.add_argument(
+        "--list-benchmarks",
+        action="store_true",
+        help="Show agentic benchmark keys and preset suites from eval_profiles.yaml",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+
+    if args.list_benchmarks:
+        from slm_evals.lm_eval.profiles import format_agentic_benchmarks
+
+        print(format_agentic_benchmarks())
+        return
 
     if args.config:
         cfg = load_config(args.config)
