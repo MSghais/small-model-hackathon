@@ -10,13 +10,13 @@ todos:
     status: completed
   - id: agent-runner
     content: Extend SkillRegistry (flags), ToolRegistry (5 tools), AgentRunner ingest/chat with suggest_urls + auto_search boolean
-    status: in_progress
+    status: completed
   - id: gradio-tab
     content: "Add research_mind.py tab: topic/URL/file ingest, mode dropdown, URL confirm, session chat, trace accordion"
-    status: pending
+    status: completed
   - id: tests-docs
     content: Unit tests for store/retrieve/runner; update .env.example and README for ResearchMind offline Q&A
-    status: pending
+    status: completed
 isProject: false
 ---
 

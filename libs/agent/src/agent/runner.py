@@ -16,7 +16,6 @@ from agent.models import (
     ResearchChatInput,
     ResearchChatResult,
     ResearchDiscoverResult,
-    ResearchIngestInput,
     ResearchIngestResult,
     SlideOutline,
     SlideSpec,

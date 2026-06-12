@@ -4,8 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pathlib import Path
-
 from agent.models import SlideOutline
 from agent.tools.pptx import create_pptx
 from agent.tools.research_tools import (
@@ -16,8 +14,6 @@ from agent.tools.research_tools import (
     tool_search_urls,
     tool_suggest_urls,
 )
-from researchmind.extract import ExtractedDocument
-
 
 @dataclass(frozen=True)
 class ToolSpec:
