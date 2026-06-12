@@ -113,6 +113,23 @@ uv run --package ensemble python -m ensemble.jepa_ensemble Qwen/Qwen2.5-0.5B-Ins
 uv run --package ensemble python -m ensemble.world_ensemble Qwen/Qwen2.5-0.5B-Instruct
 ```
 
+### Pretrain + save (LLM + emb + JEPA)
+
+```bash
+uv run --package ensemble ensemble-pretrain \
+  --llm Qwen/Qwen2.5-0.5B-Instruct \
+  --steps 200 \
+  --out models/ensemble/jepa-lesson-pretrain
+
+# Benchmark saved ensemble with slm-evals (compare to base HF model)
+uv run --package slm-evals slm-benchmark \
+  --model ./models/ensemble/jepa-lesson-pretrain \
+  --model-type ensemble \
+  --benchmarks bfcl tau_bench --max-samples 20
+```
+
+Checkpoint files: `manifest.json`, `aux.pt`, `llm/` (PEFT adapters), optional `store.pt`.
+
 ### Tier 3 — Benchmark harnesses
 
 Uses `research/data/benchmark-qa.jsonl` (questions) and `benchmark-kb.jsonl` (retrieval snippets).

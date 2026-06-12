@@ -203,6 +203,15 @@ class TinyBackend(LLMBackend):
             ids = torch.cat([ids, nxt], dim=1)
         return ids
 
+    def encode_text(self, text: str):
+        vals = [ord(c) % self.vocab_size for c in text[: self.SEQ_LEN]]
+        if not vals:
+            vals = [0]
+        return torch.tensor([vals], dtype=torch.long)
+
+    def decode(self, ids):
+        return " ".join(str(int(t)) for t in ids[0].tolist())
+
     @property
     def device(self):
         return next(self.parameters()).device

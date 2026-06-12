@@ -236,7 +236,11 @@ def parse_args():
     p.add_argument("--llm", default="tiny", help="'tiny' | HF id | local path")
     p.add_argument("--qa", default=None, help="jsonl with question/answer")
     p.add_argument("--kb", default=None, help="jsonl with text -> vector store")
-    p.add_argument("--ckpt", default=None, help="bridge-trained ensemble .pt (C5)")
+    p.add_argument(
+        "--ckpt",
+        default=None,
+        help="saved ensemble directory (models/ensemble/... with manifest.json)",
+    )
     p.add_argument("--toy", action="store_true", help="synthetic data smoke test")
     p.add_argument("--limit", type=int, default=100)
     p.add_argument("--n_new", type=int, default=24)
