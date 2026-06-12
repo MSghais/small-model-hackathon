@@ -350,15 +350,50 @@ class AgentRunner:
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         cleaned = text.strip()
-        fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", cleaned, re.DOTALL)
+        fence = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
         if fence:
-            cleaned = fence.group(1)
-        else:
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if start >= 0 and end > start:
-                cleaned = cleaned[start : end + 1]
+            cleaned = fence.group(1).strip()
+
+        start = cleaned.find("{")
+        if start < 0:
+            return json.loads(cleaned)
+
+        end = AgentRunner._matching_brace_end(cleaned, start)
+        if end is not None:
+            return json.loads(cleaned[start : end + 1])
+
+        fallback_end = cleaned.rfind("}")
+        if fallback_end > start:
+            return json.loads(cleaned[start : fallback_end + 1])
         return json.loads(cleaned)
+
+    @staticmethod
+    def _matching_brace_end(text: str, start: int) -> int | None:
+        """Return index of the closing brace that matches ``start`` (must be ``{``)."""
+        if start >= len(text) or text[start] != "{":
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return None
 
     def _research_skill(self) -> Any:
         return self._skills.get(RESEARCH_MIND_SKILL)

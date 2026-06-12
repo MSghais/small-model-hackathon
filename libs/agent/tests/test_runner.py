@@ -38,6 +38,22 @@ def test_extract_json_from_fenced_block():
     assert data["title"] == "T"
 
 
+def test_extract_json_ignores_trailing_text():
+    raw = (
+        '{"title": "AI Agents", "slides": [{"title": "Intro", "bullets": ["a"]}]}\n'
+        "Here is a short explanation of the lesson outline."
+    )
+    data = AgentRunner._extract_json(raw)
+    assert data["title"] == "AI Agents"
+
+
+def test_extract_json_ignores_duplicate_object():
+    first = '{"title": "First", "slides": [{"title": "A", "bullets": ["a"]}]}'
+    second = '{"title": "Second", "slides": [{"title": "B", "bullets": ["b"]}]}'
+    data = AgentRunner._extract_json(f"{first}\n{second}")
+    assert data["title"] == "First"
+
+
 def test_create_pptx_writes_file(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_OUTPUTS_DIR", str(tmp_path))
     outline = SlideOutline(
