@@ -196,6 +196,55 @@ def test_rag_requires_indexed_sources(research_env):
         )
 
 
+def test_web_two_step_uses_duplicate_doc_ids(research_env):
+    runner = AgentRunner()
+    first = runner.run_researchmind_ingest(
+        topic="Photosynthesis",
+        urls=["https://example.com/a"],
+        files=[],
+        auto_search=False,
+        session_id=None,
+        model_key="test",
+        backend=OutlineBackend(),
+    )
+    assert first.doc_ids
+
+    new_session = runner.run_researchmind_discover(
+        topic="Photosynthesis",
+        auto_search=False,
+        session_id=None,
+        model_key="test",
+        backend=OutlineBackend(),
+    ).session_id
+
+    second = runner.run_researchmind_ingest(
+        topic="Photosynthesis",
+        urls=["https://example.com/a"],
+        files=[],
+        auto_search=False,
+        session_id=new_session,
+        model_key="test",
+        backend=OutlineBackend(),
+    )
+    assert second.ingested == []
+    assert len(second.skipped) == 1
+    assert second.doc_ids == first.doc_ids
+
+    result = runner.run_education_pptx(
+        topic="Photosynthesis",
+        grade="6",
+        slide_count=3,
+        model_key="test",
+        backend=OutlineBackend(),
+        source_mode="web",
+        search_workflow="two_step",
+        urls=["https://example.com/a"],
+        session_id=new_session,
+    )
+    assert "Retrieved" in result.source_summary
+    assert result.source_summary.count("model knowledge only") == 0
+
+
 def test_rag_uses_session_without_auto_search(research_env, monkeypatch):
     ingest = AgentRunner().run_researchmind_ingest(
         topic="Photosynthesis",

@@ -66,6 +66,7 @@ class ResearchIngestResult(BaseModel):
     session_id: str
     ingested: list[str]
     skipped: list[str]
+    doc_ids: list[str] = Field(default_factory=list)
     failures: list[IngestFailure] = Field(default_factory=list)
     doc_count: int
     chunk_count: int

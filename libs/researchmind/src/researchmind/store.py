@@ -165,6 +165,23 @@ class MemRAGStore:
             ).fetchone()
         return row["id"] if row else None
 
+    def find_document_id_by_uri(self, uri: str) -> str | None:
+        from researchmind.url_validate import normalize_url
+
+        candidates = [uri.strip()]
+        normalized = normalize_url(uri)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+        with self._conn() as conn:
+            for candidate in candidates:
+                row = conn.execute(
+                    "SELECT id FROM documents WHERE uri = ?",
+                    (candidate,),
+                ).fetchone()
+                if row:
+                    return str(row["id"])
+        return None
+
     def add_document(
         self,
         *,

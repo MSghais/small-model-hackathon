@@ -162,6 +162,7 @@ class AgentRunner:
         store = pipeline.store
         session_id = req.session_id
         ingest_summary = ""
+        ingest: ResearchIngestResult | None = None
 
         if req.source_mode == "web":
             if req.search_workflow == "two_step" and not req.urls and not req.files:
@@ -199,14 +200,16 @@ class AgentRunner:
                 trace.log_note(ingest.message, phase="lesson_ingest", session_id=session_id)
 
             doc_count = len(store.list_documents(session_id=session_id))
-            if doc_count == 0:
+            resolved = self._lesson_doc_ids(store, session_id, req, ingest)
+            if doc_count == 0 and not resolved:
                 raise ValueError(
                     "RAG mode requires indexed sources. Select a ResearchMind session with "
                     "documents, or paste URLs / upload files on this tab."
                 )
 
-        scope_session = session_id if not req.doc_ids else None
-        scope_docs = req.doc_ids if req.doc_ids else None
+        scope_session, scope_docs = self._lesson_retrieve_scope(
+            store, session_id, req, ingest
+        )
         chunks = retrieve(
             req.topic,
             store,
@@ -408,6 +411,56 @@ class AgentRunner:
             return session_id
         return store.create_session(topic=topic).id
 
+    @staticmethod
+    def _lesson_doc_ids(
+        store: Any,
+        session_id: str | None,
+        req: EducationPptxInput,
+        ingest: ResearchIngestResult | None,
+    ) -> list[str]:
+        if req.doc_ids:
+            return list(req.doc_ids)
+
+        resolved: list[str] = []
+        seen: set[str] = set()
+
+        def add(doc_id: str | None) -> None:
+            if doc_id and doc_id not in seen:
+                seen.add(doc_id)
+                resolved.append(doc_id)
+
+        if ingest:
+            for doc_id in ingest.doc_ids:
+                add(doc_id)
+
+        for doc in store.list_documents(session_id=session_id):
+            add(doc.id)
+
+        if ingest and not resolved:
+            from researchmind.url_validate import validate_url
+
+            for label in (*ingest.ingested, *ingest.skipped):
+                ok, _, normalized = validate_url(label, check_reachable=False)
+                if ok:
+                    add(store.find_document_id_by_uri(normalized))
+                add(store.find_document_id_by_uri(label))
+
+        return resolved
+
+    @staticmethod
+    def _lesson_retrieve_scope(
+        store: Any,
+        session_id: str | None,
+        req: EducationPptxInput,
+        ingest: ResearchIngestResult | None,
+    ) -> tuple[str | None, list[str] | None]:
+        doc_ids = AgentRunner._lesson_doc_ids(store, session_id, req, ingest)
+        if doc_ids:
+            return None, doc_ids
+        if session_id:
+            return session_id, None
+        return None, None
+
     def run_researchmind_discover(
         self,
         *,
@@ -495,6 +548,8 @@ class AgentRunner:
 
         ingested: list[str] = []
         skipped: list[str] = []
+        doc_ids: list[str] = []
+        seen_doc_ids: set[str] = set()
         failures: list[IngestFailure] = []
 
         scrape_web = self._tools.get("scrape_web")
@@ -516,6 +571,9 @@ class AgentRunner:
                     failures.append(IngestFailure(url=url, reason=msg, stage="scrape"))
                     continue
                 doc_id, is_new = extract_index.handler(doc, session_id=sid)
+                if doc_id not in seen_doc_ids:
+                    seen_doc_ids.add(doc_id)
+                    doc_ids.append(doc_id)
                 trace.log_tool("scrape_web", {"url": url}, doc.title)
                 trace.log_tool(
                     "extract_and_index",
@@ -545,6 +603,9 @@ class AgentRunner:
                         text=text,
                     )
                 doc_id, is_new = extract_index.handler(doc, session_id=sid)
+                if doc_id not in seen_doc_ids:
+                    seen_doc_ids.add(doc_id)
+                    doc_ids.append(doc_id)
                 trace.log_tool("extract_and_index", {"file": str(path)}, f"{doc_id} new={is_new}")
                 label = path.name
                 (ingested if is_new else skipped).append(label)
@@ -567,6 +628,7 @@ class AgentRunner:
             session_id=sid,
             ingested=ingested,
             skipped=skipped,
+            doc_ids=doc_ids,
             failures=failures,
             doc_count=doc_count,
             chunk_count=chunk_count,
