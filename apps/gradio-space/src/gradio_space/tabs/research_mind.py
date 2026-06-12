@@ -1,14 +1,23 @@
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 
 import gradio as gr
 
-from agent.models import ResearchIngestResult
 from agent.runner import AgentRunner
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
+from gradio_space.research_helpers import (
+    format_ingest_status,
+    list_session_choices,
+    load_trace_json,
+    memory_summary,
+    rag_scope_hint,
+    refresh_doc_choices,
+    refresh_sessions,
+    run_research_question,
+    trace_summary_markdown,
+)
 from inference.factory import get_backend
 from researchmind.config import get_config
 from researchmind.ingest import IngestPipeline
@@ -21,97 +30,11 @@ INGEST_MODES = [
 ]
 
 
-def list_session_choices() -> list[tuple[str, str]]:
-    store = IngestPipeline().store
-    sessions = store.list_sessions()
-    choices: list[tuple[str, str]] = [("New session", "")]
-    for s in sessions:
-        label = f"{s.topic or 'Untitled'} ({s.id})"
-        choices.append((label, s.id))
-    return choices
-
-
-def refresh_sessions(current: str):
-    choices = list_session_choices()
-    values = [c[1] for c in choices]
-    value = current if current in values else ""
-    return gr.update(choices=choices, value=value)
-
-
-def load_trace_json(trace_path: str) -> str:
-    if not trace_path:
-        return ""
-    if trace_path.strip().startswith("{"):
-        return trace_path
-    path = Path(trace_path)
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    return trace_path
-
-
-def trace_summary_markdown(trace_path: str) -> str:
-    raw = load_trace_json(trace_path)
-    if not raw or not raw.strip().startswith("{"):
-        return raw or "_No trace yet. Run Discover or Ingest._"
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return f"Trace file: `{trace_path}`"
-
-    lines = [
-        f"**Run** `{data.get('run_id', '?')}` · skill `{data.get('skill', '?')}`",
-        "",
-    ]
-    for step in data.get("steps", []):
-        if step.get("type") != "note":
-            continue
-        msg = step.get("message", "")
-        extra = {k: v for k, v in step.items() if k not in ("type", "message")}
-        detail = ""
-        if extra:
-            detail = " — " + ", ".join(f"{k}={v!r}" for k, v in extra.items())
-        lines.append(f"- {msg}{detail}")
-    if len(lines) <= 2:
-        lines.append("_No notes in trace. See Trace JSON below._")
-    return "\n".join(lines)
-
-
-def format_ingest_status(result: ResearchIngestResult) -> str:
-    lines = [result.message, ""]
-    if result.ingested:
-        lines.append("**Ingested**")
-        lines.extend(f"- {url}" for url in result.ingested)
-        lines.append("")
-    if result.skipped:
-        lines.append("**Skipped (duplicate)**")
-        lines.extend(f"- {url}" for url in result.skipped)
-        lines.append("")
-    if result.failures:
-        lines.append("**Failed**")
-        for failure in result.failures:
-            lines.append(f"- `{failure.url}` — _{failure.stage}_: {failure.reason}")
-        lines.append("")
-        lines.append("_Open the **Trace** tab for full JSON._")
-    return "\n".join(lines).strip()
-
-
-def memory_summary(session_id: str) -> str:
-    store = IngestPipeline().store
-    docs = store.list_documents(session_id=session_id or None)
-    chunks = store.count_chunks()
-    if not docs:
-        return f"_No documents indexed yet._ Total chunks in store: **{chunks}**."
-    lines = [f"**{len(docs)}** document(s) in this session · **{chunks}** total chunks in store\n"]
-    for d in docs:
-        lines.append(f"- **{d.title}** (`{d.source_type}`) — {d.uri}")
-    return "\n".join(lines)
-
-
 def discover_sources(
     topic: str,
     ingest_mode: str,
     session_id: str,
-) -> tuple[str, gr.Update, str, str, str, str]:
+) -> tuple[str, gr.Update, str, str, str, str, object]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
@@ -122,6 +45,7 @@ def discover_sources(
             load_error,
             load_error,
             memory_summary(session_id),
+            refresh_doc_choices(session_id, []),
         )
 
     if not topic.strip():
@@ -133,6 +57,7 @@ def discover_sources(
             msg,
             msg,
             memory_summary(session_id),
+            refresh_doc_choices(session_id, []),
         )
 
     auto_search = ingest_mode == "auto"
@@ -156,6 +81,7 @@ def discover_sources(
                 trace_summary_markdown(result.trace_path),
                 trace_json,
                 memory_summary(result.session_id),
+                refresh_doc_choices(result.session_id, []),
             )
 
         discover = runner.run_researchmind_discover(
@@ -184,6 +110,7 @@ def discover_sources(
             trace_summary_markdown(discover.trace_path),
             trace_json,
             memory_summary(discover.session_id),
+            refresh_doc_choices(discover.session_id, []),
         )
     except Exception as exc:  # noqa: BLE001
         msg = f"Discover error: {exc}"
@@ -194,6 +121,7 @@ def discover_sources(
             msg,
             msg,
             memory_summary(session_id),
+            refresh_doc_choices(session_id, []),
         )
 
 
@@ -203,7 +131,7 @@ def ingest_selected(
     selected_urls: list[str],
     upload_files: list[str] | None,
     session_id: str,
-) -> tuple[str, str, str, str, object]:
+) -> tuple[str, str, str, str, object, object]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
@@ -213,6 +141,7 @@ def ingest_selected(
             load_error,
             load_error,
             refresh_sessions(session_id),
+            refresh_doc_choices(session_id, []),
         )
 
     direct_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
@@ -227,6 +156,7 @@ def ingest_selected(
             msg,
             msg,
             refresh_sessions(session_id),
+            refresh_doc_choices(session_id, []),
         )
 
     try:
@@ -248,6 +178,7 @@ def ingest_selected(
             trace_json,
             trace_summary_markdown(result.trace_path),
             refresh_sessions(result.session_id),
+            refresh_doc_choices(result.session_id, []),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Ingest failed")
@@ -258,58 +189,40 @@ def ingest_selected(
             msg,
             msg,
             refresh_sessions(session_id),
+            refresh_doc_choices(session_id, []),
         )
 
 
 def ask_question(
     question: str,
     session_id: str,
+    doc_ids: list[str] | None,
     chat_history: list[dict],
-) -> tuple[list[dict], str, str]:
-    model_key = get_active_model_key()
-    load_error = ensure_model_loaded(model_key)
-    if load_error:
-        history = list(chat_history or [])
-        history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": load_error})
-        return history, load_error, load_error
-
+) -> tuple[list[dict], str, str, str]:
     if not question.strip():
-        return chat_history or [], "Enter a question.", ""
-
-    if not session_id:
-        store = IngestPipeline().store
-        session_id = store.create_session().id
+        return chat_history or [], "Enter a question.", "", rag_scope_hint(session_id, doc_ids)
 
     try:
-        runner = AgentRunner()
-        result = runner.run_researchmind_chat(
-            question=question,
+        answer, trace_json, trace_summary = run_research_question(
+            question,
             session_id=session_id,
-            model_key=model_key,
-            backend=get_backend(model_key),
+            doc_ids=doc_ids,
         )
         history = list(chat_history or [])
         history.append({"role": "user", "content": question})
-        history.append({"role": "assistant", "content": result.answer})
-        trace_json = json.dumps(
-            {
-                "trace_path": result.trace_path,
-                "citations": [c.model_dump() for c in result.citations],
-            },
-            indent=2,
-        )
-        return history, trace_json, result.trace_path
+        history.append({"role": "assistant", "content": answer})
+        return history, trace_json, trace_summary, rag_scope_hint(session_id, doc_ids)
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Research chat failed")
         history = list(chat_history or [])
         history.append({"role": "user", "content": question})
         err = f"Chat error: {exc}"
         history.append({"role": "assistant", "content": err})
-        return history, err, err
+        return history, err, err, rag_scope_hint(session_id, doc_ids)
 
 
 def build_research_mind_tab() -> None:
-    """ResearchMind UI — nested Ingest / Chat / Memory / Trace tabs."""
+    """ResearchMind UI — ingest, memory, trace, and corpus chat."""
     model_key = get_active_model_key()
     cfg = get_config()
 
@@ -368,15 +281,6 @@ Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask
             ingest_btn = gr.Button("Ingest selected", variant="primary")
             ingest_status = gr.Markdown()
 
-        with gr.Tab("Chat"):
-            gr.Markdown("Ask questions **offline** after ingest. Answers include `[n]` citations.")
-            chatbot = gr.Chatbot(label="Research chat", height=420)
-            question = gr.Textbox(
-                label="Question",
-                placeholder="What does your corpus say about…?",
-            )
-            ask_btn = gr.Button("Ask", variant="primary")
-
         with gr.Tab("Memory"):
             gr.Markdown("Indexed documents and chunk counts for the selected session.")
             memory_md = gr.Markdown(value=memory_summary(""))
@@ -386,13 +290,38 @@ Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask
             trace_summary = gr.Markdown()
             trace_box = gr.Textbox(label="Trace JSON", lines=14, interactive=False)
 
-    refresh_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
-    refresh_memory_btn.click(
-        fn=memory_summary,
-        inputs=[session_dd],
-        outputs=[memory_md],
+    gr.Markdown("---")
+    gr.Markdown("### Chat with your corpus")
+    gr.Markdown(
+        "Ask questions about ingested sources. Limit search to specific documents below, "
+        "or leave all checked to search the whole session."
     )
+    rag_hint = gr.Markdown(value=rag_scope_hint("", []))
+    doc_dd = gr.CheckboxGroup(
+        label="Documents in session",
+        choices=[],
+        value=[],
+    )
+    chatbot = gr.Chatbot(label="Research chat", height=360)
+    question = gr.Textbox(
+        label="Question",
+        placeholder="What do these sources say about AI agents?",
+    )
+    ask_btn = gr.Button("Ask", variant="primary")
+
+    refresh_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
+    refresh_memory_btn.click(fn=memory_summary, inputs=[session_dd], outputs=[memory_md])
     session_dd.change(fn=memory_summary, inputs=[session_dd], outputs=[memory_md])
+    session_dd.change(
+        fn=refresh_doc_choices,
+        inputs=[session_dd, doc_dd],
+        outputs=[doc_dd],
+    ).then(
+        fn=rag_scope_hint,
+        inputs=[session_dd, doc_dd],
+        outputs=[rag_hint],
+    )
+    doc_dd.change(fn=rag_scope_hint, inputs=[session_dd, doc_dd], outputs=[rag_hint])
 
     discover_btn.click(
         fn=lambda topic, mode, sid: discover_sources(
@@ -401,24 +330,32 @@ Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask
             sid,
         ),
         inputs=[topic, ingest_mode, session_dd],
-        outputs=[ingest_status, url_choices, session_dd, trace_summary, trace_box, memory_md],
+        outputs=[
+            ingest_status,
+            url_choices,
+            session_dd,
+            trace_summary,
+            trace_box,
+            memory_md,
+            doc_dd,
+        ],
     )
 
     ingest_btn.click(
         fn=ingest_selected,
         inputs=[topic, urls_text, url_choices, upload_files, session_dd],
-        outputs=[ingest_status, memory_md, trace_box, trace_summary, session_dd],
+        outputs=[ingest_status, memory_md, trace_box, trace_summary, session_dd, doc_dd],
     )
 
     ask_btn.click(
         fn=ask_question,
-        inputs=[question, session_dd, chatbot],
-        outputs=[chatbot, trace_box, trace_summary],
+        inputs=[question, session_dd, doc_dd, chatbot],
+        outputs=[chatbot, trace_box, trace_summary, rag_hint],
     )
     question.submit(
         fn=ask_question,
-        inputs=[question, session_dd, chatbot],
-        outputs=[chatbot, trace_box, trace_summary],
+        inputs=[question, session_dd, doc_dd, chatbot],
+        outputs=[chatbot, trace_box, trace_summary, rag_hint],
     )
 
 

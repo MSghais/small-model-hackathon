@@ -5,6 +5,7 @@ from pathlib import Path
 
 import gradio as gr
 
+from agent.models import ResearchIngestResult
 from agent.runner import AgentRunner
 from gradio_space.model_loading import chat, ensure_model_loaded, get_active_model_key
 from inference.factory import get_backend
@@ -86,6 +87,25 @@ def trace_summary_markdown(trace_path: str) -> str:
     if len(lines) <= 2:
         lines.append("_No notes in trace. See Trace JSON below._")
     return "\n".join(lines)
+
+
+def format_ingest_status(result: ResearchIngestResult) -> str:
+    lines = [result.message, ""]
+    if result.ingested:
+        lines.append("**Ingested**")
+        lines.extend(f"- {url}" for url in result.ingested)
+        lines.append("")
+    if result.skipped:
+        lines.append("**Skipped (duplicate)**")
+        lines.extend(f"- {url}" for url in result.skipped)
+        lines.append("")
+    if result.failures:
+        lines.append("**Failed**")
+        for failure in result.failures:
+            lines.append(f"- `{failure.url}` — _{failure.stage}_: {failure.reason}")
+        lines.append("")
+        lines.append("_Open the **Trace** tab for full JSON._")
+    return "\n".join(lines).strip()
 
 
 def memory_summary(session_id: str) -> str:
