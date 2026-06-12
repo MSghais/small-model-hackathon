@@ -9,6 +9,7 @@ dependencies = [
     "ensemble",
     "gradio-space",
     "inference",
+    "researchmind",
 ]
 
 [dependency-groups]
@@ -46,4 +47,5 @@ agent = { workspace = true }
 ensemble = { workspace = true }
 gradio-space = { workspace = true }
 inference = { workspace = true }
+researchmind = { workspace = true }
 slm-evals = { workspace = true }

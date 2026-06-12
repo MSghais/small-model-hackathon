@@ -276,16 +276,19 @@ class MemRAGStore:
         return result
 
     def get_neighbor_chunk_ids(self, chunk_id: str) -> list[str]:
+        ids: list[str] = []
         with self._conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT dst_id FROM edges WHERE src_id = ? AND rel = 'chunk_next'
-                UNION
-                SELECT src_id FROM edges WHERE dst_id = ? AND rel = 'chunk_next'
-                """,
-                (chunk_id, chunk_id),
-            ).fetchall()
-        return [r["dst_id"] if "dst_id" in r.keys() else r[0] for r in rows]
+            for row in conn.execute(
+                "SELECT dst_id FROM edges WHERE src_id = ? AND rel = 'chunk_next'",
+                (chunk_id,),
+            ):
+                ids.append(row["dst_id"])
+            for row in conn.execute(
+                "SELECT src_id FROM edges WHERE dst_id = ? AND rel = 'chunk_next'",
+                (chunk_id,),
+            ):
+                ids.append(row["src_id"])
+        return ids
 
     def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[StoredChunk]:
         if not chunk_ids:

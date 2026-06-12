@@ -18,3 +18,47 @@ class EducationPptxInput(BaseModel):
     topic: str
     grade: str
     slide_count: int = Field(ge=3, le=8)
+
+
+class Citation(BaseModel):
+    index: int
+    chunk_id: str
+    doc_title: str
+    doc_uri: str
+    excerpt: str
+
+
+class ResearchIngestInput(BaseModel):
+    topic: str = ""
+    urls: list[str] = Field(default_factory=list)
+    auto_search: bool = False
+    session_id: str | None = None
+
+
+class ResearchChatInput(BaseModel):
+    question: str
+    session_id: str
+
+
+class ResearchDiscoverResult(BaseModel):
+    suggested_urls: list[str]
+    session_id: str
+    trace_path: str
+
+
+class ResearchIngestResult(BaseModel):
+    session_id: str
+    ingested: list[str]
+    skipped: list[str]
+    doc_count: int
+    chunk_count: int
+    trace_path: str
+    message: str
+
+
+class ResearchChatResult(BaseModel):
+    answer: str
+    citations: list[Citation]
+    references_markdown: str
+    session_id: str
+    trace_path: str

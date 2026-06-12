@@ -4,13 +4,13 @@ overview: "Add ResearchMind: ingest skills (web/PDF/extract) with references and
 todos:
   - id: pkg-researchmind
     content: "Create libs/researchmind package: MemRAGStore (SQLite), chunking, sentence-transformers embeddings, retrieve + citations"
-    status: in_progress
+    status: completed
   - id: skills-scrape-extract
     content: Add skills/scrape-web, scrape-pdf, extract-content, research-mind with references/ and scripts/ CLIs
-    status: pending
+    status: completed
   - id: agent-runner
     content: Extend SkillRegistry (flags), ToolRegistry (5 tools), AgentRunner ingest/chat with suggest_urls + auto_search boolean
-    status: pending
+    status: in_progress
   - id: gradio-tab
     content: "Add research_mind.py tab: topic/URL/file ingest, mode dropdown, URL confirm, session chat, trace accordion"
     status: pending

@@ -34,39 +34,37 @@ class IngestPipeline:
         session_id: str | None = None,
         raw_snapshot: str | None = None,
     ) -> tuple[str, bool]:
+        doc_id_prefix = self._store.content_hash(doc.text)[:12]
         chunks = chunk_text(
             doc.text,
-            doc_id=self._store.content_hash(doc.text)[:12],
+            doc_id=doc_id_prefix,
             chunk_size=self._config.chunk_size,
             chunk_overlap=self._config.chunk_overlap,
         )
-        if not chunks:
-            chunks_text = [doc.text[: self._config.chunk_size]] if doc.text else []
-        else:
-            chunks_text = [c.text for c in chunks]
+        if not chunks and doc.text.strip():
+            from researchmind.chunking import TextChunk
 
+            chunks = [
+                TextChunk(
+                    chunk_id=f"{doc_id_prefix}_0",
+                    ordinal=0,
+                    text=doc.text[: self._config.chunk_size],
+                )
+            ]
+
+        chunks_text = [c.text for c in chunks]
         embeddings = embed_texts(chunks_text, model_name=self._config.embed_model)
         chunk_tuples: list[tuple[str, int, str, np.ndarray, dict[str, Any]]] = []
-        for i, (chunk, emb) in enumerate(zip(chunks if chunks else [], embeddings, strict=False)):
+        for chunk, emb in zip(chunks, embeddings, strict=True):
             chunk_tuples.append(
                 (
-                    chunk.chunk_id if chunks else f"single_{i}",
-                    chunk.ordinal if chunks else 0,
-                    chunk.text if chunks else chunks_text[0],
+                    chunk.chunk_id,
+                    chunk.ordinal,
+                    chunk.text,
                     emb,
                     {"source_type": doc.source_type},
                 )
             )
-        if not chunks and len(embeddings) == 1:
-            chunk_tuples = [
-                (
-                    f"{self._store.content_hash(doc.text)[:12]}_0",
-                    0,
-                    chunks_text[0],
-                    embeddings[0],
-                    {"source_type": doc.source_type},
-                )
-            ]
 
         return self._store.add_document(
             source_type=doc.source_type,

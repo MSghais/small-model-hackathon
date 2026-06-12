@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "inference",
+    "researchmind",
     "pillow>=10.0.0",
     "pydantic>=2.0.0",
     "python-docx>=1.1.0",
@@ -18,6 +19,7 @@ dependencies = [
 
 [tool.uv.sources]
 inference = { workspace = true }
+researchmind = { workspace = true }
 
 [build-system]
 requires = ["uv_build>=0.8.13,<0.9.0"]

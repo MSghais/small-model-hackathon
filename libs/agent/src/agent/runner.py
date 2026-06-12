@@ -3,11 +3,24 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from inference.base import InferenceBackend
+from researchmind.extract import extract_docx
+from researchmind.ingest import IngestPipeline
 
-from agent.models import EducationPptxInput, SlideOutline, SlideSpec
+from agent.models import (
+    Citation,
+    EducationPptxInput,
+    ResearchChatInput,
+    ResearchChatResult,
+    ResearchDiscoverResult,
+    ResearchIngestInput,
+    ResearchIngestResult,
+    SlideOutline,
+    SlideSpec,
+)
 from agent.preview import outline_to_html, render_slide_images
 from agent.prompts import (
     education_outline_repair,
@@ -21,6 +34,7 @@ from agent.tools_registry import ToolRegistry
 from agent.trace import TraceRecorder
 
 EDUCATION_PPTX_SKILL = "education-pptx"
+RESEARCH_MIND_SKILL = "research-mind"
 
 
 @dataclass
@@ -225,3 +239,211 @@ class AgentRunner:
             if start >= 0 and end > start:
                 cleaned = cleaned[start : end + 1]
         return json.loads(cleaned)
+
+    def _research_skill(self) -> Any:
+        return self._skills.get(RESEARCH_MIND_SKILL)
+
+    def _ensure_session(
+        self,
+        store: Any,
+        session_id: str | None,
+        topic: str = "",
+    ) -> str:
+        if session_id and store.get_session(session_id):
+            return session_id
+        return store.create_session(topic=topic).id
+
+    def run_researchmind_discover(
+        self,
+        *,
+        topic: str,
+        auto_search: bool,
+        session_id: str | None,
+        model_key: str,
+        backend: InferenceBackend,
+    ) -> ResearchDiscoverResult:
+        skill = self._research_skill()
+        pipeline = IngestPipeline()
+        store = pipeline.store
+        sid = self._ensure_session(store, session_id, topic=topic)
+
+        trace = TraceRecorder(
+            skill=skill.name,
+            model=model_key,
+            user_input={"topic": topic, "auto_search": auto_search, "phase": "discover"},
+        )
+        backend.load()
+
+        if auto_search:
+            search_tool = self._tools.get("search_urls")
+            urls = search_tool.handler(topic, n=5)
+            trace.log_tool("search_urls", {"topic": topic, "n": 5}, json.dumps(urls))
+        else:
+            suggest_tool = self._tools.get("suggest_urls")
+            urls = suggest_tool.handler(topic, backend)
+            trace.log_tool("suggest_urls", {"topic": topic}, json.dumps(urls))
+
+        trace_path = str(trace.save())
+        return ResearchDiscoverResult(
+            suggested_urls=urls,
+            session_id=sid,
+            trace_path=trace_path,
+        )
+
+    def run_researchmind_ingest(
+        self,
+        *,
+        topic: str | None,
+        urls: list[str],
+        files: list[Path],
+        auto_search: bool,
+        session_id: str | None,
+        model_key: str,
+        backend: InferenceBackend,
+    ) -> ResearchIngestResult:
+        skill = self._research_skill()
+        pipeline = IngestPipeline()
+        store = pipeline.store
+        sid = self._ensure_session(store, session_id, topic=topic or "")
+
+        trace = TraceRecorder(
+            skill=skill.name,
+            model=model_key,
+            user_input={
+                "topic": topic,
+                "urls": urls,
+                "files": [str(f) for f in files],
+                "auto_search": auto_search,
+                "session_id": sid,
+            },
+        )
+        backend.load()
+
+        targets = [u.strip() for u in urls if u.strip()]
+        if auto_search and topic and not targets and not files:
+            discover = self.run_researchmind_discover(
+                topic=topic,
+                auto_search=True,
+                session_id=sid,
+                model_key=model_key,
+                backend=backend,
+            )
+            targets = discover.suggested_urls
+
+        ingested: list[str] = []
+        skipped: list[str] = []
+
+        scrape_web = self._tools.get("scrape_web")
+        extract_index = self._tools.get("extract_and_index")
+
+        for url in targets:
+            try:
+                doc = scrape_web.handler(url)
+                doc_id, is_new = extract_index.handler(doc, session_id=sid)
+                trace.log_tool("scrape_web", {"url": url}, doc.title)
+                trace.log_tool(
+                    "extract_and_index",
+                    {"uri": doc.uri},
+                    f"{doc_id} new={is_new}",
+                )
+                (ingested if is_new else skipped).append(url)
+            except Exception as exc:  # noqa: BLE001
+                trace.log_note(f"Ingest failed for {url}", error=str(exc))
+                skipped.append(url)
+
+        for file_path in files:
+            path = Path(file_path)
+            try:
+                if path.suffix.lower() == ".pdf":
+                    doc = self._tools.get("scrape_pdf").handler(path)
+                elif path.suffix.lower() == ".docx":
+                    doc = extract_docx(path)
+                else:
+                    text = path.read_text(encoding="utf-8", errors="replace")
+                    from researchmind.extract import ExtractedDocument
+
+                    doc = ExtractedDocument(
+                        source_type="file",
+                        uri=str(path.resolve()),
+                        title=path.stem,
+                        text=text,
+                    )
+                doc_id, is_new = extract_index.handler(doc, session_id=sid)
+                trace.log_tool("extract_and_index", {"file": str(path)}, f"{doc_id} new={is_new}")
+                label = path.name
+                (ingested if is_new else skipped).append(label)
+            except Exception as exc:  # noqa: BLE001
+                trace.log_note(f"Ingest failed for {path}", error=str(exc))
+                skipped.append(path.name)
+
+        doc_count = len(store.list_documents(session_id=sid))
+        chunk_count = store.count_chunks()
+        message = (
+            f"Ingested {len(ingested)} source(s), skipped/duplicate {len(skipped)}. "
+            f"Session `{sid}` has {doc_count} document(s); {chunk_count} total chunks."
+        )
+        trace.log_note(message)
+        trace_path = str(trace.save())
+
+        return ResearchIngestResult(
+            session_id=sid,
+            ingested=ingested,
+            skipped=skipped,
+            doc_count=doc_count,
+            chunk_count=chunk_count,
+            trace_path=trace_path,
+            message=message,
+        )
+
+    def run_researchmind_chat(
+        self,
+        *,
+        question: str,
+        session_id: str,
+        model_key: str,
+        backend: InferenceBackend,
+    ) -> ResearchChatResult:
+        skill = self._research_skill()
+        req = ResearchChatInput(question=question.strip(), session_id=session_id)
+
+        trace = TraceRecorder(
+            skill=skill.name,
+            model=model_key,
+            user_input=req.model_dump(),
+        )
+        backend.load()
+
+        answer_tool = self._tools.get("research_answer")
+        raw_answer, citations, refs = answer_tool.handler(
+            req.question,
+            backend,
+            skill_body=skill.body,
+            skill_path=skill.path,
+            session_id=req.session_id,
+        )
+        trace.log_llm(req.question, raw_answer)
+        trace.log_note("citations", count=len(citations))
+
+        full_answer = raw_answer
+        if refs:
+            full_answer = f"{raw_answer}\n\n{refs}"
+
+        trace_path = str(trace.save())
+        pydantic_citations = [
+            Citation(
+                index=c.index,
+                chunk_id=c.chunk_id,
+                doc_title=c.doc_title,
+                doc_uri=c.doc_uri,
+                excerpt=c.excerpt,
+            )
+            for c in citations
+        ]
+
+        return ResearchChatResult(
+            answer=full_answer,
+            citations=pydantic_citations,
+            references_markdown=refs,
+            session_id=req.session_id,
+            trace_path=trace_path,
+        )

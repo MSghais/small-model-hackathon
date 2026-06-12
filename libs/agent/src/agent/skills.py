@@ -15,6 +15,7 @@ class Skill:
     task: str
     tools: list[str]
     model_hints: list[str]
+    flags: dict[str, Any]
     body: str
     path: Path
 
@@ -44,12 +45,16 @@ def _parse_skill_md(path: Path) -> Skill:
     meta: dict[str, Any] = yaml.safe_load(match.group(1)) or {}
     body = match.group(2).strip()
 
+    raw_flags = meta.get("flags") or {}
+    flags = {str(k): v for k, v in raw_flags.items()} if isinstance(raw_flags, dict) else {}
+
     return Skill(
         name=str(meta.get("name", path.parent.name)),
         description=str(meta.get("description", "")),
         task=str(meta.get("task", "")),
         tools=[str(t) for t in meta.get("tools", [])],
         model_hints=[str(m) for m in meta.get("model_hints", [])],
+        flags=flags,
         body=body,
         path=path,
     )
