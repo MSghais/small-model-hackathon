@@ -19,7 +19,7 @@ def build_demo() -> gr.Blocks:
         else "Using built-in presets (models.yaml not found)."
     )
 
-    with gr.Blocks(title="Lesson Agent — Build Small Hackathon") as demo:
+    with gr.Blocks(title="Lesson Agent + ResearchMind — Build Small Hackathon") as demo:
         gr.Markdown(
             f"""
 # Lesson Agent + ResearchMind
@@ -37,7 +37,7 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
         with gr.Tabs():
             with gr.Tab("Lesson slides"):
                 build_education_pptx_tab()
-            with gr.Tab("Research Agent"):
+            with gr.Tab("ResearchMind"):
                 build_research_mind_tab()
             with gr.Tab("Chat (debug)"):
                 build_chat_tab()

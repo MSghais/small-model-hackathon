@@ -17,14 +17,6 @@ INGEST_MODES = [
 ]
 
 
-def _error_md(message: str) -> str:
-    safe = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return (
-        f'<div style="padding:12px;border:1px solid #c44;border-radius:8px;'
-        f'background:#fff5f5;color:#8a1f1f;">{safe}</div>'
-    )
-
-
 def list_session_choices() -> list[tuple[str, str]]:
     store = IngestPipeline().store
     sessions = store.list_sessions()
@@ -42,19 +34,45 @@ def refresh_sessions(current: str) -> gr.Dropdown:
     return gr.Dropdown(choices=choices, value=value)
 
 
+def memory_summary(session_id: str) -> str:
+    store = IngestPipeline().store
+    docs = store.list_documents(session_id=session_id or None)
+    chunks = store.count_chunks()
+    if not docs:
+        return f"_No documents indexed yet._ Total chunks in store: **{chunks}**."
+    lines = [f"**{len(docs)}** document(s) in this session · **{chunks}** total chunks in store\n"]
+    for d in docs:
+        lines.append(f"- **{d.title}** (`{d.source_type}`) — {d.uri}")
+    return "\n".join(lines)
+
+
 def discover_sources(
     topic: str,
     ingest_mode: str,
     session_id: str,
-) -> tuple[str, gr.Update, str, str, str]:
+) -> tuple[str, gr.Update, str, str, str, str]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        return load_error, gr.update(choices=[], value=[]), "", load_error, load_error
+        return (
+            load_error,
+            gr.update(choices=[], value=[]),
+            session_id,
+            load_error,
+            load_error,
+            memory_summary(session_id),
+        )
 
     if not topic.strip():
         msg = "Enter a topic to discover sources."
-        return msg, gr.update(choices=[], value=[]), session_id, msg, msg
+        return (
+            msg,
+            gr.update(choices=[], value=[]),
+            session_id,
+            msg,
+            msg,
+            memory_summary(session_id),
+        )
 
     auto_search = ingest_mode == "auto"
     try:
@@ -75,6 +93,7 @@ def discover_sources(
                 result.session_id,
                 f"Auto-ingest complete for session `{result.session_id}`",
                 result.trace_path,
+                memory_summary(result.session_id),
             )
 
         discover = runner.run_researchmind_discover(
@@ -94,10 +113,18 @@ def discover_sources(
             discover.session_id,
             summary,
             discover.trace_path,
+            memory_summary(discover.session_id),
         )
     except Exception as exc:  # noqa: BLE001
         msg = f"Discover error: {exc}"
-        return msg, gr.update(choices=[], value=[]), session_id, msg, msg
+        return (
+            msg,
+            gr.update(choices=[], value=[]),
+            session_id,
+            msg,
+            msg,
+            memory_summary(session_id),
+        )
 
 
 def ingest_selected(
@@ -111,7 +138,7 @@ def ingest_selected(
     load_error = ensure_model_loaded(model_key)
     if load_error:
         dd = refresh_sessions(session_id)
-        return load_error, load_error, load_error, dd
+        return load_error, memory_summary(session_id), load_error, dd
 
     direct_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
     all_urls = list(dict.fromkeys([*direct_urls, *(selected_urls or [])]))
@@ -119,7 +146,7 @@ def ingest_selected(
 
     if not all_urls and not files:
         msg = "Provide URLs, select suggested sources, or upload a file."
-        return msg, msg, msg, refresh_sessions(session_id)
+        return msg, memory_summary(session_id), msg, refresh_sessions(session_id)
 
     try:
         runner = AgentRunner()
@@ -132,14 +159,16 @@ def ingest_selected(
             model_key=model_key,
             backend=get_backend(model_key),
         )
-        docs = IngestPipeline().store.list_documents(session_id=result.session_id)
-        sources_table = "\n".join(
-            f"- **{d.title}** (`{d.source_type}`) — {d.uri}" for d in docs
-        ) or "_No documents yet._"
-        return result.message, sources_table, result.trace_path, refresh_sessions(result.session_id)
+        sources_table = memory_summary(result.session_id)
+        return (
+            result.message,
+            sources_table,
+            result.trace_path,
+            refresh_sessions(result.session_id),
+        )
     except Exception as exc:  # noqa: BLE001
         msg = f"Ingest error: {exc}"
-        return msg, msg, msg, refresh_sessions(session_id)
+        return msg, memory_summary(session_id), msg, refresh_sessions(session_id)
 
 
 def ask_question(
@@ -190,6 +219,7 @@ def ask_question(
 
 
 def build_research_mind_tab() -> None:
+    """ResearchMind UI — nested Ingest / Chat / Memory / Trace tabs."""
     model_key = get_active_model_key()
     cfg = get_config()
 
@@ -198,64 +228,81 @@ def build_research_mind_tab() -> None:
 ### ResearchMind
 
 Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask questions **offline** with citations.
-
-- **Suggest mode:** local model proposes URLs → you confirm → ingest
-- **Auto search:** DuckDuckGo top URLs ingested immediately (network at ingest only)
-- **Direct:** paste URLs or upload PDF/DOCX
 """
     )
     gr.Markdown(model_status(model_key))
     gr.Markdown(f"Memory store: `{cfg.data_dir.resolve()}`")
 
-    session_dd = gr.Dropdown(
-        label="Session",
-        choices=list_session_choices(),
-        value="",
-        interactive=True,
-    )
-    refresh_btn = gr.Button("Refresh sessions", size="sm")
-
     with gr.Row():
-        topic = gr.Textbox(
-            label="Topic (optional)",
-            placeholder="e.g. Photosynthesis, American Revolution",
+        session_dd = gr.Dropdown(
+            label="Session",
+            choices=list_session_choices(),
+            value="",
+            interactive=True,
         )
-        ingest_mode = gr.Dropdown(
-            label="Ingest mode",
-            choices=[m[0] for m in INGEST_MODES],
-            value=INGEST_MODES[0][0],
-        )
+        refresh_btn = gr.Button("Refresh sessions", size="sm")
 
-    urls_text = gr.Textbox(
-        label="URLs (one per line, optional)",
-        lines=3,
-        placeholder="https://en.wikipedia.org/wiki/...",
-    )
-    upload_files = gr.File(
-        label="Upload PDF or DOCX",
-        file_count="multiple",
-        file_types=[".pdf", ".docx"],
-    )
+    with gr.Tabs():
+        with gr.Tab("Ingest"):
+            gr.Markdown(
+                """
+- **Suggest mode:** local model proposes URLs → you confirm → ingest
+- **Auto search:** DuckDuckGo top URLs ingested immediately (network at ingest only)
+- **Direct:** paste URLs or upload PDF/DOCX
+"""
+            )
+            with gr.Row():
+                topic = gr.Textbox(
+                    label="Topic (optional)",
+                    placeholder="e.g. Photosynthesis, American Revolution",
+                )
+                ingest_mode = gr.Dropdown(
+                    label="Ingest mode",
+                    choices=[m[0] for m in INGEST_MODES],
+                    value=INGEST_MODES[0][0],
+                )
 
-    discover_btn = gr.Button("Discover sources", variant="secondary")
-    url_choices = gr.CheckboxGroup(label="Suggested URLs to ingest", choices=[])
-    ingest_btn = gr.Button("Ingest selected", variant="primary")
+            urls_text = gr.Textbox(
+                label="URLs (one per line, optional)",
+                lines=3,
+                placeholder="https://en.wikipedia.org/wiki/...",
+            )
+            upload_files = gr.File(
+                label="Upload PDF or DOCX",
+                file_count="multiple",
+                file_types=[".pdf", ".docx"],
+            )
 
-    ingest_status = gr.Markdown()
-    sources_md = gr.Markdown(label="Ingested sources")
+            discover_btn = gr.Button("Discover sources", variant="secondary")
+            url_choices = gr.CheckboxGroup(label="Suggested URLs to ingest", choices=[])
+            ingest_btn = gr.Button("Ingest selected", variant="primary")
+            ingest_status = gr.Markdown()
 
-    gr.Markdown("---")
-    gr.Markdown("#### Ask (offline after ingest)")
+        with gr.Tab("Chat"):
+            gr.Markdown("Ask questions **offline** after ingest. Answers include `[n]` citations.")
+            chatbot = gr.Chatbot(label="Research chat", height=420)
+            question = gr.Textbox(
+                label="Question",
+                placeholder="What does your corpus say about…?",
+            )
+            ask_btn = gr.Button("Ask", variant="primary")
 
-    chatbot = gr.Chatbot(label="Research chat", height=360)
-    question = gr.Textbox(label="Question", placeholder="What does your corpus say about…?")
-    ask_btn = gr.Button("Ask", variant="primary")
+        with gr.Tab("Memory"):
+            gr.Markdown("Indexed documents and chunk counts for the selected session.")
+            memory_md = gr.Markdown(value=memory_summary(""))
+            refresh_memory_btn = gr.Button("Refresh memory view", size="sm")
 
-    with gr.Accordion("Trace & debug", open=False):
-        trace_summary = gr.Markdown()
-        trace_box = gr.Textbox(label="Trace JSON", lines=10, interactive=False)
+        with gr.Tab("Trace"):
+            trace_summary = gr.Markdown()
+            trace_box = gr.Textbox(label="Trace JSON", lines=14, interactive=False)
 
     refresh_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
+    refresh_memory_btn.click(
+        fn=memory_summary,
+        inputs=[session_dd],
+        outputs=[memory_md],
+    )
+    session_dd.change(fn=memory_summary, inputs=[session_dd], outputs=[memory_md])
 
     discover_btn.click(
         fn=lambda topic, mode, sid: discover_sources(
@@ -264,13 +311,13 @@ Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask
             sid,
         ),
         inputs=[topic, ingest_mode, session_dd],
-        outputs=[ingest_status, url_choices, session_dd, trace_summary, trace_box],
+        outputs=[ingest_status, url_choices, session_dd, trace_summary, trace_box, memory_md],
     )
 
     ingest_btn.click(
         fn=ingest_selected,
         inputs=[topic, urls_text, url_choices, upload_files, session_dd],
-        outputs=[ingest_status, sources_md, trace_box, session_dd],
+        outputs=[ingest_status, memory_md, trace_box, session_dd],
     )
 
     ask_btn.click(
