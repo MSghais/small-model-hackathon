@@ -60,6 +60,8 @@ def test_clean_model_answer_strips_reference_spam():
 
 
 def test_clean_model_answer_strips_thinking_block():
-    raw = "``\n\nAgents use tools and memory [1]."
+    think_open = "<" + "think" + ">"
+    think_close = "</" + "think" + ">"
+    raw = f"{think_open}\nplan\n{think_close}\n\nAgents use tools and memory [1]."
     cleaned = clean_model_answer(raw)
     assert cleaned == "Agents use tools and memory [1]."

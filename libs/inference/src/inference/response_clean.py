@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import re
 
+_RT_OPEN = "<" + "redacted_thinking" + ">"
+_RT_CLOSE = "</" + "redacted_thinking" + ">"
+_THINK_OPEN = "<" + "think" + ">"
+_THINK_CLOSE = "</" + "think" + ">"
+
 _THINK_BLOCKS = re.compile(
-    r"(?:"
-    r"``"
-    r"|"
-    r"``"
-    r"|"
-    r"<think(?:ing)?>.*?</think(?:ing)?>"
-    r")",
+    "|".join(
+        (
+            re.escape(_RT_OPEN) + r".*?" + re.escape(_RT_CLOSE),
+            re.escape(_THINK_OPEN) + r".*?" + re.escape(_THINK_CLOSE),
+            r"<thinking>.*?</thinking>",
+        )
+    ),
     re.DOTALL | re.IGNORECASE,
 )
 _MALFORMED_THINK_OPEN = re.compile(r"^think>\s*", re.IGNORECASE)
@@ -54,7 +59,7 @@ def _extract_answer_from_reasoning(text: str) -> str | None:
     return None
 
 
-def _looks_like_reasoning_only(text: str) -> bool:
+def looks_like_reasoning_only(text: str) -> bool:
     sample = text[:240].lower()
     return any(sample.startswith(opener) for opener in _REASONING_OPENERS)
 
@@ -74,7 +79,7 @@ def strip_reasoning_output(text: str) -> str:
             return extracted
         cleaned = body
 
-    if _looks_like_reasoning_only(cleaned):
+    if looks_like_reasoning_only(cleaned):
         extracted = _extract_answer_from_reasoning(cleaned)
         if extracted:
             return extracted

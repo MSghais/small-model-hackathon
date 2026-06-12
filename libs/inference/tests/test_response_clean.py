@@ -2,10 +2,20 @@ from __future__ import annotations
 
 from inference.response_clean import strip_reasoning_output
 
+_RT_OPEN = "<" + "redacted_thinking" + ">"
+_RT_CLOSE = "</" + "redacted_thinking" + ">"
+_THINK_OPEN = "<" + "think" + ">"
+_THINK_CLOSE = "</" + "think" + ">"
+
 
 def test_strips_redacted_thinking_block():
-    raw = "``\n\nThe capital of France is Paris."
+    raw = f"{_RT_OPEN}\nplanning...\n{_RT_CLOSE}\n\nThe capital of France is Paris."
     assert strip_reasoning_output(raw) == "The capital of France is Paris."
+
+
+def test_strips_think_block():
+    raw = f"{_THINK_OPEN}\nplanning...\n{_THINK_CLOSE}\n\nAgents use memory [1]."
+    assert strip_reasoning_output(raw) == "Agents use memory [1]."
 
 
 def test_strips_malformed_think_prefix_and_extracts_summary():

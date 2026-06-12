@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from inference.response_clean import strip_reasoning_output
+from inference.response_clean import looks_like_reasoning_only, strip_reasoning_output
 
 from researchmind.store import StoredChunk
 
@@ -83,4 +83,10 @@ def clean_model_answer(answer: str) -> str:
         text = text.split("\nReferences\n", maxsplit=1)[0].rstrip()
     text = _CITATION_RUN.sub("", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    text = text.strip()
+    if not text or looks_like_reasoning_only(text):
+        return (
+            "The model returned planning text without a final answer. "
+            "Try asking again or switch to a non-reasoning model preset."
+        )
+    return text
