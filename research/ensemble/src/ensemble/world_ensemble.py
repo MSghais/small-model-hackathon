@@ -218,4 +218,11 @@ def demo(spec="tiny", steps=60):
 
 
 if __name__ == "__main__":
-    demo(sys.argv[1] if len(sys.argv) > 1 else "tiny")
+    from ensemble.config import load_dotenv, resolve_llm
+
+    load_dotenv()
+    spec = sys.argv[1] if len(sys.argv) > 1 else None
+    if spec is None or spec == "auto":
+        spec, preset = resolve_llm()
+        print(f"Resolved LLM: {spec} (preset {preset})")
+    demo(spec or "tiny")

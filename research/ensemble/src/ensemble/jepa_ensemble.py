@@ -219,7 +219,13 @@ def demo_hf(model_path="Qwen/Qwen2.5-0.5B-Instruct"):
 if __name__ == "__main__":
     import sys
 
-    arg = sys.argv[1] if len(sys.argv) > 1 else "tiny"
+    from ensemble.config import load_dotenv, resolve_llm
+
+    load_dotenv()
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    if arg is None or arg == "auto":
+        arg, preset = resolve_llm()
+        print(f"Resolved LLM: {arg} (preset {preset})")
     if arg == "tiny":
         demo_tiny()
     else:

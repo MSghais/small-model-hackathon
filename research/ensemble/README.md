@@ -35,12 +35,15 @@ uv run --package ensemble ensemble-pretrain \
   --llm tiny --steps 50 --no-kb \
   --out models/ensemble/jepa-smoke
 
-# Real small model on lesson chat data + KB memory
+# Uses ACTIVE_MODEL / BASE / LLM_PATH from .env + models.yaml by default
 uv run --package ensemble ensemble-pretrain \
-  --llm Qwen/Qwen2.5-0.5B-Instruct \
   --data research/data/education-lesson-chat.jsonl \
   --kb research/data/benchmark-kb.jsonl \
-  --steps 200 --out models/ensemble/jepa-lesson-pretrain
+  --steps 200
+
+# Override base LLM explicitly
+uv run --package ensemble ensemble-pretrain \
+  --llm Qwen/Qwen2.5-0.5B-Instruct --steps 200
 ```
 
 Checkpoint layout: `manifest.json`, `aux.pt` (emb/jepa/bridge/router), `llm/` (PEFT adapters).

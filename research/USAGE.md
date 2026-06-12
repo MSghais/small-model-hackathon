@@ -116,10 +116,13 @@ uv run --package ensemble python -m ensemble.world_ensemble Qwen/Qwen2.5-0.5B-In
 ### Pretrain + save (LLM + emb + JEPA)
 
 ```bash
+# Default LLM: ENSEMBLE_LLM → LLM_PATH → BASE → MODEL_ID → ACTIVE_MODEL (models.yaml)
+uv run --package ensemble ensemble-pretrain --steps 200
+
+# Or override
 uv run --package ensemble ensemble-pretrain \
   --llm Qwen/Qwen2.5-0.5B-Instruct \
-  --steps 200 \
-  --out models/ensemble/jepa-lesson-pretrain
+  --steps 200
 
 # Benchmark saved ensemble with slm-evals (compare to base HF model)
 uv run --package slm-evals slm-benchmark \
