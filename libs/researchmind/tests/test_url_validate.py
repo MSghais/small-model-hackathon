@@ -42,6 +42,14 @@ def test_validate_url_does_not_shadow_probe(monkeypatch):
     assert "wikipedia" in normalized
 
 
+def test_rejects_bing_tracking_links():
+    ok, reason = is_well_formed(
+        "https://www.bing.com/aclick?id=abc&u=aHR0cHM6Ly9leGFtcGxlLmNvbQ"
+    )
+    assert not ok
+    assert "tracking" in reason
+
+
 def test_filter_valid_urls_skips_bad(monkeypatch):
     def fake_validate(url, *, check_reachable=True):
         if "bad" in url:

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import gradio as gr
 
+from agent.models import ResearchIngestResult
 from agent.runner import AgentRunner
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from inference.factory import get_backend
 from researchmind.config import get_config
 from researchmind.ingest import IngestPipeline
+
+logger = logging.getLogger(__name__)
 
 INGEST_MODES = [
     ("Suggest URLs (confirm)", "suggest"),
@@ -27,11 +31,68 @@ def list_session_choices() -> list[tuple[str, str]]:
     return choices
 
 
-def refresh_sessions(current: str) -> gr.Dropdown:
+def refresh_sessions(current: str):
     choices = list_session_choices()
     values = [c[1] for c in choices]
     value = current if current in values else ""
-    return gr.Dropdown(choices=choices, value=value)
+    return gr.update(choices=choices, value=value)
+
+
+def load_trace_json(trace_path: str) -> str:
+    if not trace_path:
+        return ""
+    if trace_path.strip().startswith("{"):
+        return trace_path
+    path = Path(trace_path)
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return trace_path
+
+
+def trace_summary_markdown(trace_path: str) -> str:
+    raw = load_trace_json(trace_path)
+    if not raw or not raw.strip().startswith("{"):
+        return raw or "_No trace yet. Run Discover or Ingest._"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return f"Trace file: `{trace_path}`"
+
+    lines = [
+        f"**Run** `{data.get('run_id', '?')}` · skill `{data.get('skill', '?')}`",
+        "",
+    ]
+    for step in data.get("steps", []):
+        if step.get("type") != "note":
+            continue
+        msg = step.get("message", "")
+        extra = {k: v for k, v in step.items() if k not in ("type", "message")}
+        detail = ""
+        if extra:
+            detail = " — " + ", ".join(f"{k}={v!r}" for k, v in extra.items())
+        lines.append(f"- {msg}{detail}")
+    if len(lines) <= 2:
+        lines.append("_No notes in trace. See Trace JSON below._")
+    return "\n".join(lines)
+
+
+def format_ingest_status(result: ResearchIngestResult) -> str:
+    lines = [result.message, ""]
+    if result.ingested:
+        lines.append("**Ingested**")
+        lines.extend(f"- {url}" for url in result.ingested)
+        lines.append("")
+    if result.skipped:
+        lines.append("**Skipped (duplicate)**")
+        lines.extend(f"- {url}" for url in result.skipped)
+        lines.append("")
+    if result.failures:
+        lines.append("**Failed**")
+        for failure in result.failures:
+            lines.append(f"- `{failure.url}` — _{failure.stage}_: {failure.reason}")
+        lines.append("")
+        lines.append("_Open the **Trace** tab for full JSON._")
+    return "\n".join(lines).strip()
 
 
 def memory_summary(session_id: str) -> str:
@@ -87,12 +148,13 @@ def discover_sources(
                 model_key=model_key,
                 backend=get_backend(model_key),
             )
+            trace_json = load_trace_json(result.trace_path)
             return (
-                result.message,
+                format_ingest_status(result),
                 gr.update(choices=[], value=[]),
                 result.session_id,
-                f"Auto-ingest complete for session `{result.session_id}`",
-                result.trace_path,
+                trace_summary_markdown(result.trace_path),
+                trace_json,
                 memory_summary(result.session_id),
             )
 
@@ -114,12 +176,13 @@ def discover_sources(
                 f"Found **{len(choices)} verified URL(s)** via web search "
                 f"(Google + fallbacks). Select sources and click **Ingest selected**."
             )
+        trace_json = load_trace_json(discover.trace_path)
         return (
             summary,
             gr.update(choices=choices, value=choices),
             discover.session_id,
-            summary,
-            discover.trace_path,
+            trace_summary_markdown(discover.trace_path),
+            trace_json,
             memory_summary(discover.session_id),
         )
     except Exception as exc:  # noqa: BLE001
@@ -140,12 +203,17 @@ def ingest_selected(
     selected_urls: list[str],
     upload_files: list[str] | None,
     session_id: str,
-) -> tuple[str, str, str, gr.Dropdown]:
+) -> tuple[str, str, str, str, object]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        dd = refresh_sessions(session_id)
-        return load_error, memory_summary(session_id), load_error, dd
+        return (
+            load_error,
+            memory_summary(session_id),
+            load_error,
+            load_error,
+            refresh_sessions(session_id),
+        )
 
     direct_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
     all_urls = list(dict.fromkeys([*direct_urls, *(selected_urls or [])]))
@@ -153,9 +221,16 @@ def ingest_selected(
 
     if not all_urls and not files:
         msg = "Provide URLs, select suggested sources, or upload a file."
-        return msg, memory_summary(session_id), msg, refresh_sessions(session_id)
+        return (
+            msg,
+            memory_summary(session_id),
+            msg,
+            msg,
+            refresh_sessions(session_id),
+        )
 
     try:
+        logger.info("Ingesting %d URL(s) and %d file(s)", len(all_urls), len(files))
         runner = AgentRunner()
         result = runner.run_researchmind_ingest(
             topic=topic or None,
@@ -166,16 +241,24 @@ def ingest_selected(
             model_key=model_key,
             backend=get_backend(model_key),
         )
-        sources_table = memory_summary(result.session_id)
+        trace_json = load_trace_json(result.trace_path)
         return (
-            result.message,
-            sources_table,
-            result.trace_path,
+            format_ingest_status(result),
+            memory_summary(result.session_id),
+            trace_json,
+            trace_summary_markdown(result.trace_path),
             refresh_sessions(result.session_id),
         )
     except Exception as exc:  # noqa: BLE001
-        msg = f"Ingest error: {exc}"
-        return msg, memory_summary(session_id), msg, refresh_sessions(session_id)
+        logger.exception("Ingest failed")
+        msg = f"**Ingest error:** {exc}"
+        return (
+            msg,
+            memory_summary(session_id),
+            msg,
+            msg,
+            refresh_sessions(session_id),
+        )
 
 
 def ask_question(
@@ -324,7 +407,7 @@ Scrape sources once, index into **MemRAG** (local SQLite + embeddings), then ask
     ingest_btn.click(
         fn=ingest_selected,
         inputs=[topic, urls_text, url_choices, upload_files, session_dd],
-        outputs=[ingest_status, memory_md, trace_box, session_dd],
+        outputs=[ingest_status, memory_md, trace_box, trace_summary, session_dd],
     )
 
     ask_btn.click(

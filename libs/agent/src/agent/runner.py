@@ -398,17 +398,20 @@ class AgentRunner:
 
         doc_count = len(store.list_documents(session_id=sid))
         chunk_count = store.count_chunks()
+        fail_n = len(failures)
         message = (
-            f"Ingested {len(ingested)} source(s), skipped/duplicate {len(skipped)}. "
-            f"Session `{sid}` has {doc_count} document(s); {chunk_count} total chunks."
+            f"Ingested {len(ingested)} source(s), skipped/duplicate {len(skipped)}, "
+            f"failed {fail_n}. Session `{sid}` has {doc_count} document(s); "
+            f"{chunk_count} total chunks."
         )
-        trace.log_note(message)
+        trace.log_note(message, failures=[f.model_dump() for f in failures])
         trace_path = str(trace.save())
 
         return ResearchIngestResult(
             session_id=sid,
             ingested=ingested,
             skipped=skipped,
+            failures=failures,
             doc_count=doc_count,
             chunk_count=chunk_count,
             trace_path=trace_path,
