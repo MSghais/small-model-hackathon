@@ -124,8 +124,6 @@ def resolve_model_spec(
         args["peft"] = peft
     if dtype:
         args["dtype"] = dtype
-    if device:
-        args["device"] = device
 
     return LMEvalModelSpec(
         lm_eval_model="hf",
@@ -195,8 +193,6 @@ def _resolve_from_preset(
         args["peft"] = adapter
     if dtype:
         args["dtype"] = dtype
-    if device:
-        args["device"] = device
 
     return LMEvalModelSpec(
         lm_eval_model="hf",

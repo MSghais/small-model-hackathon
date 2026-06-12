@@ -19,13 +19,13 @@ todos:
     status: completed
   - id: docs-workflows
     content: Document finetune + ensemble lm-eval workflows in research/evals/USAGE.md and research/USAGE.md
-    status: in_progress
+    status: completed
   - id: finetune-hook
     content: "Optional: add --lm-eval-after to finetune.py after CLI smoke tests pass"
-    status: pending
+    status: completed
   - id: phase2-verify
     content: "Deferred: slm-compare, education_qa, harness JSON export from verification pipeline plan"
-    status: pending
+    status: cancelled
 isProject: false
 ---
 

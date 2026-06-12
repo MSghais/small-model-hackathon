@@ -1,15 +1,13 @@
 # SLM Agentic Benchmark Suite
 
-A uv workspace package to evaluate **local HuggingFace models** against agentic benchmarks.
+A uv workspace package to evaluate **local HuggingFace models** against agentic and academic benchmarks.
 
 **Docs:** [USAGE.md](USAGE.md) (commands and workflows) · [docs/benchmarks.md](docs/benchmarks.md) (per-benchmark reference) · [../USAGE.md](../USAGE.md) (full research tree)
 
-| Benchmark | What it measures | Dataset |
+| Suite | CLI | What it measures |
 |---|---|---|
-| **BFCL v4** | Function-calling accuracy | `gorilla-llm/Berkeley-Function-Calling-Leaderboard` |
-| **τ-bench** | Tool-agent-user multi-turn interaction | `ShishirPatil/tau-bench` |
-| **GAIA** | General end-to-end agent tasks | `gaia-benchmark/GAIA` |
-| **SWE-bench Verified** | Agentic code patching | `princeton-nlp/SWE-bench_Verified` |
+| **Agentic** | `slm-benchmark` | BFCL, τ-bench, GAIA, SWE-bench |
+| **Academic** | `slm-lm-eval` | ARC, HellaSwag, GSM8K, … (lm-evaluation-harness) |
 
 ## Install
 
@@ -17,6 +15,7 @@ From the repo root:
 
 ```bash
 uv sync --group evals
+uv sync --group lm-eval   # optional: slm-lm-eval academic benchmarks
 ```
 
 ## Quickstart

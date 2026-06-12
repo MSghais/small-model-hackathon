@@ -295,13 +295,20 @@ def main() -> int:
     _ensure_lm_eval_models_registered()
 
     seed = int(cfg.get("seed", 42))
+    model_args = dict(spec.model_args)
+    eval_device = cfg.get("device")
+    if spec.lm_eval_model == "hf":
+        model_args.pop("device", None)
+    else:
+        eval_device = None
+
     eval_results = lm_eval.simple_evaluate(
         model=spec.lm_eval_model,
-        model_args=spec.model_args,
+        model_args=model_args,
         tasks=cfg["tasks"],
         num_fewshot=cfg.get("num_fewshot"),
         batch_size=cfg.get("batch_size"),
-        device=cfg.get("device"),
+        device=eval_device,
         limit=cfg.get("limit"),
         random_seed=seed,
         numpy_random_seed=seed,
