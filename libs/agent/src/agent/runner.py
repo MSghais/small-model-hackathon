@@ -4,11 +4,13 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from inference.base import InferenceBackend
+from researchmind.citations import format_context_block
 from researchmind.extract import extract_docx
 from researchmind.ingest import IngestPipeline
+from researchmind.retrieve import retrieve
 
 from agent.models import (
     Citation,
@@ -47,6 +49,7 @@ class AgentResult:
     trace: TraceRecorder
     trace_path: str
     outline: SlideOutline
+    source_summary: str = ""
 
 
 class AgentRunner:
@@ -66,18 +69,42 @@ class AgentRunner:
         slide_count: int,
         model_key: str,
         backend: InferenceBackend,
+        source_mode: Literal["none", "web", "rag"] = "none",
+        search_workflow: Literal["two_step", "auto"] = "two_step",
+        urls: list[str] | None = None,
+        files: list[Path] | None = None,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
     ) -> AgentResult:
         skill = self._skills.get(EDUCATION_PPTX_SKILL)
-        req = EducationPptxInput(topic=topic.strip(), grade=grade, slide_count=slide_count)
+        req = EducationPptxInput(
+            topic=topic.strip(),
+            grade=grade,
+            slide_count=slide_count,
+            source_mode=source_mode,
+            search_workflow=search_workflow,
+            urls=urls or [],
+            files=files or [],
+            session_id=session_id or None,
+            doc_ids=doc_ids or [],
+        )
 
         trace = TraceRecorder(
             skill=skill.name,
             model=model_key,
-            user_input=req.model_dump(),
+            user_input=req.model_dump(mode="json"),
         )
 
         backend.load()
-        outline = self._generate_outline(skill, req, backend, trace)
+        source_context, source_summary, active_session = self._gather_lesson_source_context(
+            req, backend, model_key, trace
+        )
+        if active_session:
+            req = req.model_copy(update={"session_id": active_session})
+
+        outline = self._generate_outline(
+            skill, req, backend, trace, source_context=source_context
+        )
         tool = self._tools.get("create_pptx")
         pptx_path = tool.handler(outline, run_id=trace.run_id)
         trace.log_tool(
@@ -118,7 +145,102 @@ class AgentRunner:
             trace=trace,
             trace_path=str(trace_path),
             outline=outline,
+            source_summary=source_summary,
         )
+
+    def _gather_lesson_source_context(
+        self,
+        req: EducationPptxInput,
+        backend: InferenceBackend,
+        model_key: str,
+        trace: TraceRecorder,
+    ) -> tuple[str, str, str | None]:
+        if req.source_mode == "none":
+            return "", "", None
+
+        pipeline = IngestPipeline()
+        store = pipeline.store
+        session_id = req.session_id
+        ingest_summary = ""
+        ingest: ResearchIngestResult | None = None
+
+        if req.source_mode == "web":
+            if req.search_workflow == "two_step" and not req.urls and not req.files:
+                raise ValueError(
+                    "Two-step web search requires selected URLs, pasted URLs, or uploaded files. "
+                    "Click **Discover sources** first, then select sources before generating."
+                )
+            auto_search = req.search_workflow == "auto"
+            ingest = self.run_researchmind_ingest(
+                topic=req.topic,
+                urls=req.urls,
+                files=req.files,
+                auto_search=auto_search,
+                session_id=session_id,
+                model_key=model_key,
+                backend=backend,
+            )
+            session_id = ingest.session_id
+            ingest_summary = ingest.message
+            trace.log_note(ingest.message, phase="lesson_ingest", session_id=session_id)
+        elif req.source_mode == "rag":
+            session_id = self._ensure_session(store, session_id, topic=req.topic)
+            if req.urls or req.files:
+                ingest = self.run_researchmind_ingest(
+                    topic=req.topic,
+                    urls=req.urls,
+                    files=req.files,
+                    auto_search=False,
+                    session_id=session_id,
+                    model_key=model_key,
+                    backend=backend,
+                )
+                session_id = ingest.session_id
+                ingest_summary = ingest.message
+                trace.log_note(ingest.message, phase="lesson_ingest", session_id=session_id)
+
+            doc_count = len(store.list_documents(session_id=session_id))
+            resolved = self._lesson_doc_ids(store, session_id, req, ingest)
+            if doc_count == 0 and not resolved:
+                raise ValueError(
+                    "RAG mode requires indexed sources. Select a ResearchMind session with "
+                    "documents, or paste URLs / upload files on this tab."
+                )
+
+        scope_session, scope_docs = self._lesson_retrieve_scope(
+            store, session_id, req, ingest
+        )
+        chunks = retrieve(
+            req.topic,
+            store,
+            session_id=scope_session,
+            doc_ids=scope_docs,
+        )
+        if not chunks:
+            warning = (
+                "No passages retrieved from indexed sources; outline uses model knowledge only."
+            )
+            trace.log_note(warning, session_id=session_id, doc_ids=req.doc_ids)
+            summary = ingest_summary or warning
+            if ingest_summary:
+                summary = f"{ingest_summary}\n\n_{warning}_"
+            return "", summary, session_id
+
+        context, citations = format_context_block(chunks)
+        trace.log_note(
+            f"Retrieved {len(chunks)} passage(s) from {len(citations)} source(s)",
+            phase="lesson_retrieve",
+            passage_count=len(chunks),
+            citation_count=len(citations),
+            session_id=session_id,
+            doc_ids=req.doc_ids,
+        )
+        retrieve_line = (
+            f"Retrieved **{len(chunks)}** passage(s) from **{len(citations)}** source(s) "
+            f"for outline grounding."
+        )
+        summary = f"{ingest_summary}\n\n{retrieve_line}".strip() if ingest_summary else retrieve_line
+        return context, summary, session_id
 
     def _generate_outline(
         self,
@@ -126,9 +248,11 @@ class AgentRunner:
         req: EducationPptxInput,
         backend: InferenceBackend,
         trace: TraceRecorder,
+        *,
+        source_context: str = "",
     ) -> SlideOutline:
         system = education_outline_system(skill.body)
-        user = education_outline_user(req)
+        user = education_outline_user(req, source_context=source_context)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -229,15 +353,50 @@ class AgentRunner:
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
         cleaned = text.strip()
-        fence = re.search(r"```(?:json)?\s*(\{.*\})\s*```", cleaned, re.DOTALL)
+        fence = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned, re.DOTALL | re.IGNORECASE)
         if fence:
-            cleaned = fence.group(1)
-        else:
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if start >= 0 and end > start:
-                cleaned = cleaned[start : end + 1]
+            cleaned = fence.group(1).strip()
+
+        start = cleaned.find("{")
+        if start < 0:
+            return json.loads(cleaned)
+
+        end = AgentRunner._matching_brace_end(cleaned, start)
+        if end is not None:
+            return json.loads(cleaned[start : end + 1])
+
+        fallback_end = cleaned.rfind("}")
+        if fallback_end > start:
+            return json.loads(cleaned[start : fallback_end + 1])
         return json.loads(cleaned)
+
+    @staticmethod
+    def _matching_brace_end(text: str, start: int) -> int | None:
+        """Return index of the closing brace that matches ``start`` (must be ``{``)."""
+        if start >= len(text) or text[start] != "{":
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return None
 
     def _research_skill(self) -> Any:
         return self._skills.get(RESEARCH_MIND_SKILL)
@@ -251,6 +410,56 @@ class AgentRunner:
         if session_id and store.get_session(session_id):
             return session_id
         return store.create_session(topic=topic).id
+
+    @staticmethod
+    def _lesson_doc_ids(
+        store: Any,
+        session_id: str | None,
+        req: EducationPptxInput,
+        ingest: ResearchIngestResult | None,
+    ) -> list[str]:
+        if req.doc_ids:
+            return list(req.doc_ids)
+
+        resolved: list[str] = []
+        seen: set[str] = set()
+
+        def add(doc_id: str | None) -> None:
+            if doc_id and doc_id not in seen:
+                seen.add(doc_id)
+                resolved.append(doc_id)
+
+        if ingest:
+            for doc_id in ingest.doc_ids:
+                add(doc_id)
+
+        for doc in store.list_documents(session_id=session_id):
+            add(doc.id)
+
+        if ingest and not resolved:
+            from researchmind.url_validate import validate_url
+
+            for label in (*ingest.ingested, *ingest.skipped):
+                ok, _, normalized = validate_url(label, check_reachable=False)
+                if ok:
+                    add(store.find_document_id_by_uri(normalized))
+                add(store.find_document_id_by_uri(label))
+
+        return resolved
+
+    @staticmethod
+    def _lesson_retrieve_scope(
+        store: Any,
+        session_id: str | None,
+        req: EducationPptxInput,
+        ingest: ResearchIngestResult | None,
+    ) -> tuple[str | None, list[str] | None]:
+        doc_ids = AgentRunner._lesson_doc_ids(store, session_id, req, ingest)
+        if doc_ids:
+            return None, doc_ids
+        if session_id:
+            return session_id, None
+        return None, None
 
     def run_researchmind_discover(
         self,
@@ -339,6 +548,8 @@ class AgentRunner:
 
         ingested: list[str] = []
         skipped: list[str] = []
+        doc_ids: list[str] = []
+        seen_doc_ids: set[str] = set()
         failures: list[IngestFailure] = []
 
         scrape_web = self._tools.get("scrape_web")
@@ -360,6 +571,9 @@ class AgentRunner:
                     failures.append(IngestFailure(url=url, reason=msg, stage="scrape"))
                     continue
                 doc_id, is_new = extract_index.handler(doc, session_id=sid)
+                if doc_id not in seen_doc_ids:
+                    seen_doc_ids.add(doc_id)
+                    doc_ids.append(doc_id)
                 trace.log_tool("scrape_web", {"url": url}, doc.title)
                 trace.log_tool(
                     "extract_and_index",
@@ -389,6 +603,9 @@ class AgentRunner:
                         text=text,
                     )
                 doc_id, is_new = extract_index.handler(doc, session_id=sid)
+                if doc_id not in seen_doc_ids:
+                    seen_doc_ids.add(doc_id)
+                    doc_ids.append(doc_id)
                 trace.log_tool("extract_and_index", {"file": str(path)}, f"{doc_id} new={is_new}")
                 label = path.name
                 (ingested if is_new else skipped).append(label)
@@ -411,6 +628,7 @@ class AgentRunner:
             session_id=sid,
             ingested=ingested,
             skipped=skipped,
+            doc_ids=doc_ids,
             failures=failures,
             doc_count=doc_count,
             chunk_count=chunk_count,

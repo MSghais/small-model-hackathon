@@ -27,17 +27,25 @@ JSON schema:
 Rules:
 - Use exactly the requested number of content slides (title slide is added separately by the tool).
 - Bullets should be short, age-appropriate, and factual.
+- When source excerpts are provided, prefer them over general knowledge and keep bullets consistent with those sources.
 - speaker_note is optional but helpful for each slide.
 """
 
 
-def education_outline_user(req: EducationPptxInput) -> str:
-    return (
+def education_outline_user(req: EducationPptxInput, *, source_context: str = "") -> str:
+    base = (
         f"Topic: {req.topic}\n"
         f"Grade level: {req.grade}\n"
         f"Number of content slides: {req.slide_count}\n"
-        "Return JSON only."
     )
+    if source_context.strip():
+        base += (
+            "\nUse the following retrieved source excerpts as factual grounding. "
+            "Prefer these over general knowledge when they apply. "
+            "Do not invent citations in the JSON output.\n\n"
+            f"{source_context}\n"
+        )
+    return base + "\nReturn JSON only."
 
 
 def education_outline_repair(

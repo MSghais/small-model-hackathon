@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -18,6 +21,12 @@ class EducationPptxInput(BaseModel):
     topic: str
     grade: str
     slide_count: int = Field(ge=3, le=8)
+    source_mode: Literal["none", "web", "rag"] = "none"
+    search_workflow: Literal["two_step", "auto"] = "two_step"
+    urls: list[str] = Field(default_factory=list)
+    files: list[Path] = Field(default_factory=list)
+    session_id: str | None = None
+    doc_ids: list[str] = Field(default_factory=list)
 
 
 class Citation(BaseModel):
@@ -57,6 +66,7 @@ class ResearchIngestResult(BaseModel):
     session_id: str
     ingested: list[str]
     skipped: list[str]
+    doc_ids: list[str] = Field(default_factory=list)
     failures: list[IngestFailure] = Field(default_factory=list)
     doc_count: int
     chunk_count: int

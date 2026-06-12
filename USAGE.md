@@ -2,7 +2,7 @@
 
 How to run the **Lesson Agent** Gradio app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). The **Chat (debug)** tab tests the underlying model.
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -50,6 +50,27 @@ uv run --package gradio-space python -m gradio_space.app
 Open [http://localhost:7860](http://localhost:7860).
 
 The model loads on the **first Generate** (Lesson slides) or chat message. Agent traces are written to `outputs/traces/`. After code changes, restart the process to pick up updates.
+
+### Lesson slides — research sources
+
+The **Lesson slides** tab can ground outlines on external sources before building the deck:
+
+| Source mode | What it does |
+| ----------- | ------------ |
+| **None (model only)** | Default — outline from the local model only |
+| **Web search** | Search the web for the lesson topic, ingest pages, retrieve passages, then draft slides |
+| **RAG (indexed sources)** | Use a **ResearchMind session** and/or URLs/files you provide on this tab |
+
+When **Web search** is selected, choose a **search workflow**:
+
+| Workflow | Steps |
+| -------- | ----- |
+| **Two-step search (suggest & confirm)** | Click **Discover sources** → select URLs → **Generate lesson slides** |
+| **Auto search & ingest** | Click **Generate lesson slides** only — search, ingest, and outline in one step |
+
+**RAG** mode accepts an optional ResearchMind session, document checkboxes (scope), pasted URLs, and PDF/DOCX uploads. Indexed content is retrieved and passed to the outline step.
+
+Web discover/auto search requires network access. MemRAG data is stored under `RESEARCHMIND_DATA_DIR` (default `outputs/researchmind`).
 
 ### 5. Upload agent trace (Sharing is Caring badge)
 
