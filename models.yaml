@@ -2,9 +2,8 @@
 # Select active preset with ACTIVE_MODEL; override any field via .env (see .env.example).
 
 defaults:
-  active_model: minicpm-v-4.6
-
-  # active_model: minicpm5-1b
+  # active_model: minicpm-v-4.6
+  active_model: minicpm5-1b
 
   # Dev: set ALLOW_MODEL_SWITCH=true in .env to expose a dropdown in Gradio.
   # Space: keep false so visitors use one pinned model.
@@ -55,3 +54,22 @@ models:
     label: Fine-tuned LoRA adapter (local path)
     backend: transformers
     model_id: ./gemma_finetuned_model
+
+  minicpm5-1b-lesson-lora:
+    label: MiniCPM5 1B lesson LoRA (local)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    adapter_path: ./models/finetuned/minicpm5-1b-lora
+    trust_remote_code: true
+
+  minicpm5-1b-lesson-merged:
+    label: MiniCPM5 1B lesson merged (local)
+    backend: transformers
+    model_id: ./models/finetuned/minicpm5-1b-lora-merged
+    trust_remote_code: true
+
+  jepa-ensemble-lesson:
+    label: JEPA ensemble (LLM + emb + JEPA) lesson pretrain
+    backend: transformers
+    model_id: ./models/ensemble/jepa-lesson-pretrain
+    trust_remote_code: true

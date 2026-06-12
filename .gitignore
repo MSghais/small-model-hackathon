@@ -11,3 +11,5 @@ dist/
 build/
 
 outputs/traces
+
+/results

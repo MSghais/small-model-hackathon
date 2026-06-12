@@ -1,0 +1,20 @@
+# configs/lm_eval_smoke.yaml
+# Quick smoke profile — use for CI or first-run validation.
+# Run with:
+#   uv run --package slm-evals slm-lm-eval \
+#     --config research/evals/configs/lm_eval_smoke.yaml \
+#     --preset minicpm5-1b \
+#     --experiment-name minicpm5-1b__smoke
+
+tasks:
+  - arc_easy
+  - hellaswag
+
+num_fewshot: 0
+limit: 25
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval

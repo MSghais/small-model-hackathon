@@ -23,6 +23,7 @@ class ModelConfig:
     model_file: str | None = None
     model_path: str | None = None
     model_id: str | None = None
+    adapter_path: str | None = None
     trust_remote_code: bool = False
     multimodal: bool = False
     n_ctx: int = 4096
@@ -37,6 +38,7 @@ class ModelConfig:
             self.model_file,
             self.model_path,
             self.model_id,
+            self.adapter_path,
             self.trust_remote_code,
             self.multimodal,
             self.n_ctx,
@@ -59,6 +61,9 @@ class ModelConfig:
 
         if self.model_id and self.model_id.startswith(("./", "../")):
             updates["model_id"] = str((base_dir / self.model_id).resolve())
+
+        if self.adapter_path and self.adapter_path.startswith(("./", "../")):
+            updates["adapter_path"] = str((base_dir / self.adapter_path).resolve())
 
         return replace(self, **updates) if updates else self
 
@@ -149,6 +154,7 @@ def _parse_model_entry(key: str, raw: dict[str, Any]) -> ModelConfig:
         model_file=raw.get("model_file"),
         model_path=raw.get("model_path"),
         model_id=raw.get("model_id"),
+        adapter_path=raw.get("adapter_path"),
         trust_remote_code=bool(raw.get("trust_remote_code", False)),
         multimodal=bool(raw.get("multimodal", False)),
         n_ctx=int(raw.get("n_ctx", 4096)),

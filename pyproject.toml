@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agent",
+    "ensemble",
     "gradio-space",
     "inference",
 ]
@@ -15,14 +16,34 @@ dev = [
     "ruff>=0.9.0",
     "pytest>=8.0.0",
 ]
+finetune = [
+    "bitsandbytes>=0.46.1",
+    "datasets>=3.0.0",
+    "peft>=0.14.0",
+]
+ensemble = [
+    "accelerate>=1.2.0",
+    "peft>=0.14.0",
+    "transformers>=5.7.0",
+]
+evals = [
+    "slm-evals",
+]
+lm-eval = [
+    "slm-evals[lm-eval]",
+]
 
 [tool.uv.workspace]
 members = [
     "apps/*",
     "libs/*",
+    "research/ensemble",
+    "research/evals",
 ]
 
 [tool.uv.sources]
 agent = { workspace = true }
+ensemble = { workspace = true }
 gradio-space = { workspace = true }
 inference = { workspace = true }
+slm-evals = { workspace = true }

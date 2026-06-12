@@ -1,0 +1,53 @@
+# configs/experiment_001.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Template config for a local SLM agentic benchmark run.
+# Copy and edit this file for each new experiment.
+# Run with: uv run --package slm-evals slm-benchmark --config research/evals/configs/experiment_001.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+model_path: "./models/my-small-model-7b"   # local directory or HF Hub ID
+device: "auto"                              # auto | cpu | cuda | cuda:0
+dtype: "bfloat16"                           # float32 | float16 | bfloat16 | int8 | int4
+
+# ── Inference ─────────────────────────────────────────────────────────────────
+max_new_tokens: 512
+temperature: 0.0           # 0 = greedy (recommended for deterministic evals)
+
+# ── Experiment ────────────────────────────────────────────────────────────────
+experiment_name: "my-model-7b__bfcl-tau-gaia-swe__v1"
+output_dir: "results"
+
+# ── Benchmarks ────────────────────────────────────────────────────────────────
+benchmarks:
+  - bfcl
+  - tau_bench
+  - gaia
+  - swe_bench
+
+max_samples: 100    # null = run all; set a number for quick smoke tests
+
+# ── Per-benchmark overrides ───────────────────────────────────────────────────
+benchmark_overrides:
+
+  bfcl:
+    # data_path: "./data/bfcl_v4_local.jsonl"   # uncomment to use local copy
+    strict: false                # false = fuzzy arg matching (recommended for SLMs)
+    categories: []               # [] = all categories
+
+  tau_bench:
+    # data_path: "./data/tau_bench_retail.jsonl"
+    domain: "retail"             # retail | airline | both
+    max_turns: 15
+    use_llm_user: false          # true = use GPT-4o as user simulator (costs $)
+
+  gaia:
+    # data_path: "./data/gaia_validation.jsonl"
+    split: "validation"          # validation (public) | test (needs HF auth)
+    levels: [1, 2]               # [1] easy only, [1,2,3] all levels
+    tool_mode: "describe"        # describe (offline) | none
+
+  swe_bench:
+    # data_path: "./data/swe_bench_verified.jsonl"
+    full_eval: false             # true = run Docker harness (requires swebench pkg)
+    context_lines: 80

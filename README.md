@@ -46,7 +46,10 @@ apps/gradio-space/   # Gradio tabs (Lesson slides + Chat debug)
 libs/agent/          # Skill agent runner, tools, trace recorder
 libs/inference/      # Transformers + llama.cpp backends
 skills/              # SKILL.md task definitions
+research/            # Fine-tune, ensemble experiments, agentic evals (optional)
 ```
+
+Optional research tooling (not required for the Space): see [research/USAGE.md](research/USAGE.md).
 
 ## Environment variables
 

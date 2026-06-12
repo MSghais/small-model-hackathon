@@ -1,0 +1,26 @@
+# configs/lm_eval_minicpm5.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Full academic benchmark profile for ~1B SLMs (MiniCPM5, Gemma E2B, etc.).
+# Run with:
+#   uv run --package slm-evals slm-lm-eval \
+#     --config research/evals/configs/lm_eval_minicpm5.yaml \
+#     --preset minicpm5-1b \
+#     --experiment-name minicpm5-1b__baseline
+# ─────────────────────────────────────────────────────────────────────────────
+
+tasks:
+  - arc_easy
+  - arc_challenge
+  - hellaswag
+  - piqa
+  - boolq
+  - gsm8k
+
+num_fewshot: 5
+limit: null
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval
