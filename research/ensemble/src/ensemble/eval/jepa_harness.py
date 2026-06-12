@@ -12,7 +12,9 @@ import torch
 import torch.nn.functional as F
 
 from ensemble.eval.metrics import em_score, f1_score, paired_bootstrap
+from ensemble.backends import TinyBackend
 from ensemble.checkpoint import load_checkpoint
+from ensemble.config import load_dotenv, resolve_llm_cli
 from ensemble.jepa_ensemble import Ensemble
 
 
@@ -99,10 +101,15 @@ def run(args):
     if args.ckpt:
         ens = load_checkpoint(args.ckpt)
         print(f"loaded ensemble checkpoint: {args.ckpt}")
+        is_text = not isinstance(ens.llm, TinyBackend)
     else:
+        load_dotenv()
+        args.llm = resolve_llm_cli(
+            args.llm, toy=args.toy, preset=getattr(args, "preset", None)
+        )
+        print(f"Resolved LLM: {args.llm}")
         ens = Ensemble(llm=args.llm)
-
-    is_text = args.llm != "tiny"
+        is_text = args.llm != "tiny"
 
     if args.toy or not is_text:
         qa, kb = make_toy_data(ens)
@@ -233,7 +240,12 @@ def run(args):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--llm", default="tiny", help="'tiny' | HF id | local path")
+    p.add_argument(
+        "--llm",
+        default=None,
+        help="HF id / path, 'tiny', or omit for LLM_PATH / ACTIVE_MODEL from .env",
+    )
+    p.add_argument("--preset", default=None, help="models.yaml preset override")
     p.add_argument("--qa", default=None, help="jsonl with question/answer")
     p.add_argument("--kb", default=None, help="jsonl with text -> vector store")
     p.add_argument(

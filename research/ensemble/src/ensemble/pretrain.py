@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import time
 from pathlib import Path
@@ -11,12 +12,12 @@ from pathlib import Path
 import torch
 
 from ensemble.checkpoint import save_checkpoint
+from ensemble.config import default_ensemble_out, load_dotenv, resolve_llm
 from ensemble.jepa_ensemble import Ensemble, segment_pairs_from_texts
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _DEFAULT_DATA = _REPO_ROOT / "research/data/education-lesson-chat.jsonl"
 _DEFAULT_KB = _REPO_ROOT / "research/data/benchmark-kb.jsonl"
-_DEFAULT_OUT = _REPO_ROOT / "models/ensemble/jepa-lesson-pretrain"
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -108,6 +109,7 @@ def pretrain(args) -> Path:
         "lr_aux": args.lr_aux,
         "w_bridge": args.w_bridge,
         "seed": args.seed,
+        "preset": getattr(args, "preset", None),
     }
 
     saved = save_checkpoint(
@@ -132,8 +134,16 @@ def parse_args():
     )
     p.add_argument(
         "--llm",
-        default="tiny",
-        help="'tiny' for CPU smoke, or HF hub id / local path",
+        default=None,
+        help=(
+            "HF hub id / local path, 'tiny' for CPU smoke, or omit to use "
+            "LLM_PATH / BASE / MODEL_ID / ACTIVE_MODEL from .env + models.yaml"
+        ),
+    )
+    p.add_argument(
+        "--preset",
+        default=None,
+        help="models.yaml preset key (default: ENSEMBLE_PRESET or ACTIVE_MODEL)",
     )
     p.add_argument(
         "--data",
@@ -147,8 +157,8 @@ def parse_args():
     )
     p.add_argument(
         "--out",
-        default=str(_DEFAULT_OUT),
-        help="Output directory (default: models/ensemble/jepa-lesson-pretrain)",
+        default=None,
+        help="Output dir (default: ENSEMBLE_OUT or models/ensemble/<preset>-jepa-pretrain)",
     )
     p.add_argument("--steps", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=4)
@@ -165,9 +175,22 @@ def parse_args():
 
 
 def main():
+    load_dotenv()
     args = parse_args()
     if args.no_kb:
         args.kb = None
+
+    preset_key = args.preset
+    if args.llm is None or args.llm == "auto":
+        args.llm, preset_key = resolve_llm(preset_arg=args.preset)
+    elif args.llm != "tiny" and not args.preset:
+        _, preset_key = resolve_llm(llm_arg=args.llm)
+
+    if not args.out:
+        args.out = os.environ.get("ENSEMBLE_OUT") or default_ensemble_out(preset_key)
+
+    args.preset = preset_key
+    print(f"Resolved LLM: {args.llm}" + (f" (preset {preset_key})" if preset_key else ""))
     pretrain(args)
 
 

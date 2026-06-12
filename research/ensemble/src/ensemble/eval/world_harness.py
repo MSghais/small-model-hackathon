@@ -68,9 +68,16 @@ def make_toy_data(ens, n_qa=20, vocab=None):
 
 
 def run(args):
+    from ensemble.config import load_dotenv, resolve_llm_cli
+
     torch.manual_seed(args.seed)
     rng = random.Random(args.seed)
 
+    load_dotenv()
+    args.llm = resolve_llm_cli(
+        args.llm, toy=args.toy, preset=getattr(args, "preset", None)
+    )
+    print(f"Resolved LLM: {args.llm}")
     ens = WorldEnsemble(args.llm)
     if args.ckpt:
         state = torch.load(args.ckpt, map_location="cpu")
@@ -146,7 +153,12 @@ def run(args):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--llm", default="tiny", help="'tiny' | HF id | local path")
+    p.add_argument(
+        "--llm",
+        default=None,
+        help="HF id / path, 'tiny', or omit for LLM_PATH / ACTIVE_MODEL from .env",
+    )
+    p.add_argument("--preset", default=None, help="models.yaml preset override")
     p.add_argument("--qa", default=None, help="jsonl with question/answer")
     p.add_argument("--kb", default=None, help="jsonl with text -> vector store")
     p.add_argument("--ckpt", default=None, help="trained world ensemble .pt")
