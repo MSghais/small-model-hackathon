@@ -76,5 +76,5 @@ def tool_research_answer(
     return answer, citations, refs
 
 
-def tool_search_urls(topic: str, *, n: int = 5) -> list[str]:
-    return search_urls(topic, n=n)
+def tool_search_urls(topic: str, *, n: int = 5, check_reachable: bool = True) -> list[str]:
+    return search_urls(topic, n=n, check_reachable=check_reachable)

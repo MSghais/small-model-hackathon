@@ -273,14 +273,20 @@ class AgentRunner:
         )
         backend.load()
 
-        if auto_search:
-            search_tool = self._tools.get("search_urls")
-            urls = search_tool.handler(topic, n=5)
-            trace.log_tool("search_urls", {"topic": topic, "n": 5}, json.dumps(urls))
-        else:
+        search_tool = self._tools.get("search_urls")
+        urls = search_tool.handler(topic, n=8)
+        trace.log_tool(
+            "search_urls",
+            {"topic": topic, "n": 8, "queries": "google+ddg"},
+            json.dumps(urls),
+        )
+        if not urls:
             suggest_tool = self._tools.get("suggest_urls")
-            urls = suggest_tool.handler(topic, backend)
-            trace.log_tool("suggest_urls", {"topic": topic}, json.dumps(urls))
+            from researchmind.url_validate import filter_valid_urls
+
+            raw_llm = suggest_tool.handler(topic, backend)
+            urls = filter_valid_urls(raw_llm, check_reachable=True, max_results=5)
+            trace.log_tool("suggest_urls", {"topic": topic, "fallback": True}, json.dumps(urls))
 
         trace_path = str(trace.save())
         return ResearchDiscoverResult(
@@ -335,9 +341,16 @@ class AgentRunner:
         scrape_web = self._tools.get("scrape_web")
         extract_index = self._tools.get("extract_and_index")
 
+        from researchmind.url_validate import validate_url
+
         for url in targets:
+            ok, reason, normalized = validate_url(url, check_reachable=True)
+            if not ok:
+                trace.log_note(f"Skipped invalid URL {url}", reason=reason)
+                skipped.append(url)
+                continue
             try:
-                doc = scrape_web.handler(url)
+                doc = scrape_web.handler(normalized)
                 doc_id, is_new = extract_index.handler(doc, session_id=sid)
                 trace.log_tool("scrape_web", {"url": url}, doc.title)
                 trace.log_tool(
