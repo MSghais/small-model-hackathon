@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from researchmind.citations import Citation, format_context_block, format_references
+from researchmind.citations import Citation, clean_model_answer, format_context_block, format_references
 from researchmind.config import get_config
 from researchmind.extract import ExtractedDocument
 from researchmind.ingest import IngestPipeline
@@ -78,7 +78,9 @@ def tool_research_answer(
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-    answer = backend.chat(messages, max_tokens=1024, temperature=0.3)
+    answer = clean_model_answer(
+        backend.chat(messages, max_tokens=1024, temperature=0.3)
+    )
     refs = format_references(citations)
     if session_id:
         store.add_message(session_id, "user", question, [c.chunk_id for c in citations])

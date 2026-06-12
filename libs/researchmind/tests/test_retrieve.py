@@ -27,6 +27,7 @@ def test_retrieve_ranks_by_similarity(tmp_path, monkeypatch):
         embed_model="test",
         auto_search=False,
         top_k=1,
+        max_context_chunks=8,
         chunk_size=512,
         chunk_overlap=128,
     )
@@ -58,6 +59,7 @@ def test_retrieve_filters_by_session(tmp_path, monkeypatch):
         embed_model="test",
         auto_search=False,
         top_k=2,
+        max_context_chunks=8,
         chunk_size=512,
         chunk_overlap=128,
     )

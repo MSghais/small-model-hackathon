@@ -70,3 +70,13 @@ def format_references(citations: list[Citation]) -> str:
     for c in citations:
         lines.append(f"- [{c.index}] {c.doc_title} — {c.doc_uri}")
     return "\n".join(lines)
+
+
+def clean_model_answer(answer: str) -> str:
+    """Remove duplicate reference blocks and citation-number spam from model output."""
+    text = answer.strip()
+    if "**References**" in text:
+        text = text.split("**References**", maxsplit=1)[0].rstrip()
+    text = _CITATION_RUN.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()

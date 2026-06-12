@@ -12,6 +12,7 @@ def test_store_dedup_and_chunks(tmp_path):
         embed_model="test",
         auto_search=False,
         top_k=3,
+        max_context_chunks=8,
         chunk_size=512,
         chunk_overlap=128,
     )
@@ -44,6 +45,7 @@ def test_session_messages(tmp_path):
         embed_model="test",
         auto_search=False,
         top_k=3,
+        max_context_chunks=8,
         chunk_size=512,
         chunk_overlap=128,
     )

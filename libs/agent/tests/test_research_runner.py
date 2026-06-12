@@ -32,6 +32,7 @@ def research_env(tmp_path, monkeypatch):
         embed_model="test",
         auto_search=False,
         top_k=2,
+        max_context_chunks=8,
         chunk_size=50,
         chunk_overlap=10,
     )
