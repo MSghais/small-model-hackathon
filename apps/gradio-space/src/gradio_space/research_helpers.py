@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import gradio as gr
+
+from agent.runner import AgentRunner
+from gradio_space.model_loading import chat, ensure_model_loaded, get_active_model_key
+from inference.factory import get_backend
+from researchmind.ingest import IngestPipeline
+
+
+def list_session_choices() -> list[tuple[str, str]]:
+    store = IngestPipeline().store
+    sessions = store.list_sessions()
+    choices: list[tuple[str, str]] = [("New session (chat only)", "")]
+    for s in sessions:
+        label = f"{s.topic or 'Untitled'} ({s.id})"
+        choices.append((label, s.id))
+    return choices
+
+
+def refresh_sessions(current: str):
+    choices = list_session_choices()
+    values = [c[1] for c in choices]
+    value = current if current in values else ""
+    return gr.update(choices=choices, value=value)
+
+
+def list_doc_choices(session_id: str | None) -> list[tuple[str, str]]:
+    store = IngestPipeline().store
+    docs = store.list_documents(session_id=session_id or None)
+    choices: list[tuple[str, str]] = []
+    for d in docs:
+        label = f"{d.title} ({d.source_type})"
+        if len(d.uri) > 60:
+            label += f" — {d.uri[:57]}…"
+        else:
+            label += f" — {d.uri}"
+        choices.append((label, d.id))
+    return choices
+
+
+def refresh_doc_choices(session_id: str, current: list[str] | None):
+    choices = list_doc_choices(session_id or None)
+    valid = {c[1] for c in choices}
+    selected = [doc_id for doc_id in (current or []) if doc_id in valid]
+    default_selected = [c[1] for c in choices] if choices and not selected else selected
+    return gr.update(choices=choices, value=default_selected)
+
+
+def load_trace_json(trace_path: str) -> str:
+    if not trace_path:
+        return ""
+    if trace_path.strip().startswith("{"):
+        return trace_path
+    path = Path(trace_path)
+    if path.is_file():
+        return path.read_text(encoding="utf-8")
+    return trace_path
+
+
+def trace_summary_markdown(trace_path: str) -> str:
+    raw = load_trace_json(trace_path)
+    if not raw or not raw.strip().startswith("{"):
+        return raw or "_No trace yet._"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return f"Trace file: `{trace_path}`"
+
+    lines = [
+        f"**Run** `{data.get('run_id', '?')}` · skill `{data.get('skill', '?')}`",
+        "",
+    ]
+    for step in data.get("steps", []):
+        if step.get("type") != "note":
+            continue
+        msg = step.get("message", "")
+        extra = {k: v for k, v in step.items() if k not in ("type", "message")}
+        detail = ""
+        if extra:
+            detail = " — " + ", ".join(f"{k}={v!r}" for k, v in extra.items())
+        lines.append(f"- {msg}{detail}")
+    if len(lines) <= 2:
+        lines.append("_No notes in trace. See Trace JSON below._")
+    return "\n".join(lines)
+
+
+def memory_summary(session_id: str) -> str:
+    store = IngestPipeline().store
+    docs = store.list_documents(session_id=session_id or None)
+    chunks = store.count_chunks()
+    if not docs:
+        return f"_No documents indexed yet._ Total chunks in store: **{chunks}**."
+    scope = f"session `{session_id}`" if session_id else "all sessions"
+    lines = [f"**{len(docs)}** document(s) in {scope} · **{chunks}** total chunks in store\n"]
+    for d in docs:
+        lines.append(f"- **{d.title}** (`{d.source_type}`) — {d.uri}")
+    return "\n".join(lines)
+
+
+def rag_scope_hint(session_id: str, doc_ids: list[str] | None) -> str:
+    if doc_ids:
+        return f"RAG scope: **{len(doc_ids)}** selected document(s)."
+    if session_id:
+        n = len(IngestPipeline().store.list_documents(session_id=session_id))
+        return f"RAG scope: all **{n}** document(s) in session `{session_id}`."
+    return "RAG scope: **entire** indexed corpus (all sessions)."
+
+
+def run_research_question(
+    question: str,
+    *,
+    session_id: str,
+    doc_ids: list[str] | None,
+    model_key: str | None = None,
+) -> tuple[str, str, str]:
+    """Returns (answer_markdown, trace_json, trace_summary_md)."""
+    key = model_key or get_active_model_key()
+    load_error = ensure_model_loaded(key)
+    if load_error:
+        return load_error, load_error, load_error
+
+    if not question.strip():
+        return "Enter a question.", "", ""
+
+    sid = session_id
+    if not sid:
+        sid = IngestPipeline().store.create_session().id
+
+    runner = AgentRunner()
+    result = runner.run_researchmind_chat(
+        question=question,
+        session_id=sid,
+        doc_ids=doc_ids or None,
+        model_key=key,
+        backend=get_backend(key),
+    )
+    trace_json = json.dumps(
+        {
+            "trace_path": result.trace_path,
+            "citations": [c.model_dump() for c in result.citations],
+            "scope": {
+                "session_id": sid,
+                "doc_ids": doc_ids or [],
+            },
+        },
+        indent=2,
+    )
+    return (
+        result.answer,
+        trace_json,
+        trace_summary_markdown(result.trace_path),
+    )
+
+
+def rag_aware_chat(
+    message: str,
+    history: list,
+    model_key: str,
+    use_rag: bool,
+    session_id: str,
+    doc_ids: list[str] | None,
+) -> str:
+    if not use_rag:
+        return chat(message, history, model_key)
+
+    answer, _, _ = run_research_question(
+        message,
+        session_id=session_id,
+        doc_ids=doc_ids,
+        model_key=model_key,
+    )
+    return answer

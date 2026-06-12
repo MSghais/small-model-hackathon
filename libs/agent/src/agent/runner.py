@@ -425,9 +425,14 @@ class AgentRunner:
         session_id: str,
         model_key: str,
         backend: InferenceBackend,
+        doc_ids: list[str] | None = None,
     ) -> ResearchChatResult:
         skill = self._research_skill()
-        req = ResearchChatInput(question=question.strip(), session_id=session_id)
+        req = ResearchChatInput(
+            question=question.strip(),
+            session_id=session_id,
+            doc_ids=doc_ids or [],
+        )
 
         trace = TraceRecorder(
             skill=skill.name,
@@ -443,9 +448,15 @@ class AgentRunner:
             skill_body=skill.body,
             skill_path=skill.path,
             session_id=req.session_id,
+            doc_ids=req.doc_ids or None,
         )
         trace.log_llm(req.question, raw_answer)
-        trace.log_note("citations", count=len(citations))
+        trace.log_note(
+            "citations",
+            count=len(citations),
+            session_id=req.session_id,
+            doc_ids=req.doc_ids,
+        )
 
         full_answer = raw_answer
         if refs:

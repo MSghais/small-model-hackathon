@@ -14,10 +14,15 @@ def retrieve(
     config: ResearchMindConfig | None = None,
     top_k: int | None = None,
     expand_neighbors: bool = True,
+    session_id: str | None = None,
+    doc_ids: list[str] | None = None,
 ) -> list[StoredChunk]:
     cfg = config or get_config()
     k = top_k if top_k is not None else cfg.top_k
-    all_chunks = store.get_chunks_with_embeddings()
+    all_chunks = store.get_chunks_with_embeddings(
+        session_id=session_id,
+        doc_ids=doc_ids,
+    )
     if not all_chunks:
         return []
 

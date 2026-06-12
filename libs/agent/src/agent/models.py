@@ -38,6 +38,7 @@ class ResearchIngestInput(BaseModel):
 class ResearchChatInput(BaseModel):
     question: str
     session_id: str
+    doc_ids: list[str] = Field(default_factory=list)
 
 
 class ResearchDiscoverResult(BaseModel):

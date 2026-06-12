@@ -249,17 +249,30 @@ class MemRAGStore:
             for r in rows
         ]
 
-    def get_chunks_with_embeddings(self) -> list[tuple[StoredChunk, np.ndarray]]:
+    def get_chunks_with_embeddings(
+        self,
+        *,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
+    ) -> list[tuple[StoredChunk, np.ndarray]]:
         dim = self.embed_dim
-        with self._conn() as conn:
-            rows = conn.execute(
-                """
+        query = """
                 SELECT c.id, c.doc_id, c.ordinal, c.text, c.embedding_blob, c.meta_json,
                        d.title AS doc_title, d.uri AS doc_uri
                 FROM chunks c
                 JOIN documents d ON d.id = c.doc_id
+                WHERE 1=1
                 """
-            ).fetchall()
+        params: list[Any] = []
+        if session_id:
+            query += " AND d.session_id = ?"
+            params.append(session_id)
+        if doc_ids:
+            placeholders = ",".join("?" * len(doc_ids))
+            query += f" AND d.id IN ({placeholders})"
+            params.extend(doc_ids)
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
         result: list[tuple[StoredChunk, np.ndarray]] = []
         for r in rows:
             chunk = StoredChunk(

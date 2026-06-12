@@ -49,16 +49,27 @@ def tool_research_answer(
     skill_body: str,
     skill_path: Path,
     session_id: str | None = None,
+    doc_ids: list[str] | None = None,
 ) -> tuple[str, list[Citation], str]:
     cfg = get_config()
     store = get_store()
-    chunks = retrieve(question, store, config=cfg)
+    scope_session = session_id if session_id and not doc_ids else None
+    scope_docs = doc_ids if doc_ids else None
+    chunks = retrieve(
+        question,
+        store,
+        config=cfg,
+        session_id=scope_session,
+        doc_ids=scope_docs,
+    )
     if not chunks:
-        return (
-            "No indexed sources yet. Ingest URLs or documents first.",
-            [],
-            "",
-        )
+        if doc_ids:
+            hint = "No chunks for the selected document(s). Try other sources or re-ingest."
+        elif session_id:
+            hint = "No indexed sources in this session yet. Ingest URLs or files first."
+        else:
+            hint = "No indexed sources yet. Ingest URLs or documents first."
+        return hint, [], ""
 
     context, citations = format_context_block(chunks)
     system = research_answer_system(skill_body, skill_path)
