@@ -21,8 +21,14 @@ dependencies = [
 [tool.uv.sources]
 ensemble = { workspace = true }
 
+[project.optional-dependencies]
+lm-eval = [
+    "lm-eval[hf]>=0.4.9",
+]
+
 [project.scripts]
 slm-benchmark = "slm_evals.run_benchmark:main"
+slm-lm-eval = "slm_evals.run_lm_eval:main"
 
 [build-system]
 requires = ["uv_build>=0.8.13,<0.9.0"]

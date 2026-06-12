@@ -29,6 +29,9 @@ ensemble = [
 evals = [
     "slm-evals",
 ]
+lm-eval = [
+    "slm-evals[lm-eval]",
+]
 
 [tool.uv.workspace]
 members = [

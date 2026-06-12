@@ -4,10 +4,10 @@ overview: Add EleutherAI lm-evaluation-harness as the primary academic benchmark
 todos:
   - id: deps-lm-eval
     content: Add lm-eval[hf] optional dependency group to root pyproject.toml and slm-evals extras
-    status: pending
+    status: completed
   - id: preset-resolver
     content: Implement preset_resolver.py mapping models.yaml presets to lm-eval model_args (base, LoRA, merged)
-    status: pending
+    status: in_progress
   - id: ensemble-lm-backend
     content: Implement ensemble-lm custom LM class (generate_until + loglikelihood via underlying HF LLM)
     status: pending
