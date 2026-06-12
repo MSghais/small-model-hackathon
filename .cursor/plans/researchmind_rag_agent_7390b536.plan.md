@@ -4,7 +4,7 @@ overview: "Add ResearchMind: ingest skills (web/PDF/extract) with references and
 todos:
   - id: pkg-researchmind
     content: "Create libs/researchmind package: MemRAGStore (SQLite), chunking, sentence-transformers embeddings, retrieve + citations"
-    status: pending
+    status: in_progress
   - id: skills-scrape-extract
     content: Add skills/scrape-web, scrape-pdf, extract-content, research-mind with references/ and scripts/ CLIs
     status: pending
