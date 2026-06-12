@@ -233,8 +233,19 @@ def load_hf_backend_from_checkpoint(
     lora_alpha: int = 32,
 ) -> HFBackend:
     """Load a frozen base LM + saved PEFT adapters (ensemble checkpoint llm/)."""
+    from pathlib import Path
+
     from peft import LoraConfig, PeftModel, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    def _discover_adapter_dirs(root: Path) -> dict[str, Path]:
+        if (root / "adapter_config.json").is_file():
+            return {"general": root}
+        discovered: dict[str, Path] = {}
+        for child in sorted(root.iterdir()):
+            if child.is_dir() and (child / "adapter_config.json").is_file():
+                discovered[child.name] = child
+        return discovered
 
     resolved_device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = AutoTokenizer.from_pretrained(adapter_dir or base_llm)
@@ -260,8 +271,26 @@ def load_hf_backend_from_checkpoint(
         p.requires_grad_(False)
 
     if adapter_dir:
-        model = PeftModel.from_pretrained(base, adapter_dir, is_trainable=False)
-        adapters = set(adapter_names)
+        adapter_dirs = _discover_adapter_dirs(Path(adapter_dir))
+        if not adapter_dirs:
+            raise ValueError(
+                f"No PEFT adapters found under {adapter_dir} "
+                "(expected adapter_config.json or <name>/adapter_config.json)"
+            )
+        preferred = [name for name in adapter_names if name in adapter_dirs]
+        load_order = preferred + [
+            name for name in adapter_dirs if name not in preferred
+        ]
+        first_name = load_order[0]
+        model = PeftModel.from_pretrained(
+            base,
+            str(adapter_dirs[first_name]),
+            adapter_name=first_name,
+            is_trainable=False,
+        )
+        for name in load_order[1:]:
+            model.load_adapter(str(adapter_dirs[name]), adapter_name=name)
+        adapters = set(load_order)
     else:
         lora_cfg = LoraConfig(
             r=lora_r,

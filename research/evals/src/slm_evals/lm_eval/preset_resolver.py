@@ -10,6 +10,14 @@ from typing import Any
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
+_MANIFEST_FILE = "manifest.json"
+_HF_HUB_PREFIXES = (
+    "openbmb/",
+    "google/",
+    "meta-llama/",
+    "Qwen/",
+    "HuggingFaceTB/",
+)
 
 
 def _ensure_inference_on_path() -> None:
@@ -24,7 +32,123 @@ def _is_ensemble_checkpoint(path: str | Path) -> bool:
 
         return is_ensemble_checkpoint(path)
     except ImportError:
-        return (Path(path) / "manifest.json").is_file()
+        return (Path(path) / _MANIFEST_FILE).is_file()
+
+
+def _looks_like_hf_hub_id(model_path: str) -> bool:
+    if model_path.startswith(("./", "../")) or os.path.isabs(model_path):
+        return False
+    if "\\" in model_path:
+        return False
+    if Path(model_path).exists():
+        return False
+    if model_path.startswith(_HF_HUB_PREFIXES):
+        return True
+    parts = model_path.split("/")
+    return len(parts) <= 2 and all(parts)
+
+
+def _resolve_model_path(model_path: str) -> Path:
+    path = Path(model_path)
+    if _looks_like_hf_hub_id(model_path):
+        return path
+    if not path.is_absolute():
+        path = (_REPO_ROOT / path).resolve()
+    return path
+
+
+def _list_ensemble_checkpoint_names() -> list[str]:
+    root = _REPO_ROOT / "models" / "ensemble"
+    if not root.is_dir():
+        return []
+    names: list[str] = []
+    for child in sorted(root.iterdir()):
+        if child.is_dir() and (child / _MANIFEST_FILE).is_file():
+            names.append(child.name)
+    return names
+
+
+def _missing_local_model_message(path: Path) -> str:
+    msg = f"Local model path not found: {path}"
+    ensembles = _list_ensemble_checkpoint_names()
+    if ensembles:
+        msg += (
+            "\nEnsemble checkpoints under models/ensemble/: "
+            + ", ".join(ensembles)
+        )
+    return msg
+
+
+def _invalid_local_model_message(path: Path) -> str:
+    return (
+        f"Local path is not a recognized checkpoint: {path}\n"
+        f"Expected ensemble manifest at {path / _MANIFEST_FILE} "
+        "or HuggingFace config.json / adapter_config.json."
+    )
+
+
+def _resolve_explicit_model_path(
+    model_path: str,
+    *,
+    adapter_path: str | None,
+    trust_remote_code: bool | None,
+    dtype: str | None,
+    device: str | None,
+) -> LMEvalModelSpec:
+    path = _resolve_model_path(model_path)
+    resolved = str(path)
+
+    if not _looks_like_hf_hub_id(model_path):
+        if not path.exists():
+            raise FileNotFoundError(_missing_local_model_message(path))
+        if path.is_dir() and _is_ensemble_checkpoint(path):
+            args: dict[str, Any] = {"checkpoint_path": resolved}
+            if dtype:
+                args["dtype"] = dtype
+            if device:
+                args["device"] = device
+            return LMEvalModelSpec(
+                lm_eval_model="ensemble-lm",
+                model_args=args,
+                preset_key=None,
+                base_model=resolved,
+                adapter_path=None,
+                checkpoint_path=resolved,
+                trust_remote_code=trust_remote_code or False,
+            )
+        if path.is_dir() and not (
+            (path / "config.json").is_file()
+            or (path / "adapter_config.json").is_file()
+        ):
+            raise ValueError(_invalid_local_model_message(path))
+
+    base = resolved if not _looks_like_hf_hub_id(model_path) else model_path
+    peft = adapter_path
+    if peft and not Path(peft).is_absolute():
+        peft = str((_REPO_ROOT / peft).resolve())
+        if not Path(peft).exists():
+            raise FileNotFoundError(f"LoRA adapter path not found: {peft}")
+
+    args = {
+        "pretrained": base,
+        "trust_remote_code": trust_remote_code
+        if trust_remote_code is not None
+        else True,
+    }
+    if peft:
+        args["peft"] = peft
+    if dtype:
+        args["dtype"] = dtype
+
+    return LMEvalModelSpec(
+        lm_eval_model="hf",
+        model_args=args,
+        preset_key=None,
+        base_model=base,
+        adapter_path=peft,
+        checkpoint_path=None,
+        trust_remote_code=bool(args["trust_remote_code"]),
+    )
 
 
 def _is_lm_evalable_preset(model) -> bool:
@@ -86,53 +210,12 @@ def resolve_model_spec(
     if not model_path:
         raise ValueError("One of --preset or --model is required.")
 
-    path = Path(model_path)
-    if not path.is_absolute() and not str(model_path).startswith(
-        ("openbmb/", "google/", "meta-llama/", "Qwen/", "HuggingFaceTB/")
-    ):
-        path = (_REPO_ROOT / path).resolve()
-        model_path = str(path)
-
-    if _is_ensemble_checkpoint(model_path):
-        args: dict[str, Any] = {"checkpoint_path": model_path}
-        if dtype:
-            args["dtype"] = dtype
-        if device:
-            args["device"] = device
-        return LMEvalModelSpec(
-            lm_eval_model="ensemble-lm",
-            model_args=args,
-            preset_key=None,
-            base_model=model_path,
-            adapter_path=None,
-            checkpoint_path=model_path,
-            trust_remote_code=trust_remote_code or False,
-        )
-
-    base = model_path
-    peft = adapter_path
-    if peft and not Path(peft).is_absolute():
-        peft = str((_REPO_ROOT / peft).resolve())
-
-    args = {
-        "pretrained": base,
-        "trust_remote_code": trust_remote_code
-        if trust_remote_code is not None
-        else True,
-    }
-    if peft:
-        args["peft"] = peft
-    if dtype:
-        args["dtype"] = dtype
-
-    return LMEvalModelSpec(
-        lm_eval_model="hf",
-        model_args=args,
-        preset_key=None,
-        base_model=base,
-        adapter_path=peft,
-        checkpoint_path=None,
-        trust_remote_code=bool(args["trust_remote_code"]),
+    return _resolve_explicit_model_path(
+        model_path,
+        adapter_path=adapter_path,
+        trust_remote_code=trust_remote_code,
+        dtype=dtype,
+        device=device,
     )
 
 
@@ -165,6 +248,12 @@ def _resolve_from_preset(
     model_id = model.model_id
     if not model_id:
         raise ValueError(f"Preset {preset_key!r} has no model_id.")
+
+    if not _looks_like_hf_hub_id(model_id):
+        path = _resolve_model_path(model_id)
+        if not path.exists():
+            raise FileNotFoundError(_missing_local_model_message(path))
+        model_id = str(path)
 
     if _is_ensemble_checkpoint(model_id):
         args: dict[str, Any] = {"checkpoint_path": model_id}
