@@ -2,9 +2,8 @@
 # Select active preset with ACTIVE_MODEL; override any field via .env (see .env.example).
 
 defaults:
-  active_model: minicpm-v-4.6
-
-  # active_model: minicpm5-1b
+  # active_model: minicpm-v-4.6
+  active_model: minicpm5-1b
 
   # Dev: set ALLOW_MODEL_SWITCH=true in .env to expose a dropdown in Gradio.
   # Space: keep false so visitors use one pinned model.
