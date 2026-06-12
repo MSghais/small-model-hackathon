@@ -4,11 +4,13 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from inference.base import InferenceBackend
+from researchmind.citations import format_context_block
 from researchmind.extract import extract_docx
 from researchmind.ingest import IngestPipeline
+from researchmind.retrieve import retrieve
 
 from agent.models import (
     Citation,
@@ -47,6 +49,7 @@ class AgentResult:
     trace: TraceRecorder
     trace_path: str
     outline: SlideOutline
+    source_summary: str = ""
 
 
 class AgentRunner:
@@ -66,18 +69,42 @@ class AgentRunner:
         slide_count: int,
         model_key: str,
         backend: InferenceBackend,
+        source_mode: Literal["none", "web", "rag"] = "none",
+        search_workflow: Literal["two_step", "auto"] = "two_step",
+        urls: list[str] | None = None,
+        files: list[Path] | None = None,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
     ) -> AgentResult:
         skill = self._skills.get(EDUCATION_PPTX_SKILL)
-        req = EducationPptxInput(topic=topic.strip(), grade=grade, slide_count=slide_count)
+        req = EducationPptxInput(
+            topic=topic.strip(),
+            grade=grade,
+            slide_count=slide_count,
+            source_mode=source_mode,
+            search_workflow=search_workflow,
+            urls=urls or [],
+            files=files or [],
+            session_id=session_id or None,
+            doc_ids=doc_ids or [],
+        )
 
         trace = TraceRecorder(
             skill=skill.name,
             model=model_key,
-            user_input=req.model_dump(),
+            user_input=req.model_dump(mode="json"),
         )
 
         backend.load()
-        outline = self._generate_outline(skill, req, backend, trace)
+        source_context, source_summary, active_session = self._gather_lesson_source_context(
+            req, backend, model_key, trace
+        )
+        if active_session:
+            req = req.model_copy(update={"session_id": active_session})
+
+        outline = self._generate_outline(
+            skill, req, backend, trace, source_context=source_context
+        )
         tool = self._tools.get("create_pptx")
         pptx_path = tool.handler(outline, run_id=trace.run_id)
         trace.log_tool(
@@ -118,7 +145,98 @@ class AgentRunner:
             trace=trace,
             trace_path=str(trace_path),
             outline=outline,
+            source_summary=source_summary,
         )
+
+    def _gather_lesson_source_context(
+        self,
+        req: EducationPptxInput,
+        backend: InferenceBackend,
+        model_key: str,
+        trace: TraceRecorder,
+    ) -> tuple[str, str, str | None]:
+        if req.source_mode == "none":
+            return "", "", None
+
+        pipeline = IngestPipeline()
+        store = pipeline.store
+        session_id = req.session_id
+        ingest_summary = ""
+
+        if req.source_mode == "web":
+            if req.search_workflow == "two_step" and not req.urls and not req.files:
+                raise ValueError(
+                    "Two-step web search requires selected URLs, pasted URLs, or uploaded files. "
+                    "Click **Discover sources** first, then select sources before generating."
+                )
+            auto_search = req.search_workflow == "auto"
+            ingest = self.run_researchmind_ingest(
+                topic=req.topic,
+                urls=req.urls,
+                files=req.files,
+                auto_search=auto_search,
+                session_id=session_id,
+                model_key=model_key,
+                backend=backend,
+            )
+            session_id = ingest.session_id
+            ingest_summary = ingest.message
+            trace.log_note("lesson_ingest", message=ingest.message, session_id=session_id)
+        elif req.source_mode == "rag":
+            session_id = self._ensure_session(store, session_id, topic=req.topic)
+            if req.urls or req.files:
+                ingest = self.run_researchmind_ingest(
+                    topic=req.topic,
+                    urls=req.urls,
+                    files=req.files,
+                    auto_search=False,
+                    session_id=session_id,
+                    model_key=model_key,
+                    backend=backend,
+                )
+                session_id = ingest.session_id
+                ingest_summary = ingest.message
+                trace.log_note("lesson_ingest", message=ingest.message, session_id=session_id)
+
+            doc_count = len(store.list_documents(session_id=session_id))
+            if doc_count == 0:
+                raise ValueError(
+                    "RAG mode requires indexed sources. Select a ResearchMind session with "
+                    "documents, or paste URLs / upload files on this tab."
+                )
+
+        scope_session = session_id if not req.doc_ids else None
+        scope_docs = req.doc_ids if req.doc_ids else None
+        chunks = retrieve(
+            req.topic,
+            store,
+            session_id=scope_session,
+            doc_ids=scope_docs,
+        )
+        if not chunks:
+            warning = (
+                "No passages retrieved from indexed sources; outline uses model knowledge only."
+            )
+            trace.log_note(warning, session_id=session_id, doc_ids=req.doc_ids)
+            summary = ingest_summary or warning
+            if ingest_summary:
+                summary = f"{ingest_summary}\n\n_{warning}_"
+            return "", summary, session_id
+
+        context, citations = format_context_block(chunks)
+        trace.log_note(
+            "lesson_retrieve",
+            passage_count=len(chunks),
+            citation_count=len(citations),
+            session_id=session_id,
+            doc_ids=req.doc_ids,
+        )
+        retrieve_line = (
+            f"Retrieved **{len(chunks)}** passage(s) from **{len(citations)}** source(s) "
+            f"for outline grounding."
+        )
+        summary = f"{ingest_summary}\n\n{retrieve_line}".strip() if ingest_summary else retrieve_line
+        return context, summary, session_id
 
     def _generate_outline(
         self,
@@ -126,9 +244,11 @@ class AgentRunner:
         req: EducationPptxInput,
         backend: InferenceBackend,
         trace: TraceRecorder,
+        *,
+        source_context: str = "",
     ) -> SlideOutline:
         system = education_outline_system(skill.body)
-        user = education_outline_user(req)
+        user = education_outline_user(req, source_context=source_context)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
