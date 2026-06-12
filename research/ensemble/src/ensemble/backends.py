@@ -194,9 +194,12 @@ class TinyBackend(LLMBackend):
     def generate(self, ids, n_new=16, temperature=1.0):
         for _ in range(n_new):
             logits, _ = self(ids[:, -self.SEQ_LEN :])
-            nxt = torch.multinomial(
-                F.softmax(logits[:, -1] / temperature, -1), 1
-            )
+            if temperature <= 0:
+                nxt = logits[:, -1].argmax(dim=-1, keepdim=True)
+            else:
+                nxt = torch.multinomial(
+                    F.softmax(logits[:, -1] / temperature, -1), 1
+                )
             ids = torch.cat([ids, nxt], dim=1)
         return ids
 

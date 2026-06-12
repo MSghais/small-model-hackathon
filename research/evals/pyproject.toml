@@ -8,13 +8,18 @@ dependencies = [
     "accelerate>=0.30.0",
     "bitsandbytes>=0.43.0",
     "datasets>=2.19.0",
+    "ensemble",
     "huggingface-hub>=0.22.0",
     "pandas>=2.0.0",
+    "peft>=0.14.0",
     "pyyaml>=6.0",
     "torch>=2.2.0",
     "tqdm>=4.66.0",
     "transformers>=4.41.0",
 ]
+
+[tool.uv.sources]
+ensemble = { workspace = true }
 
 [project.scripts]
 slm-benchmark = "slm_evals.run_benchmark:main"

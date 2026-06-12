@@ -29,6 +29,7 @@ def build_config_from_args(args) -> dict[str, Any]:
     benchmarks = args.benchmarks if args.benchmarks else ["all"]
     cfg: dict[str, Any] = {
         "model_path":    args.model,
+        "model_type":    getattr(args, "model_type", "auto"),
         "benchmarks":    benchmarks,
         "max_samples":   args.max_samples,
         "output_dir":    args.output_dir,
@@ -50,6 +51,7 @@ def _fill_defaults(cfg: dict[str, Any]) -> None:
         model_tag = Path(cfg.get("model_path", "unknown")).name
         cfg["experiment_name"] = f"{model_tag}__{ts}"
 
+    cfg.setdefault("model_type",     "auto")
     cfg.setdefault("device",         "auto")
     cfg.setdefault("dtype",          "bfloat16")
     cfg.setdefault("max_new_tokens",  512)

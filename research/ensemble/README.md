@@ -25,6 +25,41 @@ uv run --package ensemble python -m ensemble.jepa_ensemble Qwen/Qwen2.5-0.5B-Ins
 uv run --package ensemble python -m ensemble.world_ensemble Qwen/Qwen2.5-0.5B-Instruct
 ```
 
+## Pretrain + save (LLM + emb + JEPA)
+
+Joint training writes a full checkpoint to `models/ensemble/<name>/`:
+
+```bash
+# CPU smoke (tiny backend, no HF download)
+uv run --package ensemble ensemble-pretrain \
+  --llm tiny --steps 50 --no-kb \
+  --out models/ensemble/jepa-smoke
+
+# Real small model on lesson chat data + KB memory
+uv run --package ensemble ensemble-pretrain \
+  --llm Qwen/Qwen2.5-0.5B-Instruct \
+  --data research/data/education-lesson-chat.jsonl \
+  --kb research/data/benchmark-kb.jsonl \
+  --steps 200 --out models/ensemble/jepa-lesson-pretrain
+```
+
+Checkpoint layout: `manifest.json`, `aux.pt` (emb/jepa/bridge/router), `llm/` (PEFT adapters).
+
+Benchmark the saved ensemble with **slm-evals** (auto-detects `manifest.json`):
+
+```bash
+uv run --package slm-evals slm-benchmark \
+  --model ./models/ensemble/jepa-lesson-pretrain \
+  --model-type ensemble \
+  --benchmarks bfcl tau_bench --max-samples 20
+
+# Or use the template config
+uv run --package slm-evals slm-benchmark \
+  --config research/evals/configs/ensemble_jepa_lesson.yaml
+```
+
+Compare against a base HF model by running the same config with `model_type: hf` and `model_path: openbmb/MiniCPM5-1B`.
+
 ## Tier 3 — Benchmark
 
 ### JEPA ablation ladder

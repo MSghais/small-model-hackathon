@@ -40,6 +40,13 @@ def parse_args():
         help="Path to local HuggingFace model directory (or HF Hub ID)",
     )
     parser.add_argument(
+        "--model-type",
+        type=str,
+        default="auto",
+        choices=["auto", "hf", "ensemble"],
+        help="auto detects ensemble checkpoints via manifest.json",
+    )
+    parser.add_argument(
         "--benchmarks",
         nargs="+",
         choices=list(BENCHMARK_REGISTRY.keys()) + ["all"],
@@ -111,7 +118,7 @@ def main():
 
     print(f"\n{'='*60}")
     print("  SLM Benchmark Suite")
-    print(f"  Model : {cfg['model_path']}")
+    print(f"  Model : {cfg['model_path']} ({cfg.get('model_type', 'auto')})")
     print(f"  Runs  : {', '.join(cfg['benchmarks'])}")
     print(f"  Out   : {cfg['output_dir']}")
     print(f"{'='*60}\n")
@@ -121,6 +128,7 @@ def main():
         model_path=cfg["model_path"],
         device=cfg["device"],
         dtype=cfg["dtype"],
+        model_type=cfg.get("model_type", "auto"),
     )
     print(f"✅ Model loaded — {model_bundle['param_count']:.2f}B parameters\n")
 
