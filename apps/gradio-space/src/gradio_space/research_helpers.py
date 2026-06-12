@@ -121,6 +121,15 @@ def memory_summary(session_id: str) -> str:
     return "\n".join(lines)
 
 
+def parse_urls_text(text: str) -> list[str]:
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
+def merge_lesson_urls(pasted: str, selected: list[str] | None) -> list[str]:
+    direct = parse_urls_text(pasted)
+    return list(dict.fromkeys([*direct, *(selected or [])]))
+
+
 def rag_scope_hint(session_id: str, doc_ids: list[str] | None) -> str:
     if doc_ids:
         return f"RAG scope: **{len(doc_ids)}** selected document(s)."
