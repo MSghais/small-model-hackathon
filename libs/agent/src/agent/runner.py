@@ -335,8 +335,11 @@ class AgentRunner:
             )
             targets = discover.suggested_urls
 
+        from agent.models import IngestFailure
+
         ingested: list[str] = []
         skipped: list[str] = []
+        failures: list[IngestFailure] = []
 
         scrape_web = self._tools.get("scrape_web")
         extract_index = self._tools.get("extract_and_index")
@@ -344,13 +347,18 @@ class AgentRunner:
         from researchmind.url_validate import validate_url
 
         for url in targets:
-            ok, reason, normalized = validate_url(url, check_reachable=True)
+            ok, reason, normalized = validate_url(url, check_reachable=False)
             if not ok:
-                trace.log_note(f"Skipped invalid URL {url}", reason=reason)
-                skipped.append(url)
+                trace.log_note(f"Skipped invalid URL {url}", reason=reason, stage="validate")
+                failures.append(IngestFailure(url=url, reason=reason, stage="validate"))
                 continue
             try:
                 doc = scrape_web.handler(normalized)
+                if not (doc.text or "").strip():
+                    msg = "empty content after scrape"
+                    trace.log_note(f"Ingest failed for {url}", error=msg, stage="scrape")
+                    failures.append(IngestFailure(url=url, reason=msg, stage="scrape"))
+                    continue
                 doc_id, is_new = extract_index.handler(doc, session_id=sid)
                 trace.log_tool("scrape_web", {"url": url}, doc.title)
                 trace.log_tool(
@@ -360,8 +368,8 @@ class AgentRunner:
                 )
                 (ingested if is_new else skipped).append(url)
             except Exception as exc:  # noqa: BLE001
-                trace.log_note(f"Ingest failed for {url}", error=str(exc))
-                skipped.append(url)
+                trace.log_note(f"Ingest failed for {url}", error=str(exc), stage="ingest")
+                failures.append(IngestFailure(url=url, reason=str(exc), stage="ingest"))
 
         for file_path in files:
             path = Path(file_path)

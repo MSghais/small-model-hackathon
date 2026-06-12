@@ -51,10 +51,29 @@ def is_well_formed(url: str) -> tuple[bool, str]:
     if "ieeexplore.ieee.org" in host and path.rstrip("/") in ("", "/document"):
         return False, "incomplete ieee document url"
 
+    if _is_tracking_or_junk_url(host, path, parsed.query):
+        return False, "tracking or redirect link (not a content page)"
+
     return True, "ok"
 
 
-def check_reachable(url: str, *, timeout: float = 12.0) -> tuple[bool, str]:
+def _is_tracking_or_junk_url(host: str, path: str, query: str) -> bool:
+    """Reject ad/click trackers and other non-content URLs from search results."""
+    if "bing.com" in host and "/aclick" in path:
+        return True
+    if "google." in host and ("/aclk" in path or "googleadservices" in host):
+        return True
+    if "doubleclick.net" in host or "googlesyndication.com" in host:
+        return True
+    if host.endswith("bing.com") and path.startswith("/ck/"):
+        return True
+    # Search result redirect wrappers, not stable content URLs
+    if "google." in host and path.rstrip("/") == "/url" and "q=" in query:
+        return True
+    return False
+
+
+def probe_url_reachable(url: str, *, timeout: float = 12.0) -> tuple[bool, str]:
     headers = {"User-Agent": "ResearchMind/0.1 (url-validator)"}
     try:
         with httpx.Client(follow_redirects=True, timeout=timeout, headers=headers) as client:
@@ -75,7 +94,7 @@ def validate_url(url: str, *, check_reachable: bool = True) -> tuple[bool, str, 
     if not ok:
         return False, reason, normalized
     if check_reachable:
-        ok, reason = check_reachable(normalized)
+        ok, reason = probe_url_reachable(normalized)
         if not ok:
             return False, reason, normalized
     return True, "ok", normalized

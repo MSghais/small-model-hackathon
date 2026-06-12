@@ -41,13 +41,21 @@ def _google_search(query: str, *, n: int) -> list[str]:
 def _duckduckgo_search(query: str, *, n: int) -> list[str]:
     urls: list[str] = []
     try:
-        from duckduckgo_search import DDGS
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
 
-        with DDGS() as ddgs:
-            for item in ddgs.text(query, max_results=n):
-                href = item.get("href") or item.get("link")
-                if href:
-                    urls.append(str(href))
+        ddgs = DDGS()
+        results = ddgs.text(query, max_results=n)
+        if results is None:
+            return urls
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            href = item.get("href") or item.get("link")
+            if href:
+                urls.append(str(href))
     except Exception as exc:  # noqa: BLE001
         logger.warning("DuckDuckGo search failed for %r: %s", query, exc)
     return urls

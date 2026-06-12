@@ -46,10 +46,17 @@ class ResearchDiscoverResult(BaseModel):
     trace_path: str
 
 
+class IngestFailure(BaseModel):
+    url: str
+    reason: str
+    stage: str = "unknown"
+
+
 class ResearchIngestResult(BaseModel):
     session_id: str
     ingested: list[str]
     skipped: list[str]
+    failures: list[IngestFailure] = Field(default_factory=list)
     doc_count: int
     chunk_count: int
     trace_path: str

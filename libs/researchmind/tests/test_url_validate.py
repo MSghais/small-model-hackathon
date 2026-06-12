@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from researchmind.url_validate import filter_valid_urls, is_well_formed, normalize_url
+from researchmind.url_validate import (
+    filter_valid_urls,
+    is_well_formed,
+    normalize_url,
+    validate_url,
+)
 
 
 def test_rejects_truncated_and_bad_arxiv():
@@ -19,6 +24,22 @@ def test_accepts_valid_arxiv():
 
 def test_normalize_adds_scheme():
     assert normalize_url("en.wikipedia.org/wiki/AI_agent").startswith("https://")
+
+
+def test_validate_url_does_not_shadow_probe(monkeypatch):
+    """Regression: check_reachable=True must not call the bool parameter."""
+
+    def fake_probe(url, *, timeout=12.0):
+        return True, "ok"
+
+    monkeypatch.setattr("researchmind.url_validate.probe_url_reachable", fake_probe)
+    ok, reason, normalized = validate_url(
+        "https://en.wikipedia.org/wiki/Agent",
+        check_reachable=True,
+    )
+    assert ok
+    assert reason == "ok"
+    assert "wikipedia" in normalized
 
 
 def test_filter_valid_urls_skips_bad(monkeypatch):
