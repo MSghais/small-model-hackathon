@@ -529,6 +529,50 @@ def _gpu_memory_summary() -> str:
     )
 
 
+def _gpu_total_gib() -> float | None:
+    if not torch.cuda.is_available():
+        return None
+    _, total = torch.cuda.mem_get_info()
+    return total / (1024**3)
+
+
+def _apply_low_vram_defaults(args) -> None:
+    """Cap batch/seq length and prefer QLoRA on GPUs that cannot fit full LoRA."""
+    if not _training_uses_cuda(args):
+        return
+    total_gib = _gpu_total_gib()
+    if total_gib is None or total_gib >= 6.0:
+        return
+
+    orig_batch, orig_max_len, orig_mode = args.batch_size, args.max_len, args.mode
+    args.batch_size = min(args.batch_size, 1)
+    args.max_len = min(args.max_len, 512)
+    args.gradient_checkpointing = True
+
+    if total_gib < 4.5 and args.mode == "lora":
+        try:
+            import bitsandbytes  # noqa: F401
+            args.mode = "qlora"
+        except ImportError:
+            print(
+                f"Warning: {total_gib:.1f} GiB GPU — full LoRA may OOM. "
+                "Install finetune extras and use --mode qlora:\n"
+                "  uv sync --group finetune"
+            )
+
+    if (
+        args.batch_size != orig_batch
+        or args.max_len != orig_max_len
+        or args.mode != orig_mode
+    ):
+        print(
+            f"Low VRAM ({total_gib:.1f} GiB): adjusted training defaults — "
+            f"batch_size {orig_batch}->{args.batch_size}, "
+            f"max_len {orig_max_len}->{args.max_len}"
+            + (f", mode {orig_mode}->{args.mode}" if args.mode != orig_mode else "")
+        )
+
+
 def _validate_cuda_device(args) -> None:
     if not _training_uses_cuda(args):
         return
@@ -756,6 +800,7 @@ def main():
     print(f"Device: {args.device}")
 
     _validate_cuda_device(args)
+    _apply_low_vram_defaults(args)
     if _training_uses_cuda(args):
         print(f"GPU before cleanup: {_gpu_memory_summary()}")
         clear_gpu_memory()
