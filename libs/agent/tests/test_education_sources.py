@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import MagicMock
-
 import numpy as np
 import pytest
 
@@ -105,7 +102,7 @@ def test_none_mode_skips_source_summary(research_env):
 def test_web_auto_calls_ingest_with_auto_search(research_env, monkeypatch):
     calls: list[dict] = []
 
-    def fake_ingest(**kwargs):
+    def fake_ingest(self, **kwargs):
         calls.append(kwargs)
         return ResearchIngestResult(
             session_id="sess-auto",
@@ -132,7 +129,7 @@ def test_web_auto_calls_ingest_with_auto_search(research_env, monkeypatch):
     )
     assert len(calls) == 1
     assert calls[0]["auto_search"] is True
-    assert "Retrieved" in result.source_summary
+    assert "Ingested 1 source(s)" in result.source_summary
 
 
 def test_web_two_step_requires_urls(research_env):
@@ -154,7 +151,7 @@ def test_web_two_step_requires_urls(research_env):
 def test_web_two_step_ingests_without_auto_search(research_env, monkeypatch):
     calls: list[dict] = []
 
-    def fake_ingest(**kwargs):
+    def fake_ingest(self, **kwargs):
         calls.append(kwargs)
         return ResearchIngestResult(
             session_id="sess-two",
@@ -212,7 +209,7 @@ def test_rag_uses_session_without_auto_search(research_env, monkeypatch):
 
     calls: list[dict] = []
 
-    def fake_ingest(**kwargs):
+    def fake_ingest(self, **kwargs):
         calls.append(kwargs)
         return ingest
 

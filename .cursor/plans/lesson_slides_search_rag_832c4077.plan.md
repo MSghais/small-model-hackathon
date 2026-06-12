@@ -13,10 +13,10 @@ todos:
     status: completed
   - id: gradio-ui
     content: Add source mode + search workflow dropdowns, Discover button (two-step), URL/file/session/doc controls, visibility toggles, status output
-    status: in_progress
+    status: completed
   - id: tests-docs
     content: Add agent tests for source modes and search workflows; update USAGE.md
-    status: pending
+    status: completed
 isProject: false
 ---
 

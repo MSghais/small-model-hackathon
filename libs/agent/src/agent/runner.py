@@ -181,7 +181,7 @@ class AgentRunner:
             )
             session_id = ingest.session_id
             ingest_summary = ingest.message
-            trace.log_note("lesson_ingest", message=ingest.message, session_id=session_id)
+            trace.log_note(ingest.message, phase="lesson_ingest", session_id=session_id)
         elif req.source_mode == "rag":
             session_id = self._ensure_session(store, session_id, topic=req.topic)
             if req.urls or req.files:
@@ -196,7 +196,7 @@ class AgentRunner:
                 )
                 session_id = ingest.session_id
                 ingest_summary = ingest.message
-                trace.log_note("lesson_ingest", message=ingest.message, session_id=session_id)
+                trace.log_note(ingest.message, phase="lesson_ingest", session_id=session_id)
 
             doc_count = len(store.list_documents(session_id=session_id))
             if doc_count == 0:
@@ -225,7 +225,8 @@ class AgentRunner:
 
         context, citations = format_context_block(chunks)
         trace.log_note(
-            "lesson_retrieve",
+            f"Retrieved {len(chunks)} passage(s) from {len(citations)} source(s)",
+            phase="lesson_retrieve",
             passage_count=len(chunks),
             citation_count=len(citations),
             session_id=session_id,

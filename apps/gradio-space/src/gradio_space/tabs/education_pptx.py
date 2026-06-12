@@ -84,7 +84,7 @@ def update_source_visibility(source_mode_label: str, search_workflow_label: str)
 def discover_lesson_sources(
     topic: str,
     session_id: str,
-) -> tuple[str, gr.Update, gr.Update]:
+) -> tuple[str, object, object]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
