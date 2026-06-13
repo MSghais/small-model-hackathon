@@ -8,10 +8,12 @@ from gradio_space.tabs import (
     build_education_pptx_tab,
     build_echo_coach_tab,
     build_research_mind_tab,
+    build_teacher_voice_tab,
 )
 from gradio_space.tabs.education_pptx import gradio_allowed_paths
 from gradio_space.tabs.echo_coach import echo_coach_allowed_paths
 from gradio_space.tabs.research_mind import researchmind_allowed_paths
+from gradio_space.tabs.teacher_voice import teacher_voice_allowed_paths
 from inference.config import get_app_config
 
 _app_config = get_app_config()
@@ -28,9 +30,9 @@ def build_demo() -> gr.Blocks:
     with gr.Blocks(title="Lesson Agent + ResearchMind — Build Small Hackathon") as demo:
         gr.Markdown(
             f"""
-# Lesson Agent + ResearchMind + EchoCoach
+# Lesson Agent + ResearchMind + EchoCoach + TeacherVoice
 
-Local skill-based agents — **lesson slides**, **research with MemRAG**, and **voice practice coaching** (offline).
+Local skill-based agents — **lesson slides**, **research with MemRAG**, **voice conversation (TeacherVoice)**, and **pitch analysis (EchoCoach)** (offline).
 
 - **Model:** `{active.key}` — {active.label}
 - **Backend:** `{active.backend}`
@@ -47,6 +49,8 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
                 build_research_mind_tab()
             with gr.Tab("EchoCoach"):
                 build_echo_coach_tab()
+            with gr.Tab("TeacherVoice"):
+                build_teacher_voice_tab()
             with gr.Tab("Chat (debug)"):
                 build_chat_tab()
 
@@ -69,6 +73,7 @@ def main() -> None:
             *gradio_allowed_paths(),
             *researchmind_allowed_paths(),
             *echo_coach_allowed_paths(),
+            *teacher_voice_allowed_paths(),
         ],
     )
 

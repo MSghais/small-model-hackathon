@@ -159,6 +159,8 @@ Record up to **{_config.max_seconds} seconds**, then get local feedback: transcr
 
 **Browser mic:** open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview) and allow microphone access.
 If the mic icon fails, use **Start / Stop recording** below or **Upload** a `.wav` / `.mp3`.
+
+For conversational pitch tips, try the **TeacherVoice** tab (Pitch practice mode). This tab provides deep analysis: pace charts, filler counts, and a structured rewrite.
 """
     )
 

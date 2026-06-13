@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 AsrBackendName = Literal["cohere", "whisper_cpp"]
-TtsBackendName = Literal["piper"]
+TtsBackendName = Literal["piper", "vibevoice"]
 
 
 @dataclass(frozen=True)
@@ -33,12 +33,17 @@ class TtsPreset:
     backend: TtsBackendName
     voices: dict[str, str]
     fallback_voice: str
+    model_id: str | None = None
+    streaming: bool = False
+    realtime: bool = False
+    supported_languages: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class EchoCoachConfig:
     asr_preset: str
     tts_preset: str
+    realtime_tts_preset: str | None
     coach_model: str
     max_seconds: int
     languages: list[LanguageOption]
@@ -107,6 +112,7 @@ def _builtin_config() -> EchoCoachConfig:
     return EchoCoachConfig(
         asr_preset="whisper-cpp-tiny",
         tts_preset="piper-multilingual",
+        realtime_tts_preset=None,
         coach_model="minicpm5-1b",
         max_seconds=30,
         languages=langs,
@@ -130,17 +136,32 @@ def _parse_asr_entry(key: str, raw: dict[str, Any]) -> AsrPreset:
 
 def _parse_tts_entry(key: str, raw: dict[str, Any]) -> TtsPreset:
     backend = str(raw.get("backend", "piper"))
-    if backend != "piper":
-        raise ValueError(f"TTS preset {key!r}: only piper backend is supported in MVP")
+    if backend not in ("piper", "vibevoice"):
+        raise ValueError(f"TTS preset {key!r}: backend must be piper or vibevoice")
+
     voices = raw.get("voices") or {}
-    if not isinstance(voices, dict) or not voices:
-        raise ValueError(f"TTS preset {key!r}: voices mapping is required")
+    if not isinstance(voices, dict):
+        raise ValueError(f"TTS preset {key!r}: voices must be a mapping")
+    languages = raw.get("languages") or []
+    if backend == "vibevoice":
+        if not voices and languages:
+            voices = {str(lang): "default" for lang in languages}
+        fallback = str(raw.get("fallback_language") or raw.get("fallback_voice") or "en")
+    else:
+        if not voices:
+            raise ValueError(f"TTS preset {key!r}: voices mapping is required")
+        fallback = str(raw.get("fallback_voice", "en_US-lessac-medium"))
+
     return TtsPreset(
         key=key,
         label=str(raw.get("label", key)),
-        backend="piper",
+        backend=backend,  # type: ignore[arg-type]
         voices={str(k): str(v) for k, v in voices.items()},
-        fallback_voice=str(raw.get("fallback_voice", "en_US-lessac-medium")),
+        fallback_voice=fallback,
+        model_id=raw.get("model_id"),
+        streaming=bool(raw.get("streaming", False)),
+        realtime=bool(raw.get("realtime", False)),
+        supported_languages=tuple(str(lang) for lang in languages),
     )
 
 
@@ -183,6 +204,7 @@ def load_echo_coach_config() -> EchoCoachConfig:
         config = EchoCoachConfig(
             asr_preset=asr_default,
             tts_preset=tts_default,
+            realtime_tts_preset=defaults.get("realtime_tts_preset"),
             coach_model=str(defaults.get("coach_model", "minicpm5-1b")),
             max_seconds=int(defaults.get("max_seconds", 30)),
             languages=languages,
@@ -196,6 +218,8 @@ def load_echo_coach_config() -> EchoCoachConfig:
         updates["asr_preset"] = os.environ["ECHOCOACH_ASR_PRESET"]
     if os.environ.get("ECHOCOACH_TTS_PRESET"):
         updates["tts_preset"] = os.environ["ECHOCOACH_TTS_PRESET"]
+    if os.environ.get("ECHOCOACH_REALTIME_TTS_PRESET"):
+        updates["realtime_tts_preset"] = os.environ["ECHOCOACH_REALTIME_TTS_PRESET"]
     if os.environ.get("ECHOCOACH_COACH_MODEL"):
         updates["coach_model"] = os.environ["ECHOCOACH_COACH_MODEL"]
     if os.environ.get("ECHOCOACH_MAX_SECONDS"):

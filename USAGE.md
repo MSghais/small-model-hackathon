@@ -2,7 +2,7 @@
 
 How to run the **Lesson Agent** Gradio app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **EchoCoach** for voice practice feedback, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **TeacherVoice** for spoken back-and-forth tutoring, **EchoCoach** for one-shot pitch analysis, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -109,7 +109,8 @@ Configure presets in [`voice_models.yaml`](voice_models.yaml) or via `.env`:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `ECHOCOACH_ASR_PRESET` | `whisper-cpp-tiny` | ASR preset key |
-| `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key |
+| `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key (EchoCoach, default VoiceOut) |
+| `ECHOCOACH_REALTIME_TTS_PRESET` | `vibevoice-realtime-0.5b` | TeacherVoice streaming TTS (see below) |
 | `ECHOCOACH_COACH_MODEL` | `minicpm5-1b` | Text coach preset (from `models.yaml`) |
 | `ECHOCOACH_MAX_SECONDS` | `30` | Max recording length |
 
@@ -119,6 +120,57 @@ Smoke tests (analysis only, no GPU):
 
 ```bash
 bash scripts/echo_coach_smoke.sh
+```
+
+### TeacherVoice — spoken conversation (turn-based)
+
+The **TeacherVoice** tab is a **multi-turn voice teacher** — not full duplex like a phone call, but speak → wait → hear a reply → repeat.
+
+| Mode | Purpose |
+| ---- | ------- |
+| **Explain** | Tutor any topic in plain language |
+| **Lesson coach** | Discuss and outline lesson content verbally |
+| **Pitch practice** | Short live speaking tips each turn |
+
+**EchoCoach vs TeacherVoice**
+
+| | EchoCoach | TeacherVoice |
+| --- | --- | --- |
+| Interaction | One-shot after **Analyze pitch** | Multi-turn **Send turn** |
+| Best for | Pace/filler charts, JSON rewrite report | Q&A, lesson discussion, conversational pitch tips |
+| TTS | One VoiceOut clip per analysis | Voice reply every turn (first sentence plays quickly when Piper is installed) |
+| RAG | No | Optional ResearchMind grounding (Explain / Lesson) |
+
+**Flow per turn:** record up to **15s** → ASR → text LLM with chat history → Piper TTS (auto-plays when installed).
+
+After each reply, use **Speak last reply** or **Speak first sentence** to generate or replay VoiceOut from the latest assistant message (works even if auto-TTS was skipped).
+
+Install Piper for voice output (included in `gradio-space` deps after `uv sync`):
+
+```bash
+uv sync
+python -m piper.download_voices en_US-lessac-medium
+```
+
+Voices are stored under `models/piper/` (gitignored) or `~/.local/share/piper/voices/`. **Restart the Gradio app** after installing Piper so the Speak buttons can synthesize audio.
+
+**Realtime TTS (VibeVoice)** — [microsoft/VibeVoice-Realtime-0.5B](https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B) is registered in `voice_models.yaml` as `vibevoice-realtime-0.5b` (~300 ms to first audio, streaming text-in). TeacherVoice uses `realtime_tts_preset` from YAML by default; override with `ECHOCOACH_REALTIME_TTS_PRESET` or set `ECHOCOACH_TTS_PRESET=vibevoice-realtime-0.5b` globally. GPU recommended; falls back to Piper until the model loads. English-first; de/fr/it/es/pt/nl/pl/ja/ko are experimental per the model card.
+
+Enable RAG in the accordion: pick a ResearchMind session and optional documents (same scope rules as Chat debug).
+
+Reuse VoiceOut in other tabs via `gradio_space.voice_helpers.speak_last_assistant_reply`.
+
+Optional omni profile (GPU, experimental — falls back to ASR+LLM+Piper):
+
+```bash
+ECHOCOACH_VOICE_PROFILE=omni
+ECHOCOACH_OMNI_MODEL=openbmb/MiniCPM-o-4_5
+```
+
+Unit tests (no GPU):
+
+```bash
+uv run pytest libs/echocoach/tests/test_teacher_voice.py -q
 ```
 
 ### 5. Upload agent trace (Sharing is Caring badge)
