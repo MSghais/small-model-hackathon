@@ -178,14 +178,14 @@
 /* Only explicit primary CTAs get accent color */
 button.primary-cta,
 .primary-cta > button {
-  background: #e86c00 !important;
-  border-color: #cf6000 !important;
+  background: #a83300 !important;
+  border-color: #832600 !important;
   color: #fff !important;
 }
 
 button.primary-cta:hover,
 .primary-cta > button:hover {
-  background: #cf6000 !important;
+  background: #832600 !important;
 }
 
 /* Neutralize Gradio orange on tabs, labels, sliders */
