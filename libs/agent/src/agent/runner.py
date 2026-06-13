@@ -454,12 +454,10 @@ class AgentRunner:
         req: EducationPptxInput,
         ingest: ResearchIngestResult | None,
     ) -> tuple[str | None, list[str] | None]:
+        from researchmind.scope import resolve_retrieve_scope
+
         doc_ids = AgentRunner._lesson_doc_ids(store, session_id, req, ingest)
-        if doc_ids:
-            return None, doc_ids
-        if session_id:
-            return session_id, None
-        return None, None
+        return resolve_retrieve_scope(session_id, doc_ids or None)
 
     def run_researchmind_discover(
         self,

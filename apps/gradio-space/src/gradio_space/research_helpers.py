@@ -25,6 +25,10 @@ def list_session_choices() -> list[tuple[str, str]]:
 def refresh_sessions(current: str):
     choices = list_session_choices()
     values = [c[1] for c in choices]
+    if current and current not in values:
+        # New session may be selected before choices refresh (e.g. after discover).
+        choices.append((f"Session ({current})", current))
+        values.append(current)
     value = current if current in values else ""
     return gr.update(choices=choices, value=value)
 
@@ -60,6 +64,24 @@ def load_trace_json(trace_path: str) -> str:
     if path.is_file():
         return path.read_text(encoding="utf-8")
     return trace_path
+
+
+def trace_as_dict(value: str | dict | None) -> dict:
+    """Normalize trace payloads for gr.JSON (dict only, never invalid strings)."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    text = str(value).strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {"error": text[:2000]}
+        return parsed if isinstance(parsed, dict) else {"data": parsed}
+    return {"message": text[:2000]}
 
 
 def trace_summary_markdown(trace_path: str) -> str:
@@ -130,6 +152,27 @@ def merge_lesson_urls(pasted: str, selected: list[str] | None) -> list[str]:
     return list(dict.fromkeys([*direct, *(selected or [])]))
 
 
+def format_citations_markdown(trace_json: str) -> str:
+    """Extract citation lines from RAG trace JSON for chat display."""
+    if not trace_json or not trace_json.strip().startswith("{"):
+        return ""
+    try:
+        data = json.loads(trace_json)
+    except json.JSONDecodeError:
+        return ""
+    citations = data.get("citations") or []
+    if not citations:
+        return ""
+    lines = ["", "---", "**Sources:**"]
+    for i, cite in enumerate(citations[:5], start=1):
+        title = cite.get("title") or cite.get("uri") or "Source"
+        uri = cite.get("uri") or ""
+        lines.append(f"{i}. [{title}]({uri})" if uri else f"{i}. {title}")
+    if len(citations) > 5:
+        lines.append(f"_…and {len(citations) - 5} more (see Advanced trace)._")
+    return "\n".join(lines)
+
+
 def rag_scope_hint(session_id: str, doc_ids: list[str] | None) -> str:
     if doc_ids:
         return f"RAG scope: **{len(doc_ids)}** selected document(s)."
@@ -155,18 +198,15 @@ def run_research_question(
     if not question.strip():
         return "Enter a question.", "", ""
 
-    sid = session_id
-    if not sid:
-        sid = IngestPipeline().store.create_session().id
-
     runner = AgentRunner()
     result = runner.run_researchmind_chat(
         question=question,
-        session_id=sid,
+        session_id=session_id or "",
         doc_ids=doc_ids or None,
         model_key=key,
         backend=get_backend(key),
     )
+    sid = session_id or result.session_id
     trace_json = json.dumps(
         {
             "trace_path": result.trace_path,
@@ -192,14 +232,18 @@ def rag_aware_chat(
     use_rag: bool,
     session_id: str,
     doc_ids: list[str] | None,
-) -> str:
+) -> tuple[str, str, str]:
+    """Returns (reply, trace_json, trace_summary) for debug chat."""
     if not use_rag:
-        return chat(message, history, model_key)
+        return chat(message, history, model_key), "", ""
 
-    answer, _, _ = run_research_question(
+    answer, trace_json, trace_summary = run_research_question(
         message,
         session_id=session_id,
         doc_ids=doc_ids,
         model_key=model_key,
     )
-    return answer
+    citations = format_citations_markdown(trace_json)
+    if citations:
+        answer = f"{answer}\n{citations}"
+    return answer, trace_json, trace_summary

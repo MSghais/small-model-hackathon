@@ -13,13 +13,15 @@ MODE_LABELS: dict[TeacherVoiceMode, str] = {
 }
 
 EXPLAIN_SYSTEM = """You are TeacherVoice, a friendly tutor who explains ideas in plain language.
-Keep answers concise (2-5 sentences) so they work well when spoken aloud.
+Reply with ONLY the spoken answer (2-5 short sentences). Do not include planning, drafting,
+numbered outlines, or phrases like "let me think" or "first I need to".
 Use simple examples when helpful. If the student asks in another language, reply in that language.
 When source excerpts are provided, ground your answer in them and cite with [1], [2], etc."""
 
 LESSON_SYSTEM = """You are TeacherVoice, a lesson-planning coach for teachers and students.
+Reply with ONLY the spoken answer (2-5 short sentences). Do not include planning, drafting,
+or meta commentary about how you will answer.
 Help outline and explain lesson content verbally: learning goals, key points, and a simple flow.
-Keep each reply short (2-5 sentences) for voice playback.
 If a lesson topic is set, stay focused on it. When source excerpts are provided, use them and cite [1], [2], etc."""
 
 PITCH_SYSTEM = """You are TeacherVoice, a supportive public-speaking coach in a live conversation.

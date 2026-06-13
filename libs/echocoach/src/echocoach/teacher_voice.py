@@ -7,13 +7,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agent.runner import AgentRunner
 from agent.trace import TraceRecorder
 from inference.base import InferenceBackend
-from inference.response_clean import strip_reasoning_output
-from researchmind.citations import format_context_block, format_references
-from researchmind.config import get_config as get_researchmind_config
+from inference.response_clean import (
+    needs_teacher_compaction,
+    prepare_display_reply,
+    strip_reasoning_output,
+)
 from researchmind.ingest import IngestPipeline
-from researchmind.retrieve import retrieve
+from researchmind.scope import retrieval_query
 
 from echocoach.asr.factory import get_asr_backend
 from echocoach.audio_io import clamp_duration, load_audio_mono_16k, write_wav_temp
@@ -22,6 +25,10 @@ from echocoach.prompts import TeacherVoiceMode, system_prompt_for_mode, topic_co
 from echocoach.voiceout import extract_message_text, strip_references_for_tts, synthesize_voice_reply
 
 RAG_MODES: frozenset[TeacherVoiceMode] = frozenset({"explain", "lesson"})
+_VOICE_USER_SUFFIX = (
+    "Reply now in 2-4 complete spoken sentences only. "
+    "No planning, outlines, sentence labels, or meta commentary."
+)
 
 
 @dataclass
@@ -41,22 +48,34 @@ class TeacherVoiceTurnResult:
     voiceout_first_path: str | None
     voiceout_warning: str | None
     rag_references: str | None
+    rag_status: str | None
     trace_path: str
     trace: dict[str, Any] = field(default_factory=dict)
+
+
+def _assistant_content_for_chat(
+    display_text: str,
+    *,
+    voice_path: str | None = None,
+) -> str | list:
+    if voice_path:
+        return [display_text, {"path": voice_path}]
+    return display_text
 
 
 def append_chat_turn(
     history: list,
     user_text: str,
     assistant_text: str,
-) -> list[dict[str, str]]:
+    *,
+    assistant_display: str | None = None,
+    voice_path: str | None = None,
+) -> list[dict[str, Any]]:
     """Append a turn in Gradio 5 messages format."""
-    updated: list[dict[str, str]] = []
+    updated: list[dict[str, Any]] = []
     for item in history or []:
         if isinstance(item, dict) and "role" in item and "content" in item:
-            updated.append(
-                {"role": str(item["role"]), "content": extract_message_text(item["content"])}
-            )
+            updated.append({"role": str(item["role"]), "content": item["content"]})
         elif isinstance(item, (list, tuple)) and len(item) == 2:
             user_msg, assistant_msg = item
             updated.append({"role": "user", "content": extract_message_text(user_msg)})
@@ -65,23 +84,40 @@ def append_chat_turn(
                     {"role": "assistant", "content": extract_message_text(assistant_msg)}
                 )
     updated.append({"role": "user", "content": user_text})
-    updated.append({"role": "assistant", "content": assistant_text})
+    display_text = assistant_display if assistant_display is not None else assistant_text
+    updated.append(
+        {
+            "role": "assistant",
+            "content": _assistant_content_for_chat(display_text, voice_path=voice_path),
+        }
+    )
     return updated
+
+
+def _message_text_for_llm(role: str, content: object) -> str:
+    text = extract_message_text(content)
+    if role == "assistant":
+        return strip_reasoning_output(text)
+    return text
 
 
 def history_to_messages(history: list) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     for item in history:
         if isinstance(item, dict):
+            role = str(item["role"])
             messages.append(
-                {"role": item["role"], "content": extract_message_text(item["content"])}
+                {"role": role, "content": _message_text_for_llm(role, item["content"])}
             )
         else:
             user_msg, assistant_msg = item
             messages.append({"role": "user", "content": extract_message_text(user_msg)})
             if assistant_msg:
                 messages.append(
-                    {"role": "assistant", "content": extract_message_text(assistant_msg)}
+                    {
+                        "role": "assistant",
+                        "content": strip_reasoning_output(extract_message_text(assistant_msg)),
+                    }
                 )
     return messages
 
@@ -92,10 +128,16 @@ def fetch_rag_context(
     session_id: str,
     doc_ids: list[str] | None,
 ) -> RagContext | None:
+    """Retrieve passages for diagnostics/tests. Production turns use AgentRunner."""
+    from researchmind.config import get_config as get_researchmind_config
+    from researchmind.ingest import IngestPipeline
+    from researchmind.citations import format_context_block, format_references
+    from researchmind.retrieve import retrieve
+    from researchmind.scope import rag_scope_warning, resolve_retrieve_scope
+
     store = IngestPipeline().store
     cfg = get_researchmind_config()
-    scope_session = session_id if session_id and not doc_ids else None
-    scope_docs = doc_ids if doc_ids else None
+    scope_session, scope_docs = resolve_retrieve_scope(session_id or None, doc_ids)
     chunks = retrieve(
         question,
         store,
@@ -104,12 +146,7 @@ def fetch_rag_context(
         doc_ids=scope_docs,
     )
     if not chunks:
-        if doc_ids:
-            warning = "No passages in selected documents for this question."
-        elif session_id:
-            warning = "No indexed sources in this session yet."
-        else:
-            warning = "No indexed sources in the corpus yet."
+        warning = rag_scope_warning(session_id=session_id or None, doc_ids=doc_ids)
         return RagContext(context_block="", references_markdown="", chunk_count=0, warning=warning)
 
     context_block, citations = format_context_block(chunks)
@@ -119,6 +156,120 @@ def fetch_rag_context(
         references_markdown=refs,
         chunk_count=len(chunks),
     )
+
+
+def _rag_turn_via_agent(
+    user_text: str,
+    *,
+    topic: str | None,
+    session_id: str,
+    doc_ids: list[str] | None,
+    model_key: str,
+    backend: InferenceBackend,
+    trace: TraceRecorder,
+) -> tuple[str, str | None, str | None, str]:
+    """Grounded answer via ResearchMind harness. Returns text, refs, status, display."""
+    query = retrieval_query(user_text, topic=topic)
+    trace.log_note("rag_query", query=query, session_id=session_id or None, doc_ids=doc_ids or [])
+
+    result = AgentRunner().run_researchmind_chat(
+        question=query,
+        session_id=session_id or "",
+        doc_ids=doc_ids,
+        model_key=model_key,
+        backend=backend,
+    )
+
+    citation_count = len(result.citations)
+    if citation_count:
+        rag_status = (
+            f"Retrieved passages from **{citation_count}** source(s) "
+            f"for grounded answer."
+        )
+    else:
+        rag_status = (
+            "_No indexed passages matched this question — reply uses model guidance only._"
+        )
+    trace.log_note(
+        "rag_retrieve",
+        citations=citation_count,
+        session_id=session_id or None,
+        doc_ids=doc_ids or [],
+        research_trace=result.trace_path,
+    )
+
+    assistant_text = result.answer.strip()
+    display_reply = prepare_display_reply(assistant_text)
+    rag_refs = result.references_markdown or None
+    return assistant_text, rag_refs, rag_status, display_reply
+
+
+def _indexed_scope_available(session_id: str, doc_ids: list[str] | None) -> bool:
+    store = IngestPipeline().store
+    if doc_ids:
+        return True
+    if session_id:
+        return bool(store.list_documents(session_id=session_id))
+    return bool(store.list_documents())
+
+
+def _rag_off_status(session_id: str, doc_ids: list[str] | None) -> str | None:
+    if _indexed_scope_available(session_id, doc_ids):
+        return (
+            "_Sources are indexed but RAG is off — enable **Answer from my indexed sources** "
+            "for cited, source-grounded replies._"
+        )
+    return (
+        "_No sources used. Set a focus topic, **Discover/Auto-ingest** sources, then enable "
+        "**Answer from my indexed sources** for citations._"
+    )
+
+
+def _compact_teacher_reply(
+    raw_reply: str,
+    *,
+    mode: TeacherVoiceMode,
+    backend: InferenceBackend,
+    trace: TraceRecorder,
+) -> str:
+    seed = strip_reasoning_output(raw_reply).strip() or raw_reply.strip()[:1200]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"{system_prompt_for_mode(mode)}\n\n"
+                "Rewrite the draft below into ONLY 2-4 spoken sentences for voice playback. "
+                "Keep any [n] citations. No planning or labels."
+            ),
+        },
+        {"role": "user", "content": seed},
+    ]
+    compact_raw = backend.chat(messages, max_tokens=220, temperature=0.2)
+    trace.log_note("teacher_compact")
+    trace.log_llm(messages[-1]["content"], compact_raw)
+    compact = strip_reasoning_output(compact_raw).strip()
+    return compact or seed
+
+
+def _finalize_non_rag_reply(
+    raw_reply: str,
+    *,
+    mode: TeacherVoiceMode,
+    backend: InferenceBackend,
+    trace: TraceRecorder,
+) -> tuple[str, str]:
+    assistant_text = strip_reasoning_output(raw_reply).strip()
+    if needs_teacher_compaction(raw_reply) or not assistant_text:
+        assistant_text = _compact_teacher_reply(
+            raw_reply,
+            mode=mode,
+            backend=backend,
+            trace=trace,
+        )
+    display_reply = prepare_display_reply(raw_reply)
+    if needs_teacher_compaction(display_reply):
+        display_reply = prepare_display_reply(assistant_text)
+    return assistant_text, display_reply
 
 
 def build_teacher_messages(
@@ -143,9 +294,146 @@ def build_teacher_messages(
             "Use these source excerpts as grounding. Cite with [1], [2], etc. when relevant.\n\n"
             f"{rag.context_block}"
         )
-    user_parts.append(user_text.strip())
+    user_parts.append(f"{user_text.strip()}\n\n{_VOICE_USER_SUFFIX}")
     messages.append({"role": "user", "content": "\n\n".join(user_parts)})
     return messages
+
+
+def _generate_teacher_reply(
+    user_text: str,
+    history: list,
+    *,
+    trace: TraceRecorder,
+    mode: TeacherVoiceMode,
+    language: str,
+    topic: str | None,
+    model_key: str,
+    backend: InferenceBackend,
+    use_rag: bool,
+    session_id: str,
+    doc_ids: list[str] | None,
+    tts_key: str,
+) -> TeacherVoiceTurnResult:
+    rag_refs: str | None = None
+    rag_status: str | None = None
+
+    if use_rag and mode in RAG_MODES:
+        assistant_text, rag_refs, rag_status, display_reply = _rag_turn_via_agent(
+            user_text,
+            topic=topic,
+            session_id=session_id,
+            doc_ids=doc_ids,
+            model_key=model_key,
+            backend=backend,
+            trace=trace,
+        )
+    else:
+        messages = build_teacher_messages(
+            mode=mode,
+            history=history,
+            user_text=user_text,
+            topic=topic,
+        )
+        raw_reply = backend.chat(messages, max_tokens=256, temperature=0.2)
+        assistant_text, display_reply = _finalize_non_rag_reply(
+            raw_reply,
+            mode=mode,
+            backend=backend,
+            trace=trace,
+        )
+        trace.log_llm(messages[-1]["content"], raw_reply)
+        if mode in RAG_MODES:
+            rag_status = _rag_off_status(session_id, doc_ids)
+
+    voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
+        strip_references_for_tts(assistant_text),
+        language=language,
+        tts_preset=tts_key,
+        chunk_first=True,
+        out_subdir="teacher_voice",
+    )
+    if voiceout_path:
+        trace.set_artifact(voiceout_path)
+
+    new_history = append_chat_turn(
+        history,
+        user_text,
+        assistant_text,
+        assistant_display=display_reply,
+        voice_path=voiceout_path,
+    )
+
+    trace_path = trace.save()
+    return TeacherVoiceTurnResult(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        history=new_history,
+        voiceout_path=voiceout_path,
+        voiceout_first_path=voiceout_first,
+        voiceout_warning=voiceout_warning,
+        rag_references=rag_refs,
+        rag_status=rag_status,
+        trace_path=str(trace_path),
+        trace=trace.to_dict(),
+    )
+
+
+def run_teacher_voice_text_turn(
+    user_text: str,
+    history: list,
+    *,
+    mode: TeacherVoiceMode = "explain",
+    language: str = "en",
+    topic: str | None = None,
+    tts_preset: str | None = None,
+    coach_model: str | None = None,
+    backend: InferenceBackend,
+    use_rag: bool = False,
+    session_id: str = "",
+    doc_ids: list[str] | None = None,
+) -> TeacherVoiceTurnResult:
+    """Process a typed user message (skips ASR)."""
+    user_text = user_text.strip()
+    if not user_text:
+        raise ValueError("Type a message to send.")
+
+    config = get_echo_coach_config()
+    tts_key = tts_preset or config.realtime_tts_preset or config.tts_preset
+    model_key = coach_model or config.coach_model
+    run_id = uuid.uuid4().hex[:12]
+
+    trace = TraceRecorder(
+        skill="teacher-voice",
+        model=model_key,
+        user_input={
+            "mode": mode,
+            "language": language,
+            "topic": topic,
+            "input_type": "text",
+            "user_text": user_text,
+            "tts_preset": tts_key,
+            "use_rag": use_rag,
+            "session_id": session_id,
+            "doc_ids": doc_ids or [],
+        },
+        run_id=run_id,
+    )
+    trace.log_note("text_input", chars=len(user_text))
+
+    return _generate_teacher_reply(
+        user_text,
+        history,
+        trace=trace,
+        mode=mode,
+        language=language,
+        topic=topic,
+        model_key=model_key,
+        backend=backend,
+        use_rag=use_rag,
+        session_id=session_id,
+        doc_ids=doc_ids,
+        tts_key=tts_key,
+    )
 
 
 def run_teacher_voice_turn(
@@ -218,7 +506,12 @@ def run_teacher_voice_turn(
         )
         if omni_wav_or_note and omni_user and omni_reply and Path(omni_wav_or_note).is_file():
             trace.log_note("omni_turn", path=omni_wav_or_note)
-            new_history = append_chat_turn(history, omni_user, omni_reply)
+            new_history = append_chat_turn(
+                history,
+                omni_user,
+                omni_reply,
+                voice_path=omni_wav_or_note,
+            )
             trace_path = trace.save()
             return TeacherVoiceTurnResult(
                 user_text=omni_user,
@@ -228,63 +521,24 @@ def run_teacher_voice_turn(
                 voiceout_first_path=omni_wav_or_note,
                 voiceout_warning=None,
                 rag_references=None,
+                rag_status=None,
                 trace_path=str(trace_path),
                 trace=trace.to_dict(),
             )
         if omni_wav_or_note:
             trace.log_note("omni_fallback", message=omni_wav_or_note)
 
-    rag: RagContext | None = None
-    rag_refs: str | None = None
-    if use_rag and mode in RAG_MODES:
-        sid = session_id
-        if not sid:
-            sid = IngestPipeline().store.create_session().id
-        rag = fetch_rag_context(user_text, session_id=sid, doc_ids=doc_ids)
-        if rag:
-            trace.log_note(
-                "rag_retrieve",
-                chunks=rag.chunk_count,
-                warning=rag.warning,
-            )
-            if rag.references_markdown:
-                rag_refs = rag.references_markdown
-
-    messages = build_teacher_messages(
+    return _generate_teacher_reply(
+        user_text,
+        history,
+        trace=trace,
         mode=mode,
-        history=history,
-        user_text=user_text,
-        topic=topic,
-        rag=rag if rag and rag.context_block else None,
-    )
-    raw_reply = backend.chat(messages, max_tokens=512, temperature=0.5)
-    assistant_text = strip_reasoning_output(raw_reply).strip()
-    trace.log_llm(messages[-1]["content"], raw_reply)
-
-    if rag_refs:
-        assistant_text = f"{assistant_text}\n\n{rag_refs}"
-
-    voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
-        strip_references_for_tts(assistant_text),
         language=language,
-        tts_preset=tts_key,
-        chunk_first=True,
-        out_subdir="teacher_voice",
-    )
-    if voiceout_path:
-        trace.set_artifact(voiceout_path)
-
-    new_history = append_chat_turn(history, user_text, assistant_text)
-
-    trace_path = trace.save()
-    return TeacherVoiceTurnResult(
-        user_text=user_text,
-        assistant_text=assistant_text,
-        history=new_history,
-        voiceout_path=voiceout_path,
-        voiceout_first_path=voiceout_first,
-        voiceout_warning=voiceout_warning,
-        rag_references=rag_refs,
-        trace_path=str(trace_path),
-        trace=trace.to_dict(),
+        topic=topic,
+        model_key=model_key,
+        backend=backend,
+        use_rag=use_rag,
+        session_id=session_id,
+        doc_ids=doc_ids,
+        tts_key=tts_key,
     )

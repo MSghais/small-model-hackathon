@@ -21,6 +21,9 @@ from echocoach.voiceout import (
     strip_references_for_tts,
 )
 
+_THINK_OPEN = "<" + "think" + ">"
+_THINK_CLOSE = "</" + "think" + ">"
+
 
 class _MockBackend:
     def load(self) -> None:
@@ -65,6 +68,36 @@ def test_append_chat_turn_migrates_legacy_tuples():
     assert history[0] == {"role": "user", "content": "Old question"}
 
 
+def test_append_chat_turn_attaches_voice_to_assistant_message(tmp_path):
+    wav = tmp_path / "reply.wav"
+    wav.write_bytes(b"RIFF")
+
+    history = append_chat_turn(
+        [],
+        "Hi",
+        "Hello",
+        assistant_display=f"{_THINK_OPEN}plan{_THINK_CLOSE}\n\nHello",
+        voice_path=str(wav),
+    )
+    assistant = history[-1]
+    assert assistant["role"] == "assistant"
+    assert isinstance(assistant["content"], list)
+    assert assistant["content"][0].startswith(_THINK_OPEN)
+    assert assistant["content"][1] == {"path": str(wav)}
+
+
+def test_history_to_messages_strips_assistant_reasoning():
+    history = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": f"{_THINK_OPEN}planning{_THINK_CLOSE}\n\nHello there.",
+        },
+    ]
+    messages = history_to_messages(history)
+    assert messages[-1]["content"] == "Hello there."
+
+
 def test_history_to_messages_tuple_pairs():
     history = [("Hi", "Hello"), ("What is AI?", "Machine learning.")]
     messages = history_to_messages(history)
@@ -93,7 +126,8 @@ def test_build_teacher_messages_includes_topic_and_rag():
     assert "lesson-planning" in messages[0]["content"]
     assert "Photosynthesis" in messages[0]["content"]
     assert "[1] Plants need light." in messages[-1]["content"]
-    assert messages[-1]["content"].endswith("How do plants eat?")
+    assert "How do plants eat?" in messages[-1]["content"]
+    assert "Reply now in 2-4 complete spoken sentences only" in messages[-1]["content"]
 
 
 def test_pitch_mode_system_prompt():
@@ -151,6 +185,55 @@ def test_fetch_rag_context_empty_store_warns(research_env):
     assert ctx.warning
 
 
+def test_retrieval_query_exported():
+    from researchmind.scope import retrieval_query as rm_query
+
+    assert rm_query("step 2?", topic="Photosynthesis") == "Photosynthesis: step 2?"
+
+
+def test_rag_turn_via_agent_mock(monkeypatch, tmp_path):
+    from agent.models import Citation, ResearchChatResult
+    from echocoach.teacher_voice import _rag_turn_via_agent
+    from agent.trace import TraceRecorder
+
+    result = ResearchChatResult(
+        answer="Plants use light [1].\n\n**References**\n[1] Bio",
+        citations=[
+            Citation(
+                index=1,
+                chunk_id="c1",
+                doc_title="Bio",
+                doc_uri="https://example.com",
+                excerpt="Plants use light.",
+            )
+        ],
+        references_markdown="**References**\n[1] Bio",
+        session_id="",
+        trace_path=str(tmp_path / "trace.json"),
+    )
+
+    class _RunnerStub:
+        def run_researchmind_chat(self, **kwargs):
+            return result
+
+    monkeypatch.setattr("echocoach.teacher_voice.AgentRunner", _RunnerStub)
+
+    trace = TraceRecorder(skill="teacher-voice", model="test", user_input={})
+    text, refs, status, display = _rag_turn_via_agent(
+        "How do plants eat?",
+        topic="Photosynthesis",
+        session_id="",
+        doc_ids=None,
+        model_key="test",
+        backend=_MockBackend(),
+        trace=trace,
+    )
+    assert "Plants use light" in text
+    assert refs
+    assert "1" in status
+    assert display
+
+
 @pytest.fixture
 def research_env(tmp_path, monkeypatch):
     from researchmind.config import ResearchMindConfig
@@ -166,6 +249,36 @@ def research_env(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("RESEARCHMIND_DATA_DIR", str(cfg.data_dir))
     monkeypatch.setenv("AGENT_OUTPUTS_DIR", str(tmp_path / "outputs"))
+
+
+def test_run_teacher_voice_text_turn_mock(monkeypatch, tmp_path):
+    from echocoach.teacher_voice import run_teacher_voice_text_turn
+
+    class _Tts:
+        def synthesize(self, text, *, language, out_dir=None):
+            out = (out_dir or tmp_path) / "out.wav"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            sf.write(out, np.zeros(8000, dtype=np.float32), 16_000)
+            return str(out), None
+
+    monkeypatch.setattr("echocoach.voiceout.get_tts_backend", lambda _: _Tts())
+
+    result = run_teacher_voice_text_turn(
+        "Tell me about plants.",
+        [],
+        mode="explain",
+        backend=_MockBackend(),
+        use_rag=False,
+    )
+    assert result.user_text == "Tell me about plants."
+    assert "sunlight" in result.assistant_text
+    assert len(result.history) == 2
+    assistant = result.history[-1]
+    assert assistant["role"] == "assistant"
+    assert isinstance(assistant["content"], list)
+    assert assistant["content"][0] == "Plants use sunlight to make food."
+    assert assistant["content"][1]["path"]
+    assert result.trace.get("skill") == "teacher-voice"
 
 
 def test_run_teacher_voice_turn_mock_asr(monkeypatch, tmp_path):
