@@ -148,6 +148,133 @@ def build_teacher_messages(
     return messages
 
 
+def _generate_teacher_reply(
+    user_text: str,
+    history: list,
+    *,
+    trace: TraceRecorder,
+    mode: TeacherVoiceMode,
+    language: str,
+    topic: str | None,
+    backend: InferenceBackend,
+    use_rag: bool,
+    session_id: str,
+    doc_ids: list[str] | None,
+    tts_key: str,
+) -> TeacherVoiceTurnResult:
+    rag: RagContext | None = None
+    rag_refs: str | None = None
+    if use_rag and mode in RAG_MODES:
+        sid = session_id
+        if not sid:
+            sid = IngestPipeline().store.create_session().id
+        rag = fetch_rag_context(user_text, session_id=sid, doc_ids=doc_ids)
+        if rag:
+            trace.log_note(
+                "rag_retrieve",
+                chunks=rag.chunk_count,
+                warning=rag.warning,
+            )
+            if rag.references_markdown:
+                rag_refs = rag.references_markdown
+
+    messages = build_teacher_messages(
+        mode=mode,
+        history=history,
+        user_text=user_text,
+        topic=topic,
+        rag=rag if rag and rag.context_block else None,
+    )
+    raw_reply = backend.chat(messages, max_tokens=512, temperature=0.5)
+    assistant_text = strip_reasoning_output(raw_reply).strip()
+    trace.log_llm(messages[-1]["content"], raw_reply)
+
+    if rag_refs:
+        assistant_text = f"{assistant_text}\n\n{rag_refs}"
+
+    voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
+        strip_references_for_tts(assistant_text),
+        language=language,
+        tts_preset=tts_key,
+        chunk_first=True,
+        out_subdir="teacher_voice",
+    )
+    if voiceout_path:
+        trace.set_artifact(voiceout_path)
+
+    new_history = append_chat_turn(history, user_text, assistant_text)
+
+    trace_path = trace.save()
+    return TeacherVoiceTurnResult(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        history=new_history,
+        voiceout_path=voiceout_path,
+        voiceout_first_path=voiceout_first,
+        voiceout_warning=voiceout_warning,
+        rag_references=rag_refs,
+        trace_path=str(trace_path),
+        trace=trace.to_dict(),
+    )
+
+
+def run_teacher_voice_text_turn(
+    user_text: str,
+    history: list,
+    *,
+    mode: TeacherVoiceMode = "explain",
+    language: str = "en",
+    topic: str | None = None,
+    tts_preset: str | None = None,
+    coach_model: str | None = None,
+    backend: InferenceBackend,
+    use_rag: bool = False,
+    session_id: str = "",
+    doc_ids: list[str] | None = None,
+) -> TeacherVoiceTurnResult:
+    """Process a typed user message (skips ASR)."""
+    user_text = user_text.strip()
+    if not user_text:
+        raise ValueError("Type a message to send.")
+
+    config = get_echo_coach_config()
+    tts_key = tts_preset or config.realtime_tts_preset or config.tts_preset
+    model_key = coach_model or config.coach_model
+    run_id = uuid.uuid4().hex[:12]
+
+    trace = TraceRecorder(
+        skill="teacher-voice",
+        model=model_key,
+        user_input={
+            "mode": mode,
+            "language": language,
+            "topic": topic,
+            "input_type": "text",
+            "user_text": user_text,
+            "tts_preset": tts_key,
+            "use_rag": use_rag,
+            "session_id": session_id,
+            "doc_ids": doc_ids or [],
+        },
+        run_id=run_id,
+    )
+    trace.log_note("text_input", chars=len(user_text))
+
+    return _generate_teacher_reply(
+        user_text,
+        history,
+        trace=trace,
+        mode=mode,
+        language=language,
+        topic=topic,
+        backend=backend,
+        use_rag=use_rag,
+        session_id=session_id,
+        doc_ids=doc_ids,
+        tts_key=tts_key,
+    )
+
+
 def run_teacher_voice_turn(
     audio_path: str,
     history: list,
@@ -234,57 +361,16 @@ def run_teacher_voice_turn(
         if omni_wav_or_note:
             trace.log_note("omni_fallback", message=omni_wav_or_note)
 
-    rag: RagContext | None = None
-    rag_refs: str | None = None
-    if use_rag and mode in RAG_MODES:
-        sid = session_id
-        if not sid:
-            sid = IngestPipeline().store.create_session().id
-        rag = fetch_rag_context(user_text, session_id=sid, doc_ids=doc_ids)
-        if rag:
-            trace.log_note(
-                "rag_retrieve",
-                chunks=rag.chunk_count,
-                warning=rag.warning,
-            )
-            if rag.references_markdown:
-                rag_refs = rag.references_markdown
-
-    messages = build_teacher_messages(
+    return _generate_teacher_reply(
+        user_text,
+        history,
+        trace=trace,
         mode=mode,
-        history=history,
-        user_text=user_text,
-        topic=topic,
-        rag=rag if rag and rag.context_block else None,
-    )
-    raw_reply = backend.chat(messages, max_tokens=512, temperature=0.5)
-    assistant_text = strip_reasoning_output(raw_reply).strip()
-    trace.log_llm(messages[-1]["content"], raw_reply)
-
-    if rag_refs:
-        assistant_text = f"{assistant_text}\n\n{rag_refs}"
-
-    voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
-        strip_references_for_tts(assistant_text),
         language=language,
-        tts_preset=tts_key,
-        chunk_first=True,
-        out_subdir="teacher_voice",
-    )
-    if voiceout_path:
-        trace.set_artifact(voiceout_path)
-
-    new_history = append_chat_turn(history, user_text, assistant_text)
-
-    trace_path = trace.save()
-    return TeacherVoiceTurnResult(
-        user_text=user_text,
-        assistant_text=assistant_text,
-        history=new_history,
-        voiceout_path=voiceout_path,
-        voiceout_first_path=voiceout_first,
-        voiceout_warning=voiceout_warning,
-        rag_references=rag_refs,
-        trace_path=str(trace_path),
-        trace=trace.to_dict(),
+        topic=topic,
+        backend=backend,
+        use_rag=use_rag,
+        session_id=session_id,
+        doc_ids=doc_ids,
+        tts_key=tts_key,
     )

@@ -377,6 +377,14 @@ button.primary-cta:hover,
   flex: 1;
 }
 
+.tv-or-divider {
+  text-align: center;
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin: 0.65rem 0 0.5rem;
+  letter-spacing: 0.02em;
+}
+
 .tv-results-col .chatbot {
   min-height: 320px;
 }

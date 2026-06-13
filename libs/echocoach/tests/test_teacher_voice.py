@@ -168,6 +168,31 @@ def research_env(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_OUTPUTS_DIR", str(tmp_path / "outputs"))
 
 
+def test_run_teacher_voice_text_turn_mock(monkeypatch, tmp_path):
+    from echocoach.teacher_voice import run_teacher_voice_text_turn
+
+    class _Tts:
+        def synthesize(self, text, *, language, out_dir=None):
+            out = (out_dir or tmp_path) / "out.wav"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            sf.write(out, np.zeros(8000, dtype=np.float32), 16_000)
+            return str(out), None
+
+    monkeypatch.setattr("echocoach.voiceout.get_tts_backend", lambda _: _Tts())
+
+    result = run_teacher_voice_text_turn(
+        "Tell me about plants.",
+        [],
+        mode="explain",
+        backend=_MockBackend(),
+        use_rag=False,
+    )
+    assert result.user_text == "Tell me about plants."
+    assert "sunlight" in result.assistant_text
+    assert len(result.history) == 2
+    assert result.trace.get("skill") == "teacher-voice"
+
+
 def test_run_teacher_voice_turn_mock_asr(monkeypatch, tmp_path):
     from echocoach.teacher_voice import run_teacher_voice_turn
 

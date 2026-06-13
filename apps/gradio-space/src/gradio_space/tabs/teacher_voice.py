@@ -5,7 +5,7 @@ import gradio as gr
 from echocoach.config import get_echo_coach_config
 from echocoach.omni import omni_status_message
 from echocoach.prompts import MODE_LABELS, TeacherVoiceMode
-from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_turn
+from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_text_turn, run_teacher_voice_turn
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
 from gradio_space.research_helpers import (
     list_session_choices,
@@ -43,10 +43,44 @@ def _empty_turn() -> tuple:
     return (
         [],
         _voiceout_update(None),
-        "_Record a question, then click **Send turn**._",
+        "_Type a message or record audio, then send._",
         "",
         {},
         *_conversation_visibility([]),
+        "",
+    )
+
+
+def _turn_result(result) -> tuple:
+    status = (
+        f"**Turn complete** — you sent {len(result.user_text)} chars, "
+        f"teacher replied with {len(result.assistant_text)} chars."
+    )
+    if result.voiceout_warning:
+        status += f" VoiceOut note: {result.voiceout_warning}"
+
+    playback = str(result.voiceout_path) if result.voiceout_path else None
+
+    return (
+        result.history,
+        _voiceout_update(playback),
+        status,
+        f"Trace saved: `{result.trace_path}`",
+        result.trace,
+        *_conversation_visibility(result.history),
+        "",
+    )
+
+
+def _turn_error(history: list | None, message: str) -> tuple:
+    return (
+        history or [],
+        _voiceout_update(None),
+        f"**TeacherVoice failed:** {message}",
+        "",
+        {},
+        *_conversation_visibility(history),
+        gr.update(),
     )
 
 
@@ -66,17 +100,18 @@ def send_turn(
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
+        return _turn_error(history, load_error)
+
+    if not audio_path:
         return (
             history or [],
             _voiceout_update(None),
-            load_error,
+            "_Record or upload audio, then click **Send voice turn**._",
             "",
             {},
             *_conversation_visibility(history),
+            gr.update(),
         )
-
-    if not audio_path:
-        return _empty_turn()
 
     try:
         progress(0.15, desc="Listening…")
@@ -94,33 +129,58 @@ def send_turn(
             max_turn_seconds=_TURN_MAX,
         )
     except Exception as exc:  # noqa: BLE001
+        return _turn_error(history, str(exc))
+
+    progress(1.0, desc="Done")
+    return _turn_result(result)
+
+
+def send_text_turn(
+    message: str,
+    history: list,
+    mode: TeacherVoiceMode,
+    language: str,
+    topic: str,
+    use_rag: bool,
+    session_id: str,
+    doc_ids: list[str] | None,
+    progress: gr.Progress = gr.Progress(),
+) -> tuple:
+    progress(0, desc="Loading model…")
+    model_key = get_active_model_key()
+    load_error = ensure_model_loaded(model_key)
+    if load_error:
+        return _turn_error(history, load_error)
+
+    if not message.strip():
         return (
             history or [],
             _voiceout_update(None),
-            f"**TeacherVoice failed:** {exc}",
+            "_Type your question above, then click **Send text turn**._",
             "",
             {},
             *_conversation_visibility(history),
+            gr.update(),
         )
 
+    try:
+        progress(0.2, desc="Thinking…")
+        result = run_teacher_voice_text_turn(
+            message,
+            history,
+            mode=mode,
+            language=language,
+            topic=topic.strip() or None,
+            backend=get_backend(model_key),
+            use_rag=use_rag and mode in RAG_MODES,
+            session_id=session_id or None,
+            doc_ids=doc_ids or None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _turn_error(history, str(exc))
+
     progress(1.0, desc="Done")
-    status = (
-        f"**Turn complete** — you spoke {len(result.user_text)} chars, "
-        f"teacher replied with {len(result.assistant_text)} chars."
-    )
-    if result.voiceout_warning:
-        status += f" VoiceOut note: {result.voiceout_warning}"
-
-    playback = str(result.voiceout_path) if result.voiceout_path else None
-
-    return (
-        result.history,
-        _voiceout_update(playback),
-        status,
-        f"Trace saved: `{result.trace_path}`",
-        result.trace,
-        *_conversation_visibility(result.history),
-    )
+    return _turn_result(result)
 
 
 def clear_conversation() -> tuple:
@@ -155,20 +215,32 @@ def _on_mode_change(mode: str) -> tuple:
     if mode == "lesson":
         topic_up = gr.update(
             visible=topic_mode,
-            label="What lesson are we planning?",
-            placeholder="e.g. Photosynthesis for grade 6",
+            label="Lesson focus (optional)",
+            placeholder="e.g. Photosynthesis for grade 6 — keeps the teacher on topic",
+        )
+        message_up = gr.update(
+            label="Your message",
+            placeholder="e.g. What are the main steps of photosynthesis?",
         )
     elif mode == "explain":
         topic_up = gr.update(
             visible=topic_mode,
-            label="What should the teacher explain?",
-            placeholder="e.g. How photosynthesis works",
+            label="Focus topic (optional)",
+            placeholder="e.g. Photosynthesis — optional context for the whole chat",
+        )
+        message_up = gr.update(
+            label="Your message",
+            placeholder="e.g. How does photosynthesis work?",
         )
     else:
         topic_up = gr.update(visible=False, value="")
+        message_up = gr.update(
+            label="Your message",
+            placeholder="e.g. Here is my opening line — how can I improve it?",
+        )
     rag_acc = gr.update(visible=rag_mode)
     use_rag = gr.update(value=False) if not rag_mode else gr.update()
-    return topic_up, rag_acc, use_rag
+    return topic_up, message_up, rag_acc, use_rag
 
 
 def build_teacher_voice_tab() -> None:
@@ -181,7 +253,7 @@ def build_teacher_voice_tab() -> None:
     gr.Markdown("### TeacherVoice", elem_classes=["form-tab-heading"])
     gr.HTML(
         '<p class="tab-subtitle">'
-        "Pick a mode, record your question, and hear a spoken reply from your local teacher."
+        "Pick a mode, type a question or record audio, and hear a spoken reply from your local teacher."
         "</p>"
     )
     if omni_note:
@@ -203,12 +275,29 @@ def build_teacher_voice_tab() -> None:
             )
 
             topic_tb = gr.Textbox(
-                label="What should the teacher explain?",
-                placeholder="e.g. How photosynthesis works",
-                lines=2,
-                max_lines=3,
-                elem_classes=["form-topic-input"],
+                label="Focus topic (optional)",
+                placeholder="e.g. Photosynthesis — optional context for the whole chat",
+                lines=1,
+                max_lines=2,
+                elem_classes=["form-secondary"],
             )
+
+            message_tb = gr.Textbox(
+                label="Your message",
+                placeholder="e.g. How does photosynthesis work?",
+                lines=3,
+                max_lines=6,
+                elem_classes=["form-ask-input"],
+            )
+
+            with gr.Row(elem_classes=["form-cta-row"]):
+                send_text_btn = gr.Button(
+                    "Send text turn",
+                    variant="primary",
+                    elem_classes=["primary-cta"],
+                )
+
+            gr.HTML('<p class="tv-or-divider">— or record your voice —</p>')
 
             with gr.Accordion(
                 "ResearchMind sources (optional)",
@@ -251,22 +340,21 @@ def build_teacher_voice_tab() -> None:
                 )
 
             status = gr.Markdown(
-                value="_Record or upload audio, then send._",
+                value="_Type a message or record audio, then send._",
                 elem_classes=["form-status"],
             )
             rec.status = status
 
             with gr.Row(elem_classes=["form-cta-row"]):
-                send_btn = gr.Button(
-                    "Send turn",
-                    variant="primary",
-                    elem_classes=["primary-cta"],
+                send_voice_btn = gr.Button(
+                    "Send voice turn",
+                    variant="secondary",
                 )
             clear_btn = gr.Button("Clear conversation", variant="secondary", size="sm")
 
             wire_recording_handlers(
                 rec,
-                stop_next_action="Click **Send turn**.",
+                stop_next_action="Click **Send voice turn**.",
                 status_output=status,
             )
 
@@ -291,7 +379,7 @@ def build_teacher_voice_tab() -> None:
             chat_empty = gr.HTML(
                 value=empty_state(
                     "Your back-and-forth with the teacher will show here. "
-                    "Choose a mode on the left, record a question, and click **Send turn**."
+                    "Type a message or record audio on the left, then send a turn."
                 )
             )
 
@@ -311,7 +399,7 @@ def build_teacher_voice_tab() -> None:
     mode_dd.change(
         fn=_on_mode_change,
         inputs=[mode_dd],
-        outputs=[topic_tb, rag_acc, use_rag],
+        outputs=[topic_tb, message_tb, rag_acc, use_rag],
     ).then(
         fn=_update_rag_hint,
         inputs=[use_rag, session_dd, doc_dd],
@@ -335,23 +423,36 @@ def build_teacher_voice_tab() -> None:
         advanced.trace_box,
         chat_empty,
         chat_panel,
+        message_tb,
     ]
 
-    send_btn.click(
-        send_turn,
-        inputs=[
-            rec.audio_in,
-            chatbot,
-            mode_dd,
-            rec.language,
-            rec.asr_preset,
-            topic_tb,
-            use_rag,
-            session_dd,
-            doc_dd,
-        ],
-        outputs=turn_outputs,
-    )
+    text_turn_inputs = [
+        message_tb,
+        chatbot,
+        mode_dd,
+        rec.language,
+        topic_tb,
+        use_rag,
+        session_dd,
+        doc_dd,
+    ]
+
+    voice_turn_inputs = [
+        rec.audio_in,
+        chatbot,
+        mode_dd,
+        rec.language,
+        rec.asr_preset,
+        topic_tb,
+        use_rag,
+        session_dd,
+        doc_dd,
+    ]
+
+    send_text_btn.click(send_text_turn, inputs=text_turn_inputs, outputs=turn_outputs)
+    message_tb.submit(send_text_turn, inputs=text_turn_inputs, outputs=turn_outputs)
+
+    send_voice_btn.click(send_turn, inputs=voice_turn_inputs, outputs=turn_outputs)
 
     clear_btn.click(clear_conversation, outputs=turn_outputs)
 
