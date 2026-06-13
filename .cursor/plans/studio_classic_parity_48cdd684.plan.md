@@ -4,22 +4,22 @@ overview: "Bring the Studio HTML UI (`/`) to near feature parity with Classic Gr
 todos:
   - id: phase1-ui-wins
     content: "Phase 1: EchoCoach charts/transcript/VoiceOut, slide gallery (flip skip_preview_images), debug trace drawer, K-12 grades — UI-only"
-    status: in_progress
+    status: completed
   - id: phase2-settings
     content: "Phase 2a: Add reload_model + model_choices APIs and Settings slide-over drawer in Studio"
-    status: pending
+    status: completed
   - id: phase2-voice-audio
     content: "Phase 2d+2e: teacher_voice_audio_turn API, recording start/stop/status APIs, browser MediaRecorder fallback in studio.js"
-    status: pending
+    status: completed
   - id: phase2-slides-web
     content: "Phase 2b: Extend generate_slides API with source_mode/search_workflow/urls; add Source mode UI on Slides column"
-    status: pending
+    status: completed
   - id: phase2-debug-chat
     content: "Phase 2c: Add debug_chat API wrapping rag_aware_chat; add Debug sidebar view with chat panel"
-    status: pending
+    status: completed
   - id: phase4-polish
     content: "Phase 4: ASR/language presets on analyze_pitch, session memory, README API list + demo script update"
-    status: pending
+    status: completed
 isProject: false
 ---
 
