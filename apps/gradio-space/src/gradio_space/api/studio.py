@@ -32,6 +32,9 @@ from gradio_space.research_helpers import (
     memory_summary,
     pick_session_for_topic,
     rag_aware_chat,
+    rag_scope_hint,
+    resolve_doc_ids,
+    resolve_session,
 )
 from gradio_space.tabs.education_pptx import SOURCE_MODES, SEARCH_WORKFLOWS, generate_lesson_slides
 from gradio_space.tabs.research_mind import (
@@ -55,6 +58,14 @@ from researchmind.ingest import IngestPipeline
 
 _echo_config = get_echo_coach_config()
 _app_config = get_app_config()
+_SAMPLE_PITCH_AUDIO = (
+    Path(__file__).resolve().parents[5]
+    / "libs"
+    / "echocoach"
+    / "tests"
+    / "fixtures"
+    / "silence_2s.wav"
+)
 
 _SOURCE_LABELS = {value: label for label, value in SOURCE_MODES}
 _WORKFLOW_LABELS = {value: label for label, value in SEARCH_WORKFLOWS}
@@ -381,6 +392,8 @@ def api_debug_chat(
     session_id: str = "",
     doc_ids: list[str] | None = None,
     model_key: str = "",
+    workspace_session_id: str = "",
+    workspace_doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     if not (message or "").strip():
         return err("Enter a message.")
@@ -389,20 +402,23 @@ def api_debug_chat(
     if load_error:
         return err(load_error)
 
+    sid = resolve_session(session_id, workspace_session_id)
+    docs = resolve_doc_ids(doc_ids, workspace_doc_ids)
     hist = history or []
     reply, trace_json, trace_summary = rag_aware_chat(
         message.strip(),
         hist,
         key,
         use_rag,
-        session_id,
-        doc_ids or [],
+        sid,
+        docs,
     )
     new_history = list(hist)
     new_history.append([message.strip(), reply])
     return ok(
         history=new_history,
         assistant=reply,
+        rag_hint=rag_scope_hint(sid, docs),
         trace_json=trace_json,
         trace_summary=trace_summary,
         trace_html=render_trace_details(trace_summary=trace_summary, trace_json=trace_json),
@@ -637,6 +653,18 @@ def api_teacher_voice_speak(
     return ok(voiceout_path=playback, status=status)
 
 
+def api_load_sample_pitch() -> dict[str, Any]:
+    if not _SAMPLE_PITCH_AUDIO.is_file():
+        return err(
+            f"Sample clip missing at `{_SAMPLE_PITCH_AUDIO}`. "
+            "Run `uv run python libs/echocoach/tests/make_fixture.py`."
+        )
+    return ok(
+        audio_path=str(_SAMPLE_PITCH_AUDIO),
+        status="Sample clip loaded — click Analyze pitch when ready.",
+    )
+
+
 def api_analyze_pitch(
     audio_path: str,
     language: str = "en",
@@ -838,8 +866,19 @@ def register_studio_apis(server: gr.Server) -> None:
         session_id: str = "",
         doc_ids: list[str] | None = None,
         model_key: str = "",
+        workspace_session_id: str = "",
+        workspace_doc_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        return api_debug_chat(message, history, use_rag, session_id, doc_ids, model_key)
+        return api_debug_chat(
+            message,
+            history,
+            use_rag,
+            session_id,
+            doc_ids,
+            model_key,
+            workspace_session_id,
+            workspace_doc_ids,
+        )
 
     @server.api(name="ingest_files")
     def _ingest_files(
@@ -936,6 +975,10 @@ def register_studio_apis(server: gr.Server) -> None:
         first_sentence_only: bool = False,
     ) -> dict[str, Any]:
         return api_teacher_voice_speak(history, language, first_sentence_only)
+
+    @server.api(name="load_sample_pitch")
+    def _load_sample_pitch() -> dict[str, Any]:
+        return api_load_sample_pitch()
 
     @server.api(name="analyze_pitch")
     def _analyze_pitch(

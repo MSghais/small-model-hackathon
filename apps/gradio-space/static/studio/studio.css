@@ -1003,6 +1003,56 @@ body {
   width: auto;
 }
 
+.slide-outline-details,
+.slide-export-help {
+  margin-top: 0.75rem;
+}
+
+.slide-outline-details summary,
+.slide-export-help summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.slide-outline {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.debug-rag-scope {
+  margin: 0.75rem 0;
+}
+
+.debug-rag-scope summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.debug-session-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.debug-session-row .input {
+  flex: 1;
+}
+
+.debug-doc-list {
+  margin: 0.5rem 0;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
 .studio-debug-trace {
   margin-top: 0.75rem;
   font-size: 0.8125rem;
@@ -1055,6 +1105,32 @@ body {
 .studio-coach-voiceout audio {
   width: 100%;
   margin-top: 0.5rem;
+}
+
+.voice-chat-messages {
+  max-height: 220px;
+  margin: 0.75rem 0;
+}
+
+.voice-rag-sources {
+  margin: 0.75rem 0;
+}
+
+.voice-rag-sources summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.voice-replay-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.voice-replay-row .btn-ghost {
+  margin-left: auto;
 }
 
 .studio-coach-transcript {

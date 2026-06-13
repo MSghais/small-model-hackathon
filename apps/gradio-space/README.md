@@ -33,8 +33,8 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 
 **Voice & coach**
 
-- `teacher_voice_turn`, `teacher_voice_audio_turn`
-- `analyze_pitch` (language, ASR preset, `speak_rewrite`)
+- `teacher_voice_turn`, `teacher_voice_audio_turn`, `teacher_voice_clear`, `teacher_voice_speak`
+- `load_sample_pitch`, `analyze_pitch` (language, ASR preset, `speak_rewrite`)
 - `recording_status`, `recording_start`, `recording_stop`
 - `voice_presets`
 
@@ -46,13 +46,13 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 
 ## Demo script (judges)
 
-1. Open `/` — Photosynthesis project workspace
+1. Open `/` — **Small Model Finetuning** project workspace
 2. Paste a URL in Research → **Ingest URL** → documents appear with **RAG Active**
-3. Center column → **Generate Slides** → slide preview canvas + thumbnail strip
+3. Center column → **Generate Slides** → slide preview canvas, thumbnail strip, and **Outline** panel
 4. Optional: expand **Research sources** → Web search or RAG modes
-5. Voice view → text or **mic** → Teacher Voice Coach mode
-6. Coach view → record/upload → **Analyze pitch** (charts, transcript, VoiceOut)
-7. Debug sidebar → plain chat or RAG-grounded test with traces
+5. Voice view → text or **mic** → full conversation thread + **Speak full reply**
+6. Coach view → **Load sample clip** or record → **Analyze pitch** (charts, transcript, VoiceOut)
+7. Debug sidebar → RAG scope overrides, plain chat or corpus-grounded test with traces
 8. Settings drawer → model status / reload (Classic at `/classic` still available)
 
 Space card metadata lives in the [repository root README.md](../../README.md).

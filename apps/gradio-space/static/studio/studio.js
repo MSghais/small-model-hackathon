@@ -533,20 +533,96 @@ async function sendDebugMessage() {
     return;
   }
   const useRag = $("#debug-use-rag").checked;
-  const docIds = effectiveDocIds([]);
+  const debugSession = $("#debug-session")?.value || "";
+  const debugDocIds = selectedDebugDocIds();
+  const workspaceDocIds = selectedWorkspaceDocIds();
   const modelKey = $("#debug-model-key")?.value || "";
   const data = await callApi("debug_chat", [
     message,
     state.debugChatHistory,
     useRag,
-    state.workspaceSessionId,
-    docIds,
+    debugSession,
+    debugDocIds,
     modelKey,
+    state.workspaceSessionId,
+    workspaceDocIds,
   ]);
   state.debugChatHistory = data.history || [];
   renderDebugChat();
   $("#debug-message").value = "";
+  if (data.rag_hint) {
+    $("#debug-rag-hint").textContent = stripMd(data.rag_hint);
+  }
   setTracePanel("#debug-trace-panel", data);
+}
+
+function effectiveDebugSessionId() {
+  return ($("#debug-session")?.value || "").trim() || state.workspaceSessionId;
+}
+
+function selectedDebugDocIds() {
+  const boxes = document.querySelectorAll("#debug-doc-list input[type=checkbox]");
+  if (!boxes.length) return [];
+  return [...document.querySelectorAll("#debug-doc-list input[type=checkbox]:checked")].map(
+    (el) => el.value
+  );
+}
+
+function renderDebugDocList(docs) {
+  const container = $("#debug-doc-list");
+  if (!container) return;
+  if (!docs?.length) {
+    container.innerHTML = '<p class="status-text">No documents in this session yet.</p>';
+    updateDebugRagHint();
+    return;
+  }
+  container.innerHTML = docs
+    .map(
+      (d) =>
+        `<label class="workspace-doc-item"><input type="checkbox" value="${d.id}" checked />${escapeHtml(d.title)}</label>`
+    )
+    .join("");
+  container.querySelectorAll("input[type=checkbox]").forEach((box) => {
+    box.addEventListener("change", updateDebugRagHint);
+  });
+  updateDebugRagHint();
+}
+
+function updateDebugRagHint() {
+  const el = $("#debug-rag-hint");
+  if (!el) return;
+  const sid = effectiveDebugSessionId();
+  const selected = selectedDebugDocIds();
+  const total = document.querySelectorAll("#debug-doc-list input[type=checkbox]").length;
+  if (selected.length && selected.length < total) {
+    el.textContent = `RAG scope: ${selected.length} selected document(s).`;
+  } else if (sid) {
+    el.textContent = total
+      ? `RAG scope: all ${total} document(s) in session.`
+      : "RAG scope: all documents in session.";
+  } else {
+    el.textContent = "RAG scope: entire indexed corpus (all sessions).";
+  }
+}
+
+async function refreshDebugSessions(selectId) {
+  const data = await callApi("list_sessions", []);
+  const sessions = data.sessions || [];
+  const select = $("#debug-session");
+  if (!select) return;
+  const current = selectId ?? select.value;
+  select.innerHTML =
+    '<option value="">Workspace default</option>' +
+    sessions.map((s) => `<option value="${s.id}">${s.label || s.topic}</option>`).join("");
+  if (current && sessions.some((s) => s.id === current)) {
+    select.value = current;
+  }
+}
+
+async function refreshDebugDocuments() {
+  const sessionId = effectiveDebugSessionId();
+  const data = await callApi("list_documents", [sessionId]);
+  renderDebugDocList(data.documents || []);
 }
 
 function updateProjectTitle() {
@@ -773,6 +849,7 @@ async function refreshWorkspaceSessions(selectId) {
       updateProjectTitle();
     }
   }
+  await refreshDebugSessions();
 }
 
 async function refreshDocuments() {
@@ -866,6 +943,7 @@ async function initWorkspace() {
   await initSettings();
   syncVoiceModeUi();
   renderVoiceChat();
+  await refreshDebugDocuments();
   const recStatus = await callApi("recording_status", []);
   state.useBrowserMic = !recStatus.backend || /unavailable|no capture/i.test(recStatus.message || "");
 }
@@ -961,6 +1039,16 @@ async function generateSlides() {
       <a href="${fileUrl(data.downloads.html)}" download>HTML</a>`;
     $("#btn-export").disabled = false;
   }
+
+  const outlineDetails = $("#slide-outline-details");
+  const outlineEl = $("#slide-outline");
+  if (data.outline_md) {
+    outlineEl.innerHTML = renderMarkdownLite(data.outline_md);
+    outlineDetails?.classList.remove("hidden");
+  } else {
+    outlineEl.innerHTML = "";
+    outlineDetails?.classList.add("hidden");
+  }
 }
 
 function renderVoiceReply(data, { keepAudio = false } = {}) {
@@ -1039,6 +1127,12 @@ async function clearVoiceConversation() {
   $("#voice-message").value = "";
   $("#voice-turn-status").textContent = stripMd(data.status || "Conversation cleared.");
   $("#voice-audio-out").innerHTML = "";
+}
+
+async function loadSamplePitch() {
+  const data = await callApi("load_sample_pitch", []);
+  state.pendingCoachAudioPath = data.audio_path;
+  $("#coach-record-status").textContent = stripMd(data.status || "Sample clip loaded.");
 }
 
 async function analyzePitchWithPath(audioPath) {
@@ -1185,6 +1279,7 @@ function bindUi() {
   $("#workspace-session").addEventListener("change", (e) => {
     state.workspaceSessionId = e.target.value;
     refreshDocuments().catch(() => {});
+    refreshDebugDocuments().catch(() => {});
   });
 
   $("#workspace-refresh-sessions").addEventListener("click", () => {
@@ -1225,8 +1320,15 @@ function bindUi() {
   $("#btn-voice-speak-full")?.addEventListener("click", () => speakVoiceReply(false).catch(() => {}));
   $("#btn-voice-speak-quick")?.addEventListener("click", () => speakVoiceReply(true).catch(() => {}));
   $("#btn-voice-clear")?.addEventListener("click", () => clearVoiceConversation().catch(() => {}));
+  $("#btn-coach-sample")?.addEventListener("click", () => loadSamplePitch().catch(() => {}));
   $("#btn-analyze").addEventListener("click", () => analyzePitch().catch(() => {}));
   $("#btn-debug-send").addEventListener("click", () => sendDebugMessage().catch(() => {}));
+  $("#debug-session")?.addEventListener("change", () => refreshDebugDocuments().catch(() => {}));
+  $("#debug-refresh-sessions")?.addEventListener("click", () => {
+    refreshDebugSessions().catch(() => {});
+    refreshDebugDocuments().catch(() => {});
+  });
+  $("#debug-use-rag")?.addEventListener("change", updateDebugRagHint);
   $("#debug-message")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();

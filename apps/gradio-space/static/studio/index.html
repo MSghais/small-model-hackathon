@@ -278,7 +278,15 @@
           </div>
         </div>
         <div id="slide-gallery" class="studio-gallery-strip hidden"></div>
+        <details class="slide-outline-details hidden" id="slide-outline-details">
+          <summary>Outline (markdown)</summary>
+          <div id="slide-outline" class="slide-outline"></div>
+        </details>
         <div id="downloads" class="downloads hidden"></div>
+        <details class="slide-export-help">
+          <summary>Export help — open in Google Docs</summary>
+          <p class="status-text">Download the <strong>.docx</strong> file, upload it to <a href="https://drive.google.com" target="_blank" rel="noopener">Google Drive</a>, then choose <strong>Open with → Google Docs</strong>. You can also upload the <strong>.html</strong> file via Google Docs → File → Open → Upload.</p>
+        </details>
       </div>
     </section>
 
@@ -355,6 +363,7 @@
           <button type="button" id="btn-coach-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
         </div>
         <p id="coach-record-status" class="status-text"></p>
+        <button type="button" id="btn-coach-sample" class="btn btn-ghost btn-block">Load sample clip</button>
         <label class="field">
           <span>Or upload pitch (WAV)</span>
           <input id="coach-audio" type="file" accept="audio/*" />
@@ -386,6 +395,20 @@
           <span>Use ResearchMind RAG</span>
           <input id="debug-use-rag" type="checkbox" />
         </label>
+        <details class="debug-rag-scope" id="debug-rag-scope">
+          <summary>RAG scope (override workspace defaults)</summary>
+          <label class="field">
+            <span>Session</span>
+            <div class="debug-session-row">
+              <select id="debug-session" class="input">
+                <option value="">Workspace default</option>
+              </select>
+              <button type="button" id="debug-refresh-sessions" class="btn btn-ghost btn-icon" title="Refresh sessions">↻</button>
+            </div>
+          </label>
+          <div id="debug-doc-list" class="debug-doc-list"></div>
+          <p id="debug-rag-hint" class="status-text"></p>
+        </details>
         <div id="debug-model-wrap" class="hidden">
           <label class="field">
             <span>Model preset override</span>
