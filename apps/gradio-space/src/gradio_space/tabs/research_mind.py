@@ -19,7 +19,7 @@ from gradio_space.research_helpers import (
     run_research_question,
     trace_summary_markdown,
 )
-from gradio_space.ui.components import build_advanced_panel
+from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES
 from inference.factory import get_backend
 
 logger = logging.getLogger(__name__)
@@ -335,6 +335,7 @@ def build_research_mind_tab() -> None:
                     label="Select sources to ingest",
                     choices=[],
                     value=[],
+                    elem_classes=DOC_CHOICE_LIST_CLASSES,
                 )
 
             with gr.Accordion(
@@ -398,6 +399,7 @@ def build_research_mind_tab() -> None:
                     label="Documents (empty = all in session)",
                     choices=[],
                     value=[],
+                    elem_classes=DOC_CHOICE_LIST_CLASSES,
                 )
 
             rag_hint = gr.Markdown(

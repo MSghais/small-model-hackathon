@@ -23,6 +23,7 @@ from gradio_space.tabs.research_mind import (
 from gradio_space.ui.components import (
     build_advanced_panel,
     build_recording_block,
+    DOC_CHOICE_LIST_CLASSES,
     empty_state,
     wire_recording_handlers,
 )
@@ -367,6 +368,7 @@ def build_teacher_voice_tab() -> None:
                         label="Select sources to ingest",
                         choices=[],
                         value=[],
+                        elem_classes=DOC_CHOICE_LIST_CLASSES,
                     )
 
                 with gr.Accordion(
@@ -412,6 +414,7 @@ def build_teacher_voice_tab() -> None:
                     label="Documents (empty = all in session)",
                     choices=[],
                     value=[],
+                    elem_classes=DOC_CHOICE_LIST_CLASSES,
                 )
                 rag_hint = gr.Markdown(
                     value=_update_rag_hint(False, "", []),

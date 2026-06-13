@@ -11,7 +11,7 @@ from gradio_space.research_helpers import (
     refresh_doc_choices,
     refresh_sessions,
 )
-from gradio_space.ui.components import build_advanced_panel
+from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES
 from inference.factory import get_backend
 from researchmind.config import get_config
 
@@ -260,6 +260,7 @@ def build_education_pptx_tab() -> None:
             label="Suggested URLs to use",
             choices=[],
             visible=False,
+            elem_classes=DOC_CHOICE_LIST_CLASSES,
         )
         urls_text = gr.Textbox(
             label="URLs (one per line, optional)",
@@ -278,6 +279,7 @@ def build_education_pptx_tab() -> None:
             choices=[],
             value=[],
             visible=False,
+            elem_classes=DOC_CHOICE_LIST_CLASSES,
         )
 
     with gr.Row(elem_classes=["lesson-generate-row"]):

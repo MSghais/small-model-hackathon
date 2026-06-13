@@ -20,6 +20,9 @@ from gradio_space.research_helpers import (
     refresh_sessions,
 )
 
+# Shared elem_classes for document / URL CheckboxGroup rows (see styles.css).
+DOC_CHOICE_LIST_CLASSES = ["doc-choice-list"]
+
 
 def build_step_indicator(steps: list[str], active_index: int = 0) -> str:
     """Render a horizontal step strip as HTML."""
@@ -101,7 +104,12 @@ def build_session_picker(
     rag_hint = None
     if include_docs:
         with gr.Accordion("Limit to documents", open=False):
-            doc_dd = gr.CheckboxGroup(label=doc_label, choices=[], value=[])
+            doc_dd = gr.CheckboxGroup(
+                label=doc_label,
+                choices=[],
+                value=[],
+                elem_classes=DOC_CHOICE_LIST_CLASSES,
+            )
             rag_hint = gr.Markdown(value=rag_scope_hint("", []))
             doc_dd.change(
                 fn=rag_scope_hint,

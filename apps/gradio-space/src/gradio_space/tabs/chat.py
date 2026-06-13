@@ -7,7 +7,7 @@ from gradio_space.research_helpers import (
     refresh_doc_choices,
     refresh_sessions,
 )
-from gradio_space.ui.components import build_advanced_panel, tab_hero
+from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES, tab_hero
 from inference.config import get_app_config
 
 _app_config = get_app_config()
@@ -41,6 +41,7 @@ def build_chat_tab() -> None:
             label="Documents to search (empty = all docs in session, or entire corpus if no session)",
             choices=[],
             value=[],
+            elem_classes=DOC_CHOICE_LIST_CLASSES,
         )
         rag_hint = gr.Markdown(value=rag_scope_hint("", []))
 
