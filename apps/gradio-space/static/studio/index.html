@@ -73,23 +73,79 @@
 
   <main class="workspace" data-view="slides">
     <section class="col col-research">
-      <h2 class="section-label">Step 1 · Research Library</h2>
-      <div class="card">
-        <p class="card-title">Add Sources</p>
-        <input id="ingest-url" type="url" class="input" placeholder="Paste URL here…" />
-        <button type="button" id="btn-ingest-url" class="btn btn-secondary btn-block">Ingest URL</button>
-        <label class="upload-zone">
-          <input id="ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
-          <span class="material-symbols-outlined">upload_file</span>
-          <span>Upload PDF or Doc</span>
-        </label>
-        <p id="ingest-status" class="status-text"></p>
-      </div>
-      <div class="card card-grow">
-        <div class="card-row">
-          <h3 class="card-title">Indexed Documents</h3>
+      <div class="research-layout">
+        <div class="research-sources">
+          <h2 class="section-label">Step 1 · Research Library</h2>
+          <div class="card">
+            <p class="card-title">Add Sources</p>
+            <label class="field">
+              <span>Ingest workflow</span>
+              <select id="ingest-workflow" class="input">
+                <option value="select">Discover → select URLs → ingest</option>
+                <option value="auto">Auto-scrape &amp; index (skip URL pick)</option>
+                <option value="direct">Paste URL or upload only</option>
+              </select>
+            </label>
+            <div id="ingest-discover-row" class="ingest-action-row">
+              <button type="button" id="btn-discover" class="btn btn-secondary">
+                <span class="material-symbols-outlined">travel_explore</span>
+                Discover on web
+              </button>
+            </div>
+            <div id="ingest-auto-row" class="ingest-action-row hidden">
+              <button type="button" id="btn-auto-ingest" class="btn btn-secondary btn-block">
+                <span class="material-symbols-outlined">bolt</span>
+                Run auto-ingest from web
+              </button>
+              <p class="status-text">Skips URL review — searches, verifies, and indexes in one step.</p>
+            </div>
+            <div id="url-choices-panel" class="url-choices-panel hidden">
+              <div class="url-choices-head">
+                <p class="card-title">Suggested URLs</p>
+                <label class="url-select-all">
+                  <input id="url-select-all" type="checkbox" checked />
+                  Select all
+                </label>
+              </div>
+              <div id="url-choices-list" class="url-choices-list"></div>
+            </div>
+            <input id="ingest-url" type="url" class="input" placeholder="Paste URL here…" />
+            <button type="button" id="btn-ingest-url" class="btn btn-secondary btn-block">Ingest selected sources</button>
+            <label class="upload-zone">
+              <input id="ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
+              <span class="material-symbols-outlined">upload_file</span>
+              <span>Upload PDF or Doc</span>
+            </label>
+            <p id="ingest-status" class="status-text"></p>
+          </div>
+          <div class="card card-grow">
+            <div class="card-row">
+              <h3 class="card-title">Indexed Documents</h3>
+            </div>
+            <div id="documents-panel"></div>
+          </div>
         </div>
-        <div id="documents-panel"></div>
+        <div class="research-chat">
+          <h2 class="section-label">Step 2 · Ask with RAG</h2>
+          <div class="card card-chat">
+            <div class="card-row">
+              <h3 class="card-title">Research chat</h3>
+              <span id="research-rag-badge" class="rag-badge">RAG ready</span>
+            </div>
+            <div id="research-chat-messages" class="research-chat-messages">
+              <p class="research-chat-empty">Ingest sources, then ask questions — answers include citations from your library.</p>
+            </div>
+            <label class="field">
+              <span>Your question</span>
+              <textarea id="research-question" class="input" rows="3" placeholder="What do these sources say about your topic?"></textarea>
+            </label>
+            <button type="button" id="btn-research-ask" class="btn btn-primary btn-block">
+              <span class="material-symbols-outlined">chat</span>
+              Ask
+            </button>
+            <p id="research-chat-status" class="status-text"></p>
+          </div>
+        </div>
       </div>
     </section>
 

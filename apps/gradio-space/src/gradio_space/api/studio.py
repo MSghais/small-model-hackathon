@@ -12,11 +12,16 @@ from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
 from echocoach.prompts import TeacherVoiceMode
 from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_text_turn
-from gradio_space.api.serializers import err, ok, update_value
+from gradio_space.api.serializers import err, ok, unwrap_update, update_value
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from gradio_space.research_helpers import list_session_choices, pick_session_for_topic
 from gradio_space.tabs.education_pptx import generate_lesson_slides
-from gradio_space.tabs.research_mind import ingest_selected
+from gradio_space.tabs.research_mind import (
+    ask_question,
+    auto_search_ingest,
+    discover_sources,
+    ingest_selected,
+)
 from gradio_space.ui.studio_html import (
     render_doc_cards,
     render_echo_coach_panel,
@@ -115,25 +120,101 @@ def api_list_documents(session_id: str = "") -> dict[str, Any]:
     return ok(session_id=session_id, documents=docs, documents_html=html_cards)
 
 
-def api_ingest_url(topic: str, url: str, session_id: str = "") -> dict[str, Any]:
-    if not url.strip():
-        return err("Paste a URL to ingest.")
-    status, _memory, _trace, _summary, sess_up, _docs = ingest_selected(
-        topic,
-        url.strip(),
-        [],
-        None,
-        session_id or None,
-        _NoopProgress(),
-    )
-    sid = update_value(sess_up, session_id)
+def _ingest_response(
+    status: str,
+    session_id: str,
+    trace_json: str = "",
+    trace_summary: str = "",
+) -> dict[str, Any]:
+    sid = session_id or ""
     docs = _documents_payload(sid)
     return ok(
         status=status,
         session_id=sid,
         documents=docs,
         documents_html=render_doc_cards(docs, rag_active=bool(docs)),
+        trace_json=trace_json,
+        trace_summary=trace_summary,
     )
+
+
+def api_discover_sources(topic: str, session_id: str = "") -> dict[str, Any]:
+    if not (topic or "").strip():
+        return err("Enter a workspace topic before discovering sources.")
+    summary, url_up, sess_up, trace_sum, trace_json, _memory, _doc_up, _acc_up = discover_sources(
+        topic,
+        session_id,
+        "",
+        "",
+        _NoopProgress(),
+    )
+    url_payload = unwrap_update(url_up)
+    urls = list(url_payload.get("choices") or []) if isinstance(url_payload, dict) else []
+    selected = list(url_payload.get("value") or urls) if isinstance(url_payload, dict) else urls
+    sid = update_value(sess_up, session_id)
+    if summary and "error" in summary.lower() and not urls:
+        return err(strip_md_summary(summary), status=summary, urls=[], session_id=sid)
+    return ok(
+        status=summary,
+        urls=urls,
+        selected_urls=selected,
+        session_id=sid,
+        trace_summary=trace_sum,
+        trace_json=trace_json if isinstance(trace_json, str) else "",
+    )
+
+
+def api_auto_search_ingest(topic: str, session_id: str = "") -> dict[str, Any]:
+    if not (topic or "").strip():
+        return err("Enter a workspace topic before auto-ingest.")
+    status, _url_up, sess_up, trace_sum, trace_json, _memory, _doc_up, _acc_up = auto_search_ingest(
+        topic,
+        session_id,
+        "",
+        "",
+        _NoopProgress(),
+    )
+    sid = update_value(sess_up, session_id)
+    if status and "error" in status.lower() and "ingested" not in status.lower():
+        return err(strip_md_summary(status), status=status, session_id=sid)
+    return _ingest_response(status, sid, trace_json=str(trace_json or ""), trace_summary=trace_sum)
+
+
+def api_ingest_sources(
+    topic: str,
+    session_id: str = "",
+    urls_text: str = "",
+    selected_urls: list[str] | None = None,
+    file_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    has_urls = bool((urls_text or "").strip() or (selected_urls or []))
+    has_files = bool(file_paths)
+    if not has_urls and not has_files:
+        return err("Add URLs, select suggested sources, or upload a file — then ingest.")
+    status, _memory, trace_json, trace_sum, sess_up, _doc_up = ingest_selected(
+        topic,
+        urls_text,
+        selected_urls or [],
+        file_paths,
+        session_id or None,
+        "",
+        "",
+        _NoopProgress(),
+    )
+    sid = update_value(sess_up, session_id)
+    if status and "error" in status.lower() and "ingested" not in status.lower():
+        return err(strip_md_summary(status), status=status, session_id=sid)
+    return _ingest_response(status, sid, trace_json=str(trace_json or ""), trace_summary=trace_sum)
+
+
+def strip_md_summary(text: str) -> str:
+    return re.sub(r"\*\*", "", str(text or "")).strip()
+
+
+def api_ingest_url(topic: str, url: str, session_id: str = "") -> dict[str, Any]:
+    if not url.strip():
+        return err("Paste a URL to ingest.")
+    return api_ingest_sources(topic, session_id, urls_text=url.strip())
 
 
 def api_ingest_files(
@@ -143,21 +224,37 @@ def api_ingest_files(
 ) -> dict[str, Any]:
     if not file_paths:
         return err("Upload at least one PDF or DOCX file.")
-    status, _memory, _trace, _summary, sess_up, _docs = ingest_selected(
-        topic,
+    return api_ingest_sources(topic, session_id, file_paths=file_paths)
+
+
+def api_research_chat(
+    question: str,
+    session_id: str = "",
+    doc_ids: list[str] | None = None,
+    history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    if not question.strip():
+        return err("Enter a question.")
+    hist, trace_json, trace_sum, rag_hint, _cleared = ask_question(
+        question,
+        session_id,
+        doc_ids or [],
+        history or [],
         "",
-        [],
-        file_paths,
-        session_id or None,
+        doc_ids or [],
         _NoopProgress(),
     )
-    sid = update_value(sess_up, session_id)
-    docs = _documents_payload(sid)
+    assistant = ""
+    for msg in reversed(hist or []):
+        if msg.get("role") == "assistant":
+            assistant = str(msg.get("content") or "")
+            break
     return ok(
-        status=status,
-        session_id=sid,
-        documents=docs,
-        documents_html=render_doc_cards(docs, rag_active=bool(docs)),
+        history=hist,
+        assistant=assistant,
+        rag_hint=rag_hint,
+        trace_json=trace_json if isinstance(trace_json, str) else "",
+        trace_summary=trace_sum,
     )
 
 
@@ -353,9 +450,38 @@ def register_studio_apis(server: gr.Server) -> None:
     def _list_documents(session_id: str = "") -> dict[str, Any]:
         return api_list_documents(session_id)
 
+    @server.api(name="discover_sources")
+    def _discover_sources(topic: str, session_id: str = "") -> dict[str, Any]:
+        return api_discover_sources(topic, session_id)
+
+    @server.api(name="auto_search_ingest")
+    def _auto_search_ingest(topic: str, session_id: str = "") -> dict[str, Any]:
+        return api_auto_search_ingest(topic, session_id)
+
+    @server.api(name="ingest_sources")
+    def _ingest_sources(
+        topic: str,
+        session_id: str = "",
+        urls_text: str = "",
+        selected_urls: list[str] | None = None,
+        file_paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return api_ingest_sources(
+            topic, session_id, urls_text, selected_urls, file_paths
+        )
+
     @server.api(name="ingest_url")
     def _ingest_url(topic: str, url: str, session_id: str = "") -> dict[str, Any]:
         return api_ingest_url(topic, url, session_id)
+
+    @server.api(name="research_chat")
+    def _research_chat(
+        question: str,
+        session_id: str = "",
+        doc_ids: list[str] | None = None,
+        history: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        return api_research_chat(question, session_id, doc_ids, history)
 
     @server.api(name="ingest_files")
     def _ingest_files(

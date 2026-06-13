@@ -12,6 +12,9 @@ const state = {
   workspaceTopic: "photosynthesis",
   workspaceSessionId: "",
   workspaceDocIds: [],
+  discoveredUrls: [],
+  selectedUrls: [],
+  researchChatHistory: [],
   voiceMode: "lesson",
   history: [],
   downloads: null,
@@ -42,6 +45,201 @@ function effectiveDocIds(localIds) {
   const selected = selectedWorkspaceDocIds();
   if (selected.length) return selected;
   return state.workspaceDocIds;
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderMarkdownLite(text) {
+  const safe = escapeHtml(stripMd(text || ""));
+  return safe
+    .replace(/\n/g, "<br>")
+    .replace(/\[(\d+)\]/g, "<sup>[$1]</sup>");
+}
+
+function getIngestWorkflow() {
+  return $("#ingest-workflow")?.value || "direct";
+}
+
+function syncIngestWorkflowUi() {
+  const mode = getIngestWorkflow();
+  $("#ingest-discover-row")?.classList.toggle("hidden", mode !== "select");
+  $("#ingest-auto-row")?.classList.toggle("hidden", mode !== "auto");
+  $("#url-choices-panel")?.classList.toggle(
+    "hidden",
+    mode !== "select" || !state.discoveredUrls.length
+  );
+}
+
+function getSelectedDiscoveredUrls() {
+  const boxes = document.querySelectorAll("#url-choices-list input[type=checkbox]:checked");
+  return [...boxes].map((el) => el.value);
+}
+
+function renderUrlChoices(urls, selected) {
+  state.discoveredUrls = urls || [];
+  state.selectedUrls = selected?.length ? selected : [...state.discoveredUrls];
+  const list = $("#url-choices-list");
+  const panel = $("#url-choices-panel");
+  if (!state.discoveredUrls.length) {
+    list.innerHTML = "";
+    panel?.classList.add("hidden");
+    return;
+  }
+  list.innerHTML = state.discoveredUrls
+    .map((url) => {
+      const checked = state.selectedUrls.includes(url) ? "checked" : "";
+      const label = url.length > 72 ? `${url.slice(0, 69)}…` : url;
+      return `<label class="url-choice-item"><input type="checkbox" value="${escapeHtml(url)}" ${checked} /><span title="${escapeHtml(url)}">${escapeHtml(label)}</span></label>`;
+    })
+    .join("");
+  list.querySelectorAll("input[type=checkbox]").forEach((box) => {
+    box.addEventListener("change", syncUrlSelectAll);
+  });
+  syncUrlSelectAll();
+  if (getIngestWorkflow() === "select") {
+    panel?.classList.remove("hidden");
+  }
+}
+
+function syncUrlSelectAll() {
+  const boxes = [...document.querySelectorAll("#url-choices-list input[type=checkbox]")];
+  const selectAll = $("#url-select-all");
+  if (!selectAll || !boxes.length) return;
+  const checkedCount = boxes.filter((b) => b.checked).length;
+  selectAll.checked = checkedCount === boxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+  state.selectedUrls = getSelectedDiscoveredUrls();
+}
+
+function applyIngestResult(data) {
+  $("#ingest-status").textContent = stripMd(data.status || "Ingest complete.");
+  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
+  $("#workspace-session").value = state.workspaceSessionId;
+  $("#documents-panel").innerHTML =
+    data.documents_html || '<p class="studio-empty-docs">No documents indexed yet.</p>';
+  renderWorkspaceDocList(data.documents || []);
+  updateResearchRagBadge();
+}
+
+async function discoverSources() {
+  const topic = effectiveTopic("");
+  if (!topic) {
+    showError("Set a workspace topic before discovering sources.");
+    return;
+  }
+  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+  $("#ingest-status").textContent = stripMd(data.status || "Discovery complete.");
+  renderUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  if (data.session_id) {
+    state.workspaceSessionId = data.session_id;
+    $("#workspace-session").value = data.session_id;
+  }
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function autoSearchIngest() {
+  const topic = effectiveTopic("");
+  if (!topic) {
+    showError("Set a workspace topic before auto-ingest.");
+    return;
+  }
+  const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
+  applyIngestResult(data);
+  state.discoveredUrls = [];
+  state.selectedUrls = [];
+  renderUrlChoices([], []);
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function ingestSources({ urlsText = "", selectedUrls = [], pendingFiles = null } = {}) {
+  const topic = effectiveTopic("");
+  const workflow = getIngestWorkflow();
+  let selected = selectedUrls;
+  if (workflow === "select") {
+    selected = getSelectedDiscoveredUrls();
+  }
+  const pasted = workflow === "direct" ? urlsText : urlsText || $("#ingest-url").value.trim();
+  const paths = [];
+  const files = pendingFiles || $("#ingest-file").files;
+  if (files?.length) {
+    for (const file of files) {
+      const b64 = await fileToBase64(file);
+      const saved = await callApi("save_upload", [file.name, b64]);
+      paths.push(saved.path);
+    }
+  }
+  if (!pasted && !selected.length && !paths.length) {
+    showError("Add URLs, select suggested sources, or upload a file — then ingest.");
+    return;
+  }
+  const data = await callApi("ingest_sources", [
+    topic,
+    state.workspaceSessionId,
+    pasted,
+    selected,
+    paths,
+  ]);
+  applyIngestResult(data);
+  if (pasted) $("#ingest-url").value = "";
+  if (files?.length) $("#ingest-file").value = "";
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+function renderResearchChat() {
+  const container = $("#research-chat-messages");
+  if (!state.researchChatHistory.length) {
+    container.innerHTML =
+      '<p class="research-chat-empty">Ingest sources, then ask questions — answers include citations from your library.</p>';
+    return;
+  }
+  container.innerHTML = state.researchChatHistory
+    .map((msg) => {
+      const role = msg.role === "user" ? "user" : "assistant";
+      const body = renderMarkdownLite(msg.content || "");
+      return `<div class="research-chat-bubble research-chat-${role}"><div class="research-chat-role">${role === "user" ? "You" : "ResearchMind"}</div><div class="research-chat-body">${body}</div></div>`;
+    })
+    .join("");
+  container.scrollTop = container.scrollHeight;
+}
+
+function updateResearchRagBadge() {
+  const badge = $("#research-rag-badge");
+  if (!badge) return;
+  const nDocs = (state.workspaceDocIds || []).length;
+  const selected = selectedWorkspaceDocIds().length;
+  if (selected) {
+    badge.textContent = `RAG · ${selected} doc(s)`;
+  } else if (nDocs) {
+    badge.textContent = `RAG · ${nDocs} in session`;
+  } else {
+    badge.textContent = "RAG · corpus";
+  }
+}
+
+async function askResearchQuestion() {
+  const question = $("#research-question").value.trim();
+  if (!question) {
+    showError("Enter a question.");
+    return;
+  }
+  const docIds = effectiveDocIds([]);
+  const data = await callApi("research_chat", [
+    question,
+    state.workspaceSessionId,
+    docIds,
+    state.researchChatHistory,
+  ]);
+  state.researchChatHistory = data.history || [];
+  renderResearchChat();
+  $("#research-question").value = "";
+  $("#research-chat-status").textContent = stripMd(data.rag_hint || "");
+  updateResearchRagBadge();
 }
 
 function updateProjectTitle() {
@@ -243,9 +441,13 @@ function renderWorkspaceDocList(docs) {
     )
     .join("");
   container.querySelectorAll("input[type=checkbox]").forEach((box) => {
-    box.addEventListener("change", updateWorkspaceRagHint);
+    box.addEventListener("change", () => {
+      updateWorkspaceRagHint();
+      updateResearchRagBadge();
+    });
   });
   updateWorkspaceRagHint();
+  updateResearchRagBadge();
 }
 
 async function refreshWorkspaceSessions(selectId) {
@@ -286,39 +488,20 @@ async function refreshDocuments() {
 
 async function initWorkspace() {
   $("#workspace-topic").value = state.workspaceTopic;
+  syncIngestWorkflowUi();
   updateProjectTitle();
+  updateResearchRagBadge();
   await refreshWorkspaceSessions();
   await refreshDocuments();
 }
 
 async function ingestUrl() {
-  const url = $("#ingest-url").value.trim();
-  const topic = effectiveTopic("");
-  const data = await callApi("ingest_url", [topic, url, state.workspaceSessionId]);
-  $("#ingest-status").textContent = stripMd(data.status || "Ingest complete.");
-  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
-  $("#workspace-session").value = state.workspaceSessionId;
-  $("#documents-panel").innerHTML = data.documents_html || "";
-  renderWorkspaceDocList(data.documents || []);
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await ingestSources({ urlsText: $("#ingest-url").value.trim() });
 }
 
 async function ingestFiles(files) {
   if (!files?.length) return;
-  const topic = effectiveTopic("");
-  const paths = [];
-  for (const file of files) {
-    const b64 = await fileToBase64(file);
-    const saved = await callApi("save_upload", [file.name, b64]);
-    paths.push(saved.path);
-  }
-  const data = await callApi("ingest_files", [topic, state.workspaceSessionId, paths]);
-  $("#ingest-status").textContent = stripMd(data.status || "Upload ingested.");
-  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
-  $("#workspace-session").value = state.workspaceSessionId;
-  $("#documents-panel").innerHTML = data.documents_html || "";
-  renderWorkspaceDocList(data.documents || []);
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await ingestSources({ pendingFiles: files });
 }
 
 function stripMd(text) {
@@ -455,6 +638,23 @@ function bindUi() {
   $("#ingest-file").addEventListener("change", (e) =>
     ingestFiles(e.target.files).catch(() => {})
   );
+  $("#ingest-workflow")?.addEventListener("change", syncIngestWorkflowUi);
+  $("#btn-discover")?.addEventListener("click", () => discoverSources().catch(() => {}));
+  $("#btn-auto-ingest")?.addEventListener("click", () => autoSearchIngest().catch(() => {}));
+  $("#url-select-all")?.addEventListener("change", (e) => {
+    const checked = e.target.checked;
+    document.querySelectorAll("#url-choices-list input[type=checkbox]").forEach((box) => {
+      box.checked = checked;
+    });
+    syncUrlSelectAll();
+  });
+  $("#btn-research-ask")?.addEventListener("click", () => askResearchQuestion().catch(() => {}));
+  $("#research-question")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      askResearchQuestion().catch(() => {});
+    }
+  });
   $("#btn-generate").addEventListener("click", () => generateSlides().catch(() => {}));
   $("#btn-voice-send").addEventListener("click", () => sendVoiceTurn().catch(() => {}));
   $("#btn-analyze").addEventListener("click", () => analyzePitch().catch(() => {}));
@@ -466,6 +666,11 @@ function bindUi() {
 
   $("#btn-new-session").addEventListener("click", () => {
     state.workspaceSessionId = "";
+    state.researchChatHistory = [];
+    state.discoveredUrls = [];
+    state.selectedUrls = [];
+    renderResearchChat();
+    renderUrlChoices([], []);
     $("#workspace-session").value = "";
     $("#ingest-status").textContent =
       "Set workspace topic and ingest sources to start a new ResearchMind session.";
