@@ -9,7 +9,7 @@ const SLIDE_PIPELINE_STEPS = [
 ];
 
 const state = {
-  workspaceTopic: "photosynthesis",
+  workspaceTopic: "small model finetuning",
   workspaceSessionId: "",
   workspaceDocIds: [],
   discoveredUrls: [],

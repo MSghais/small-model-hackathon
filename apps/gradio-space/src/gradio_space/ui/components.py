@@ -97,8 +97,8 @@ def build_workspace_bar() -> WorkspaceWidgets:
     with gr.Row(elem_classes=["workspace-bar"]):
         topic = gr.Textbox(
             label="Topic",
-            placeholder="e.g. Photosynthesis for 6th grade",
-            value="photosynthesis",
+            placeholder="e.g. Small language model finetuning",
+            value="small model finetuning",
             scale=3,
             max_lines=1,
         )
