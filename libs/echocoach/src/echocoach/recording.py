@@ -35,6 +35,7 @@ class _RecordingSession:
 
 
 _session: _RecordingSession | None = None
+_last_recording_path: Path | None = None
 _session_lock = threading.Lock()
 
 
@@ -121,18 +122,22 @@ def recording_backend_status() -> str:
 
 def is_recording_active() -> bool:
     with _session_lock:
-        return _session is not None and _session.process.poll() is None
+        session = _session
+        return session is not None and session.process.poll() is None
 
 
 def recording_elapsed_seconds() -> float:
     with _session_lock:
-        if _session is None:
+        session = _session
+        if session is None:
             return 0.0
-        return max(0.0, time.monotonic() - _session.started_at)
+        return max(0.0, time.monotonic() - session.started_at)
 
 
 def start_server_recording(max_seconds: int | None = None) -> None:
     """Begin an open-ended capture; call stop_server_recording() to finish."""
+    global _session, _last_recording_path
+
     config = get_echo_coach_config()
     seconds = max_seconds if max_seconds is not None else config.max_seconds
     if seconds <= 0:
@@ -150,6 +155,7 @@ def start_server_recording(max_seconds: int | None = None) -> None:
         if _session is not None and _session.process.poll() is None:
             raise ServerRecordingError("Already recording. Click **Stop recording** first.")
 
+        _last_recording_path = None
         process = _spawn_capture_process(backend, out_path)
         watchdog = threading.Timer(seconds, _auto_stop_recording)
         watchdog.daemon = True
@@ -166,9 +172,15 @@ def start_server_recording(max_seconds: int | None = None) -> None:
 
 def stop_server_recording() -> Path:
     """Stop the active capture and return the WAV path."""
+    global _last_recording_path
+
     with _session_lock:
         session = _session
         if session is None or session.process.poll() is not None:
+            if _last_recording_path is not None and _last_recording_path.is_file():
+                path = _last_recording_path
+                _last_recording_path = None
+                return path
             raise ServerRecordingError("Not recording. Click **Start recording** first.")
         return _finalize_session(session)
 
@@ -185,7 +197,7 @@ def _auto_stop_recording() -> None:
 
 
 def _finalize_session(session: _RecordingSession) -> Path:
-    global _session
+    global _session, _last_recording_path
 
     if session.watchdog is not None:
         session.watchdog.cancel()
@@ -199,7 +211,21 @@ def _finalize_session(session: _RecordingSession) -> Path:
             process.kill()
             process.wait(timeout=2)
 
-    if process.returncode not in (0, -signal.SIGINT, 128 + signal.SIGINT):
+    out_path = session.out_path
+    if out_path.is_file() and out_path.stat().st_size > 44:
+        _session = None
+        _last_recording_path = out_path
+        return out_path
+
+    ok_codes = {
+        0,
+        1,  # pw-record often exits 1 after SIGINT even with a valid WAV
+        -signal.SIGINT,
+        128 + signal.SIGINT,
+        -signal.SIGTERM,
+        128 + signal.SIGTERM,
+    }
+    if process.returncode not in ok_codes:
         detail = ""
         if process.stderr:
             detail = process.stderr.read().decode("utf-8", errors="replace").strip()
@@ -207,14 +233,16 @@ def _finalize_session(session: _RecordingSession) -> Path:
         if detail:
             msg = f"{msg}: {detail}"
         _session = None
+        _last_recording_path = None
         raise ServerRecordingError(msg)
 
-    out_path = session.out_path
     if not out_path.is_file() or out_path.stat().st_size == 0:
         _session = None
+        _last_recording_path = None
         raise ServerRecordingError("Recording finished but produced an empty file.")
 
     _session = None
+    _last_recording_path = out_path
     return out_path
 
 

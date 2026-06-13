@@ -80,11 +80,11 @@ def ui_stop_recording() -> tuple[str | None, str, dict, dict]:
             gr.update(interactive=False),
         )
 
-    status = f"Recording saved ({elapsed:.1f}s). Click **Analyze pitch**."
+    status = f"Recording saved ({elapsed:.1f}s) → `{path}`. Click **Analyze pitch**."
     if warning:
         status += f" Warning: {warning}"
     return (
-        str(path),
+        gr.update(value=str(path)),
         status,
         gr.update(interactive=True),
         gr.update(interactive=False),
@@ -97,7 +97,7 @@ def load_sample_pitch() -> tuple[str | None, str]:
             None,
             f"Sample clip missing at `{_SAMPLE_AUDIO}`. Run `uv run python libs/echocoach/tests/make_fixture.py`.",
         )
-    return str(_SAMPLE_AUDIO), "Loaded 2s sample clip. Click **Analyze pitch** to test the pipeline."
+    return gr.update(value=str(_SAMPLE_AUDIO)), "Loaded 2s sample clip. Click **Analyze pitch** to test the pipeline."
 
 
 def analyze_pitch(
@@ -257,6 +257,7 @@ def echo_coach_allowed_paths() -> list[str]:
     from echocoach.config import outputs_dir
 
     paths.append(str(outputs_dir()))
+    paths.append(str(outputs_dir() / "recordings"))
     if _SAMPLE_AUDIO.is_file():
         paths.append(str(_SAMPLE_AUDIO.parent))
     return paths

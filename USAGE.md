@@ -80,9 +80,11 @@ The **EchoCoach** tab records up to 30 seconds, then runs a local pipeline:
 
 **Getting audio in**
 
-- **Record from this computer** — captures on the machine running Gradio (recommended when the browser shows *No microphone found*).
+- **Record from this computer** — click **Start recording**, speak, then **Stop recording** (uses PipeWire `pw-record` when available). The slider is a max-length safety cap.
 - **Browser Record** — needs mic permission and a secure context; open **http://localhost:7860** (not `0.0.0.0` or a LAN IP).
 - **Upload** — drop a `.wav` or `.mp3` file (works everywhere, including HF Space).
+
+If recordings sound silent, check system mic input/mute or set `ECHOCOACH_CAPTURE_DEVICE` in `.env` (see `arecord -L` or `pw-cli ls Node`).
 
 Pipeline steps:
 
