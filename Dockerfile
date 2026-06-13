@@ -7,19 +7,23 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
+    ffmpeg \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock .python-version README.md models.yaml ./
+COPY pyproject.toml uv.lock .python-version README.md models.yaml voice_models.yaml ./
 COPY apps/gradio-space/pyproject.toml apps/gradio-space/README.md apps/gradio-space/
 COPY libs/inference/pyproject.toml libs/inference/README.md libs/inference/
 COPY libs/agent/pyproject.toml libs/agent/README.md libs/agent/
+COPY libs/echocoach/pyproject.toml libs/echocoach/README.md libs/echocoach/
 COPY apps/gradio-space/src apps/gradio-space/src
 COPY libs/inference/src libs/inference/src
 COPY libs/agent/src libs/agent/src
+COPY libs/echocoach/src libs/echocoach/src
 COPY skills skills
 
 RUN useradd -m -u 1000 user && \

@@ -3,8 +3,14 @@ import os
 import gradio as gr
 
 from gradio_space.model_loading import preload_active_model
-from gradio_space.tabs import build_chat_tab, build_education_pptx_tab, build_research_mind_tab
+from gradio_space.tabs import (
+    build_chat_tab,
+    build_education_pptx_tab,
+    build_echo_coach_tab,
+    build_research_mind_tab,
+)
 from gradio_space.tabs.education_pptx import gradio_allowed_paths
+from gradio_space.tabs.echo_coach import echo_coach_allowed_paths
 from gradio_space.tabs.research_mind import researchmind_allowed_paths
 from inference.config import get_app_config
 
@@ -22,9 +28,9 @@ def build_demo() -> gr.Blocks:
     with gr.Blocks(title="Lesson Agent + ResearchMind — Build Small Hackathon") as demo:
         gr.Markdown(
             f"""
-# Lesson Agent + ResearchMind
+# Lesson Agent + ResearchMind + EchoCoach
 
-Local skill-based agents — **lesson slides** and **research with MemRAG** (offline Q&A after ingest).
+Local skill-based agents — **lesson slides**, **research with MemRAG**, and **voice practice coaching** (offline).
 
 - **Model:** `{active.key}` — {active.label}
 - **Backend:** `{active.backend}`
@@ -39,6 +45,8 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
                 build_education_pptx_tab()
             with gr.Tab("ResearchMind"):
                 build_research_mind_tab()
+            with gr.Tab("EchoCoach"):
+                build_echo_coach_tab()
             with gr.Tab("Chat (debug)"):
                 build_chat_tab()
 
@@ -48,10 +56,20 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
 def main() -> None:
     preload_active_model()
     demo = build_demo()
+    port = int(os.environ.get("PORT", "7860"))
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
+    print(
+        f"\n  Local UI (browser mic works here): http://127.0.0.1:{port}\n"
+        f"  Bound address: {server_name}:{port}\n"
+    )
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=int(os.environ.get("PORT", "7860")),
-        allowed_paths=[*gradio_allowed_paths(), *researchmind_allowed_paths()],
+        server_name=server_name,
+        server_port=port,
+        allowed_paths=[
+            *gradio_allowed_paths(),
+            *researchmind_allowed_paths(),
+            *echo_coach_allowed_paths(),
+        ],
     )
 
 

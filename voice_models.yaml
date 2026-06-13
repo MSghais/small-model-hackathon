@@ -1,0 +1,75 @@
+# Voice model presets for EchoCoach (ASR + TTS).
+# Override defaults via ECHOCOACH_ASR_PRESET / ECHOCOACH_TTS_PRESET in .env
+
+defaults:
+  asr_preset: whisper-cpp-tiny
+  tts_preset: piper-multilingual
+  coach_model: minicpm5-1b
+  max_seconds: 30
+
+languages:
+  - code: en
+    label: English
+  - code: fr
+    label: French
+  - code: de
+    label: German
+  - code: es
+    label: Spanish
+  - code: it
+    label: Italian
+  - code: pt
+    label: Portuguese
+  - code: nl
+    label: Dutch
+  - code: pl
+    label: Polish
+  - code: el
+    label: Greek
+  - code: ar
+    label: Arabic
+  - code: ja
+    label: Japanese
+  - code: zh
+    label: Chinese (Mandarin)
+  - code: vi
+    label: Vietnamese
+  - code: ko
+    label: Korean
+
+asr:
+  cohere-transcribe:
+    label: Cohere Transcribe 2B (14 languages)
+    backend: cohere
+    model_id: CohereLabs/cohere-transcribe-03-2026
+
+  whisper-cpp-tiny:
+    label: Whisper.cpp tiny (CPU, fast)
+    backend: whisper_cpp
+    model_size: tiny
+
+  whisper-cpp-base:
+    label: Whisper.cpp base (CPU, better WER)
+    backend: whisper_cpp
+    model_size: base
+
+tts:
+  piper-multilingual:
+    label: Piper TTS (local VoiceOut)
+    backend: piper
+    voices:
+      en: en_US-lessac-medium
+      fr: fr_FR-siwis-medium
+      de: de_DE-thorsten-medium
+      es: es_ES-sharvard-medium
+      it: it_IT-riccardo-medium
+      pt: pt_BR-faber-medium
+      nl: nl_NL-mls-medium
+      pl: pl_PL-darkman-medium
+      el: en_US-lessac-medium
+      ar: ar_JO-kareem-medium
+      ja: ja_JP-natsuki-medium
+      zh: zh_CN-huayan-medium
+      vi: vi_VN-25hours-single
+      ko: ko_KR-kss-medium
+    fallback_voice: en_US-lessac-medium
