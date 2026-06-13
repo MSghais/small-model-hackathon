@@ -257,9 +257,11 @@ def _generate_teacher_reply(
             user_text=user_text,
             topic=topic,
         )
-        raw_reply = backend.chat(messages, max_tokens=512, temperature=0.5)
-        assistant_text = strip_reasoning_output(raw_reply).strip()
+        raw_reply = backend.chat(messages, max_tokens=384, temperature=0.3)
         display_reply = prepare_display_reply(raw_reply)
+        assistant_text = strip_reasoning_output(raw_reply).strip()
+        if not assistant_text:
+            assistant_text = extract_message_text(display_reply).strip()
         trace.log_llm(messages[-1]["content"], raw_reply)
 
     voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
