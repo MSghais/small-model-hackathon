@@ -13,6 +13,9 @@ from gradio_space.research_helpers import (
     rag_scope_hint,
     refresh_doc_choices,
     refresh_sessions,
+    resolve_doc_ids,
+    resolve_session,
+    resolve_topic,
     trace_as_dict,
 )
 from gradio_space.tabs.research_mind import (
@@ -25,6 +28,7 @@ from gradio_space.ui.components import (
     build_recording_block,
     DOC_CHOICE_LIST_CLASSES,
     wire_recording_handlers,
+    WorkspaceWidgets,
 )
 from gradio_space.voice_helpers import speak_last_assistant_reply
 from inference.factory import get_backend
@@ -93,8 +97,14 @@ def send_turn(
     use_rag: bool,
     session_id: str,
     doc_ids: list[str] | None,
+    workspace_topic: str,
+    workspace_session: str,
+    workspace_doc_ids: list[str] | None,
     progress: gr.Progress = gr.Progress(),
 ) -> tuple:
+    topic = resolve_topic(topic, workspace_topic)
+    session_id = resolve_session(session_id, workspace_session)
+    doc_ids = resolve_doc_ids(doc_ids, workspace_doc_ids)
     progress(0, desc="Loading model…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -141,8 +151,14 @@ def send_text_turn(
     use_rag: bool,
     session_id: str,
     doc_ids: list[str] | None,
+    workspace_topic: str,
+    workspace_session: str,
+    workspace_doc_ids: list[str] | None,
     progress: gr.Progress = gr.Progress(),
 ) -> tuple:
+    topic = resolve_topic(topic, workspace_topic)
+    session_id = resolve_session(session_id, workspace_session)
+    doc_ids = resolve_doc_ids(doc_ids, workspace_doc_ids)
     progress(0, desc="Loading model…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -230,14 +246,30 @@ def _enable_rag_after_ingest(
     return gr.update(), _update_rag_hint(False, session_id, doc_ids)
 
 
-def _discover_for_json(topic: str, session_id: str, progress: gr.Progress = gr.Progress()):
-    results = list(discover_sources(topic, session_id, progress))
+def _discover_for_json(
+    topic: str,
+    session_id: str,
+    workspace_topic: str,
+    workspace_session: str,
+    progress: gr.Progress = gr.Progress(),
+):
+    results = list(
+        discover_sources(topic, session_id, workspace_topic, workspace_session, progress)
+    )
     results[4] = trace_as_dict(results[4])
     return tuple(results)
 
 
-def _auto_ingest_for_json(topic: str, session_id: str, progress: gr.Progress = gr.Progress()):
-    results = list(auto_search_ingest(topic, session_id, progress))
+def _auto_ingest_for_json(
+    topic: str,
+    session_id: str,
+    workspace_topic: str,
+    workspace_session: str,
+    progress: gr.Progress = gr.Progress(),
+):
+    results = list(
+        auto_search_ingest(topic, session_id, workspace_topic, workspace_session, progress)
+    )
     results[4] = trace_as_dict(results[4])
     return tuple(results)
 
@@ -248,10 +280,21 @@ def _ingest_for_json(
     selected_urls: list[str],
     upload_files: list[str] | None,
     session_id: str,
+    workspace_topic: str,
+    workspace_session: str,
     progress: gr.Progress = gr.Progress(),
 ):
     results = list(
-        ingest_selected(topic, urls_text, selected_urls, upload_files, session_id, progress)
+        ingest_selected(
+            topic,
+            urls_text,
+            selected_urls,
+            upload_files,
+            session_id,
+            workspace_topic,
+            workspace_session,
+            progress,
+        )
     )
     results[2] = trace_as_dict(results[2])
     return tuple(results)
@@ -291,7 +334,7 @@ def _on_mode_change(mode: str) -> tuple:
     return topic_up, message_up, rag_acc, use_rag
 
 
-def build_teacher_voice_tab() -> None:
+def build_teacher_voice_tab(workspace: WorkspaceWidgets) -> None:
     lang_choices = _config.language_choices()
     asr_choices = _config.asr_choices()
     default_lang = lang_choices[0][1] if lang_choices else "en"
@@ -527,7 +570,7 @@ def build_teacher_voice_tab() -> None:
 
     discover_btn.click(
         fn=_discover_for_json,
-        inputs=[topic_tb, session_dd],
+        inputs=[topic_tb, session_dd, workspace.topic, workspace.session_dd],
         outputs=discover_outputs,
     ).then(
         fn=_update_rag_hint,
@@ -537,7 +580,7 @@ def build_teacher_voice_tab() -> None:
 
     auto_btn.click(
         fn=_auto_ingest_for_json,
-        inputs=[topic_tb, session_dd],
+        inputs=[topic_tb, session_dd, workspace.topic, workspace.session_dd],
         outputs=discover_outputs,
     ).then(
         fn=_enable_rag_after_ingest,
@@ -547,7 +590,15 @@ def build_teacher_voice_tab() -> None:
 
     ingest_btn.click(
         fn=_ingest_for_json,
-        inputs=[topic_tb, urls_text, url_choices, upload_files, session_dd],
+        inputs=[
+            topic_tb,
+            urls_text,
+            url_choices,
+            upload_files,
+            session_dd,
+            workspace.topic,
+            workspace.session_dd,
+        ],
         outputs=[
             ingest_status,
             indexed_md,
@@ -579,6 +630,9 @@ def build_teacher_voice_tab() -> None:
         use_rag,
         session_dd,
         doc_dd,
+        workspace.topic,
+        workspace.session_dd,
+        workspace.doc_dd,
     ]
 
     voice_turn_inputs = [
@@ -591,6 +645,9 @@ def build_teacher_voice_tab() -> None:
         use_rag,
         session_dd,
         doc_dd,
+        workspace.topic,
+        workspace.session_dd,
+        workspace.doc_dd,
     ]
 
     send_text_btn.click(send_text_turn, inputs=text_turn_inputs, outputs=turn_outputs)
@@ -609,6 +666,31 @@ def build_teacher_voice_tab() -> None:
         speak_quick_reply,
         inputs=[chatbot, rec.language],
         outputs=[voiceout, status, speak_status],
+    )
+
+    def _sync_topic_from_workspace(ws_topic: str, local_topic: str) -> str:
+        if not (local_topic or "").strip():
+            return ws_topic
+        return local_topic
+
+    def _sync_session_from_workspace(ws_session: str, local_session: str) -> str:
+        if not (local_session or "").strip():
+            return ws_session
+        return local_session
+
+    workspace.topic.change(
+        fn=_sync_topic_from_workspace,
+        inputs=[workspace.topic, topic_tb],
+        outputs=[topic_tb],
+    )
+    workspace.session_dd.change(
+        fn=_sync_session_from_workspace,
+        inputs=[workspace.session_dd, session_dd],
+        outputs=[session_dd],
+    ).then(
+        fn=refresh_doc_choices,
+        inputs=[session_dd, doc_dd],
+        outputs=[doc_dd],
     )
 
 

@@ -17,10 +17,13 @@ from gradio_space.research_helpers import (
     rag_scope_hint,
     refresh_doc_choices,
     refresh_sessions,
+    resolve_doc_ids,
+    resolve_session,
+    resolve_topic,
     run_research_question,
     trace_summary_markdown,
 )
-from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES
+from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES, WorkspaceWidgets
 from inference.factory import get_backend
 
 logger = logging.getLogger(__name__)
@@ -35,8 +38,12 @@ def _require_topic(topic: str | None) -> str | None:
 def discover_sources(
     topic: str,
     session_id: str,
+    workspace_topic: str = "",
+    workspace_session: str = "",
     progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, object, str, str, str, str, object, object]:
+    topic = resolve_topic(topic, workspace_topic)
+    session_id = resolve_session(session_id, workspace_session)
     progress(0, desc="Searching web…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -114,8 +121,12 @@ def discover_sources(
 def auto_search_ingest(
     topic: str,
     session_id: str,
+    workspace_topic: str = "",
+    workspace_session: str = "",
     progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, object, str, str, str, str, object, object]:
+    topic = resolve_topic(topic, workspace_topic)
+    session_id = resolve_session(session_id, workspace_session)
     progress(0, desc="Auto search & ingest…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -187,8 +198,12 @@ def ingest_selected(
     selected_urls: list[str] | None,
     upload_files: list[str] | None,
     session_id: str | None,
+    workspace_topic: str = "",
+    workspace_session: str = "",
     progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, str, str, str, object, object]:
+    topic = resolve_topic(topic, workspace_topic) or None
+    session_id = resolve_session(session_id or "", workspace_session) or None
     progress(0, desc="Ingesting sources…")
     sid = session_id or ""
     model_key = get_active_model_key()
@@ -269,8 +284,12 @@ def ask_question(
     session_id: str,
     doc_ids: list[str] | None,
     chat_history: list[dict],
+    workspace_session: str = "",
+    workspace_doc_ids: list[str] | None = None,
     progress: gr.Progress = gr.Progress(),
 ) -> tuple[list[dict], str, str, str, str]:
+    session_id = resolve_session(session_id, workspace_session)
+    doc_ids = resolve_doc_ids(doc_ids, workspace_doc_ids)
     if not question.strip():
         return chat_history or [], "Enter a question.", "", rag_scope_hint(session_id, doc_ids), question
 
@@ -298,7 +317,7 @@ def ask_question(
         return history, err, err, rag_scope_hint(session_id, doc_ids), question
 
 
-def build_research_mind_tab() -> None:
+def build_research_mind_tab(workspace: WorkspaceWidgets) -> None:
     gr.Markdown("### ResearchMind", elem_classes=["form-tab-heading"])
     gr.HTML(
         '<p class="tab-subtitle">'
@@ -439,19 +458,27 @@ def build_research_mind_tab() -> None:
 
     discover_btn.click(
         fn=discover_sources,
-        inputs=[topic, session_dd],
+        inputs=[topic, session_dd, workspace.topic, workspace.session_dd],
         outputs=discover_outputs,
     )
 
     auto_btn.click(
         fn=auto_search_ingest,
-        inputs=[topic, session_dd],
+        inputs=[topic, session_dd, workspace.topic, workspace.session_dd],
         outputs=discover_outputs,
     )
 
     ingest_btn.click(
         fn=ingest_selected,
-        inputs=[topic, urls_text, url_choices, upload_files, session_dd],
+        inputs=[
+            topic,
+            urls_text,
+            url_choices,
+            upload_files,
+            session_dd,
+            workspace.topic,
+            workspace.session_dd,
+        ],
         outputs=[
             ingest_status,
             memory_md,
@@ -464,13 +491,52 @@ def build_research_mind_tab() -> None:
 
     ask_btn.click(
         fn=ask_question,
-        inputs=[question, session_dd, doc_dd, chatbot],
+        inputs=[
+            question,
+            session_dd,
+            doc_dd,
+            chatbot,
+            workspace.session_dd,
+            workspace.doc_dd,
+        ],
         outputs=[chatbot, advanced.trace_box, advanced.trace_summary, rag_hint, question],
     )
     question.submit(
         fn=ask_question,
-        inputs=[question, session_dd, doc_dd, chatbot],
+        inputs=[
+            question,
+            session_dd,
+            doc_dd,
+            chatbot,
+            workspace.session_dd,
+            workspace.doc_dd,
+        ],
         outputs=[chatbot, advanced.trace_box, advanced.trace_summary, rag_hint, question],
+    )
+
+    def _sync_topic_from_workspace(ws_topic: str, local_topic: str) -> str:
+        if not (local_topic or "").strip():
+            return ws_topic
+        return local_topic
+
+    def _sync_session_from_workspace(ws_session: str, local_session: str) -> str:
+        if not (local_session or "").strip():
+            return ws_session
+        return local_session
+
+    workspace.topic.change(
+        fn=_sync_topic_from_workspace,
+        inputs=[workspace.topic, topic],
+        outputs=[topic],
+    )
+    workspace.session_dd.change(
+        fn=_sync_session_from_workspace,
+        inputs=[workspace.session_dd, session_dd],
+        outputs=[session_dd],
+    ).then(
+        fn=refresh_doc_choices,
+        inputs=[session_dd, doc_dd],
+        outputs=[doc_dd],
     )
 
 

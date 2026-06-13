@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from html import escape
 from time import monotonic
 from typing import Any, Callable
 
 ProgressUpdateFn = Callable[[float, str], None]
+ProgressStepFn = Callable[["ProgressStep"], None]
 
 # Typical share of wall time per phase (used for ETA while a step is running).
 _STEP_WEIGHTS: dict[str, float] = {
@@ -37,6 +39,7 @@ class SlideGenerationProgress:
     """Tracks slide-generation phases with timing and optional Gradio updates."""
 
     on_update: ProgressUpdateFn | None = None
+    on_step: ProgressStepFn | None = None
     steps: list[ProgressStep] = field(default_factory=list)
     started_at: float = field(default_factory=monotonic)
     _current: ProgressStep | None = field(default=None, repr=False)
@@ -52,6 +55,8 @@ class SlideGenerationProgress:
         )
         self._current = step
         self.steps.append(step)
+        if self.on_step is not None:
+            self.on_step(step)
         self._emit(label, detail)
 
     def detail(self, detail: str) -> None:
@@ -109,6 +114,60 @@ class SlideGenerationProgress:
             lines.append(line)
 
         return "\n".join(lines)
+
+    def format_log_html(
+        self,
+        *,
+        running: bool = False,
+        footer_html: str = "",
+    ) -> str:
+        elapsed = self.elapsed_s()
+        eta = self.estimate_remaining_s() if running else None
+        banner = (
+            '<div class="slide-gen-log-banner running">Generating slides…</div>'
+            if running
+            else '<div class="slide-gen-log-banner done">Generation complete</div>'
+        )
+        eta_html = (
+            f'<div class="slide-gen-log-meta">Est. remaining: ~{int(eta)}s</div>'
+            if eta is not None and running
+            else ""
+        )
+        steps_html: list[str] = []
+        for step in self.steps:
+            done = step.ended_at is not None
+            status = "done" if done else "active"
+            icon = "✓" if done else "●"
+            duration = (
+                f' <span class="slide-gen-log-dur">({step.duration_s:.1f}s)</span>'
+                if step.duration_s is not None
+                else ""
+            )
+            detail = (
+                f' <span class="slide-gen-log-detail">— {escape(step.detail)}</span>'
+                if step.detail
+                else ""
+            )
+            steps_html.append(
+                f'<li class="slide-gen-log-step {status}">'
+                f'<span class="slide-gen-log-icon">{icon}</span>'
+                f'<span class="slide-gen-log-label">{escape(step.label)}</span>'
+                f"{duration}{detail}</li>"
+            )
+        steps_block = (
+            f'<ol class="slide-gen-log-steps">{"".join(steps_html)}</ol>'
+            if steps_html
+            else '<p class="slide-gen-log-empty">Waiting for first step…</p>'
+        )
+        return (
+            f'<div class="slide-gen-log">'
+            f"{banner}"
+            f'<div class="slide-gen-log-meta">Elapsed: {elapsed:.1f}s</div>'
+            f"{eta_html}"
+            f"{steps_block}"
+            f"{footer_html}"
+            f"</div>"
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

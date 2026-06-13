@@ -52,6 +52,86 @@ def tab_hero(subtitle: str, steps: list[str] | None = None, active_step: int = 0
 
 
 @dataclass
+class WorkspaceWidgets:
+    """Global workspace defaults (topic + ResearchMind session/RAG scope)."""
+
+    topic: gr.Textbox
+    session_dd: gr.Dropdown
+    refresh_btn: gr.Button
+    doc_dd: gr.CheckboxGroup
+    rag_hint: gr.Markdown
+
+    def wire(self) -> None:
+        self.refresh_btn.click(
+            fn=refresh_sessions,
+            inputs=[self.session_dd],
+            outputs=[self.session_dd],
+        )
+        self.session_dd.change(
+            fn=refresh_doc_choices,
+            inputs=[self.session_dd, self.doc_dd],
+            outputs=[self.doc_dd],
+        ).then(
+            fn=rag_scope_hint,
+            inputs=[self.session_dd, self.doc_dd],
+            outputs=[self.rag_hint],
+        )
+        self.doc_dd.change(
+            fn=rag_scope_hint,
+            inputs=[self.session_dd, self.doc_dd],
+            outputs=[self.rag_hint],
+        )
+
+
+def build_workspace_bar() -> WorkspaceWidgets:
+    gr.Markdown(
+        "### Workspace",
+        elem_classes=["workspace-heading"],
+    )
+    gr.HTML(
+        '<p class="workspace-subtitle">'
+        "Default topic and ResearchMind session for all tabs. "
+        "Each tool can override these locally when needed."
+        "</p>"
+    )
+    with gr.Row(elem_classes=["workspace-bar"]):
+        topic = gr.Textbox(
+            label="Topic",
+            placeholder="e.g. Photosynthesis for 6th grade",
+            value="photosynthesis",
+            scale=3,
+            max_lines=1,
+        )
+        session_dd = gr.Dropdown(
+            label="ResearchMind session",
+            choices=list_session_choices(),
+            value="",
+            interactive=True,
+            scale=3,
+        )
+        refresh_btn = gr.Button("↻", size="sm", min_width=40, scale=0)
+
+    with gr.Accordion("Source scope (RAG)", open=False, elem_classes=["workspace-sources"]):
+        doc_dd = gr.CheckboxGroup(
+            label="Documents (empty = all in session)",
+            choices=[],
+            value=[],
+            elem_classes=DOC_CHOICE_LIST_CLASSES,
+        )
+        rag_hint = gr.Markdown(value=rag_scope_hint("", []))
+
+    workspace = WorkspaceWidgets(
+        topic=topic,
+        session_dd=session_dd,
+        refresh_btn=refresh_btn,
+        doc_dd=doc_dd,
+        rag_hint=rag_hint,
+    )
+    workspace.wire()
+    return workspace
+
+
+@dataclass
 class SessionPickerWidgets:
     session_dd: gr.Dropdown
     refresh_btn: gr.Button

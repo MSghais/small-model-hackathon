@@ -12,6 +12,33 @@ from inference.factory import get_backend
 from researchmind.ingest import IngestPipeline
 
 
+def resolve_topic(local: str | None, workspace: str | None) -> str:
+    """Tab-local topic overrides workspace default when set."""
+    return (local or "").strip() or (workspace or "").strip()
+
+
+def resolve_session(local: str | None, workspace: str | None) -> str:
+    return (local or "").strip() or (workspace or "").strip()
+
+
+def resolve_doc_ids(local: list[str] | None, workspace: list[str] | None) -> list[str]:
+    if local:
+        return list(local)
+    return list(workspace or [])
+
+
+def pick_session_for_topic(topic_hint: str = "") -> str:
+    """Best-effort session id for a topic hint (substring match on session topic)."""
+    hint = (topic_hint or "").lower().strip()
+    store = IngestPipeline().store
+    sessions = store.list_sessions()
+    if hint:
+        for s in sessions:
+            if hint in (s.topic or "").lower():
+                return s.id
+    return sessions[0].id if sessions else ""
+
+
 def list_session_choices() -> list[tuple[str, str]]:
     store = IngestPipeline().store
     sessions = store.list_sessions()

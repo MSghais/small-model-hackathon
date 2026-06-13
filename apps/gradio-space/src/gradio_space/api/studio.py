@@ -14,7 +14,7 @@ from echocoach.prompts import TeacherVoiceMode
 from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_text_turn
 from gradio_space.api.serializers import err, ok, update_value
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
-from gradio_space.research_helpers import list_session_choices
+from gradio_space.research_helpers import list_session_choices, pick_session_for_topic
 from gradio_space.tabs.education_pptx import generate_lesson_slides
 from gradio_space.tabs.research_mind import ingest_selected
 from gradio_space.ui.studio_html import (
@@ -37,7 +37,9 @@ class _NoopProgress:
 
 
 def _elapsed_seconds_from_log(processing_log: str) -> float | None:
-    match = re.search(r"\*\*Elapsed:\*\* ([\d.]+)s", processing_log or "")
+    match = re.search(r"Elapsed:\s*([\d.]+)s", processing_log or "")
+    if not match:
+        match = re.search(r"\*\*Elapsed:\*\* ([\d.]+)s", processing_log or "")
     if not match:
         return None
     return float(match.group(1))
@@ -100,12 +102,7 @@ def _sessions_payload() -> list[dict[str, str]]:
 
 
 def _pick_session(topic_hint: str = "") -> str:
-    sessions = _sessions_payload()
-    hint = (topic_hint or "").lower()
-    for s in sessions:
-        if hint and hint in s["topic"].lower():
-            return s["id"]
-    return sessions[0]["id"] if sessions else ""
+    return pick_session_for_topic(topic_hint)
 
 
 def api_list_sessions() -> dict[str, Any]:
@@ -170,27 +167,48 @@ def api_generate_slides(
     slide_count: int = 5,
     session_id: str = "",
     use_rag: bool = True,
+    doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     sid = session_id or _pick_session(topic)
     source_label = "RAG (indexed sources)" if use_rag and sid else "None (model only)"
     workflow_label = "Two-step (discover & confirm)"
+    rag_docs = doc_ids or []
 
-    outline_md, preview_html, gallery, pptx, docx, html_export, processing_log, trace_sum, trace_json, status = (
-        generate_lesson_slides(
-            topic,
-            grade,
-            int(slide_count),
-            source_label,
-            workflow_label,
-            "",
-            [],
-            None,
-            sid if use_rag else "",
-            None,
-            _NoopProgress(),
-            skip_preview_images=True,
-        )
+    gen = generate_lesson_slides(
+        topic,
+        grade,
+        int(slide_count),
+        source_label,
+        workflow_label,
+        "",
+        [],
+        None,
+        sid if use_rag else "",
+        rag_docs,
+        topic,
+        sid if use_rag else "",
+        rag_docs,
+        _NoopProgress(),
+        skip_preview_images=True,
     )
+    last: tuple | None = None
+    for item in gen:
+        last = item
+    if last is None:
+        return err("Generation failed before producing output.")
+
+    (
+        outline_md,
+        preview_html,
+        gallery,
+        pptx,
+        docx,
+        html_export,
+        processing_log,
+        trace_sum,
+        trace_json,
+        status,
+    ) = last
 
     if preview_html and "form-error" in preview_html:
         return err(status or "Generation failed.", status=status, progress_log=processing_log)
@@ -224,6 +242,7 @@ def api_teacher_voice_turn(
     session_id: str = "",
     use_rag: bool = True,
     history: list[list[str]] | None = None,
+    doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -244,7 +263,7 @@ def api_teacher_voice_turn(
             backend=get_backend(model_key),
             use_rag=use_rag and mode in RAG_MODES,
             session_id=session_id or None,
-            doc_ids=None,
+            doc_ids=doc_ids or None,
         )
     except Exception as exc:  # noqa: BLE001
         return err(str(exc))
@@ -353,8 +372,11 @@ def register_studio_apis(server: gr.Server) -> None:
         slide_count: int = 5,
         session_id: str = "",
         use_rag: bool = True,
+        doc_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        return api_generate_slides(topic, grade, slide_count, session_id, use_rag)
+        return api_generate_slides(
+            topic, grade, slide_count, session_id, use_rag, doc_ids
+        )
 
     @server.api(name="teacher_voice_turn")
     def _teacher_voice_turn(
@@ -364,8 +386,11 @@ def register_studio_apis(server: gr.Server) -> None:
         session_id: str = "",
         use_rag: bool = True,
         history: list[list[str]] | None = None,
+        doc_ids: list[str] | None = None,
     ) -> dict[str, Any]:
-        return api_teacher_voice_turn(message, mode, topic, session_id, use_rag, history)
+        return api_teacher_voice_turn(
+            message, mode, topic, session_id, use_rag, history, doc_ids
+        )
 
     @server.api(name="analyze_pitch")
     def _analyze_pitch(

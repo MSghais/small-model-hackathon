@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 
 from inference.base import InferenceBackend
 from researchmind.citations import format_context_block
@@ -80,6 +80,45 @@ class AgentRunner:
         progress: SlideGenerationProgress | None = None,
         skip_preview_images: bool = False,
     ) -> AgentResult:
+        result: AgentResult | None = None
+        for item in self.iter_education_pptx(
+            topic=topic,
+            grade=grade,
+            slide_count=slide_count,
+            model_key=model_key,
+            backend=backend,
+            source_mode=source_mode,
+            search_workflow=search_workflow,
+            urls=urls,
+            files=files,
+            session_id=session_id,
+            doc_ids=doc_ids,
+            progress=progress,
+            skip_preview_images=skip_preview_images,
+        ):
+            if isinstance(item, AgentResult):
+                result = item
+        if result is None:
+            raise RuntimeError("Slide generation did not return a result")
+        return result
+
+    def iter_education_pptx(
+        self,
+        *,
+        topic: str,
+        grade: str,
+        slide_count: int,
+        model_key: str,
+        backend: InferenceBackend,
+        source_mode: Literal["none", "web", "rag"] = "none",
+        search_workflow: Literal["two_step", "auto"] = "two_step",
+        urls: list[str] | None = None,
+        files: list[Path] | None = None,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
+        progress: SlideGenerationProgress | None = None,
+        skip_preview_images: bool = False,
+    ) -> Iterator[SlideGenerationProgress | AgentResult]:
         skill = self._skills.get(EDUCATION_PPTX_SKILL)
         req = EducationPptxInput(
             topic=topic.strip(),
@@ -101,6 +140,7 @@ class AgentRunner:
 
         if progress is not None:
             progress.begin("load_model", "Load language model")
+            yield progress
         load_started = monotonic()
         backend.load()
         load_ms = int((monotonic() - load_started) * 1000)
@@ -112,6 +152,7 @@ class AgentRunner:
                 "Gather lesson sources",
                 detail=req.source_mode,
             )
+            yield progress
         source_started = monotonic()
         source_context, source_summary, active_session = self._gather_lesson_source_context(
             req, backend, model_key, trace
@@ -125,6 +166,8 @@ class AgentRunner:
         )
         if active_session:
             req = req.model_copy(update={"session_id": active_session})
+        if progress is not None:
+            yield progress
 
         if progress is not None:
             progress.begin(
@@ -132,6 +175,7 @@ class AgentRunner:
                 "Generate slide outline",
                 detail=f"{req.slide_count} slides · grade {req.grade}",
             )
+            yield progress
         outline_started = monotonic()
         outline = self._generate_outline(
             skill, req, backend, trace, source_context=source_context, progress=progress
@@ -145,7 +189,11 @@ class AgentRunner:
         )
 
         if progress is not None:
+            yield progress
+
+        if progress is not None:
             progress.begin("create_exports", "Build PPTX, DOCX, and HTML exports")
+            yield progress
         export_started = monotonic()
         tool = self._tools.get("create_pptx")
         pptx_path = tool.handler(outline, run_id=trace.run_id)
@@ -196,6 +244,7 @@ class AgentRunner:
                     "Render slide thumbnails",
                     detail=f"{len(outline.slides) + 1} images",
                 )
+                yield progress
             preview_started = monotonic()
             preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
             preview_ms = int((monotonic() - preview_started) * 1000)
@@ -208,10 +257,11 @@ class AgentRunner:
 
         if progress is not None:
             progress.finish()
+            yield progress
 
         trace_path = trace.save()
 
-        return AgentResult(
+        yield AgentResult(
             markdown_preview=markdown,
             html_preview=html_preview,
             preview_images=preview_images,

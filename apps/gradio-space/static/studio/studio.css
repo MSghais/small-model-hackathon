@@ -675,6 +675,7 @@ body {
   .sidebar.open { transform: translateX(0); }
   .sidebar-close, .topbar-icon { display: inline-flex; background: none; border: none; cursor: pointer; color: var(--secondary); }
   .topbar { left: 0; padding: 0 1rem; }
-  .workspace { margin-left: 0; padding-top: calc(var(--topbar-h) + 1rem); }
+  .workspace-context-bar { left: 0; padding: 0.5rem 1rem; }
+  .workspace { margin-left: 0; padding-top: calc(var(--topbar-h) + var(--context-bar-h) + 1rem); }
   .studio-banner { left: 0; }
 }
