@@ -13,6 +13,7 @@ from gradio_space.research_helpers import (
     list_session_choices,
     load_trace_json,
     memory_summary,
+    parse_urls_text,
     rag_scope_hint,
     refresh_doc_choices,
     refresh_sessions,
@@ -25,8 +26,8 @@ from inference.factory import get_backend
 logger = logging.getLogger(__name__)
 
 
-def _require_topic(topic: str) -> str | None:
-    if not topic.strip():
+def _require_topic(topic: str | None) -> str | None:
+    if not (topic or "").strip():
         return "Enter a research topic first — it names your session and guides web search."
     return None
 
@@ -181,38 +182,39 @@ def auto_search_ingest(
 
 
 def ingest_selected(
-    topic: str,
-    urls_text: str,
-    selected_urls: list[str],
+    topic: str | None,
+    urls_text: str | None,
+    selected_urls: list[str] | None,
     upload_files: list[str] | None,
-    session_id: str,
+    session_id: str | None,
     progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, str, str, str, object, object]:
     progress(0, desc="Ingesting sources…")
+    sid = session_id or ""
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
         return (
             load_error,
-            memory_summary(session_id),
+            memory_summary(sid),
             load_error,
             load_error,
-            refresh_sessions(session_id),
-            refresh_doc_choices(session_id, []),
+            refresh_sessions(sid),
+            refresh_doc_choices(sid, []),
         )
 
     topic_error = _require_topic(topic)
     if topic_error:
         return (
             topic_error,
-            memory_summary(session_id),
+            memory_summary(sid),
             topic_error,
             topic_error,
-            refresh_sessions(session_id),
-            refresh_doc_choices(session_id, []),
+            refresh_sessions(sid),
+            refresh_doc_choices(sid, []),
         )
 
-    direct_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
+    direct_urls = parse_urls_text(urls_text or "")
     all_urls = list(dict.fromkeys([*direct_urls, *(selected_urls or [])]))
     files = [Path(p) for p in (upload_files or [])]
 
@@ -220,22 +222,22 @@ def ingest_selected(
         msg = "Add URLs, select suggested sources, or upload a file — then ingest."
         return (
             msg,
-            memory_summary(session_id),
+            memory_summary(sid),
             msg,
             msg,
-            refresh_sessions(session_id),
-            refresh_doc_choices(session_id, []),
+            refresh_sessions(sid),
+            refresh_doc_choices(sid, []),
         )
 
     try:
         logger.info("Ingesting %d URL(s) and %d file(s)", len(all_urls), len(files))
         runner = AgentRunner()
         result = runner.run_researchmind_ingest(
-            topic=topic.strip(),
+            topic=(topic or "").strip(),
             urls=all_urls,
             files=files,
             auto_search=False,
-            session_id=session_id or None,
+            session_id=sid or None,
             model_key=model_key,
             backend=get_backend(model_key),
         )
@@ -254,11 +256,11 @@ def ingest_selected(
         msg = f"**Ingest error:** {exc}"
         return (
             msg,
-            memory_summary(session_id),
+            memory_summary(sid),
             msg,
             msg,
-            refresh_sessions(session_id),
-            refresh_doc_choices(session_id, []),
+            refresh_sessions(sid),
+            refresh_doc_choices(sid, []),
         )
 
 
