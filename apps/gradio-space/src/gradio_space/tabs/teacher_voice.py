@@ -162,14 +162,20 @@ def send_turn(
     )
 
 
-def speak_full_reply(history: list, language: str) -> tuple[str | None, str]:
+def _format_speak_status(status: str) -> str:
+    if status.startswith("VoiceOut ready"):
+        return f"**{status}**"
+    return f"**VoiceOut:** {status}"
+
+
+def speak_full_reply(history: list, language: str) -> tuple[str | None, str, str]:
     playback, status = speak_last_assistant_reply(history, language, first_sentence_only=False)
-    return playback, status
+    return playback, status, _format_speak_status(status)
 
 
-def speak_quick_reply(history: list, language: str) -> tuple[str | None, str]:
+def speak_quick_reply(history: list, language: str) -> tuple[str | None, str, str]:
     playback, status = speak_last_assistant_reply(history, language, first_sentence_only=True)
-    return playback, status
+    return playback, status, _format_speak_status(status)
 
 
 def build_teacher_voice_tab() -> None:
@@ -245,6 +251,9 @@ Latency is typically a few seconds per turn on GPU; CPU may take longer.
             with gr.Row():
                 speak_full_btn = gr.Button("Speak last reply", variant="secondary")
                 speak_quick_btn = gr.Button("Speak first sentence", variant="secondary")
+            speak_status = gr.Markdown(
+                value="_Use **Speak** buttons to hear the latest teacher reply._"
+            )
             voiceout = gr.Audio(
                 label="Teacher reply (auto after Send turn, or use Speak buttons)",
                 type="filepath",
@@ -302,12 +311,12 @@ Latency is typically a few seconds per turn on GPU; CPU may take longer.
     speak_full_btn.click(
         speak_full_reply,
         inputs=[chatbot, language],
-        outputs=[voiceout, status],
+        outputs=[voiceout, status, speak_status],
     )
     speak_quick_btn.click(
         speak_quick_reply,
         inputs=[chatbot, language],
-        outputs=[voiceout, status],
+        outputs=[voiceout, status, speak_status],
     )
 
 

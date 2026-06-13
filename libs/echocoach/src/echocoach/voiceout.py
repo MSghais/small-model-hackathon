@@ -17,14 +17,35 @@ def strip_references_for_tts(text: str) -> str:
     return cleaned.strip()
 
 
+def extract_message_text(content: object) -> str:
+    """Normalize Gradio chat content (plain string or message blocks) to text."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, (list, tuple)):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                text = block.strip()
+            elif isinstance(block, dict):
+                text = str(block.get("text") or block.get("content") or "").strip()
+            else:
+                text = str(block).strip()
+            if text:
+                parts.append(text)
+        return "\n".join(parts)
+    return str(content).strip()
+
+
 def last_assistant_message(history: list) -> str | None:
     """Return the most recent assistant message from Gradio chat history."""
     for item in reversed(history or []):
         if isinstance(item, dict) and item.get("role") == "assistant":
-            content = str(item.get("content", "")).strip()
+            content = extract_message_text(item.get("content"))
             return content or None
         if isinstance(item, (list, tuple)) and len(item) == 2 and item[1]:
-            return str(item[1]).strip()
+            return extract_message_text(item[1]) or None
     return None
 
 

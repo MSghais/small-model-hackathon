@@ -19,7 +19,7 @@ from echocoach.asr.factory import get_asr_backend
 from echocoach.audio_io import clamp_duration, load_audio_mono_16k, write_wav_temp
 from echocoach.config import get_echo_coach_config, outputs_dir
 from echocoach.prompts import TeacherVoiceMode, system_prompt_for_mode, topic_context_block
-from echocoach.voiceout import strip_references_for_tts, synthesize_voice_reply
+from echocoach.voiceout import extract_message_text, strip_references_for_tts, synthesize_voice_reply
 
 RAG_MODES: frozenset[TeacherVoiceMode] = frozenset({"explain", "lesson"})
 
@@ -54,12 +54,16 @@ def append_chat_turn(
     updated: list[dict[str, str]] = []
     for item in history or []:
         if isinstance(item, dict) and "role" in item and "content" in item:
-            updated.append({"role": str(item["role"]), "content": str(item["content"])})
+            updated.append(
+                {"role": str(item["role"]), "content": extract_message_text(item["content"])}
+            )
         elif isinstance(item, (list, tuple)) and len(item) == 2:
             user_msg, assistant_msg = item
-            updated.append({"role": "user", "content": str(user_msg)})
+            updated.append({"role": "user", "content": extract_message_text(user_msg)})
             if assistant_msg:
-                updated.append({"role": "assistant", "content": str(assistant_msg)})
+                updated.append(
+                    {"role": "assistant", "content": extract_message_text(assistant_msg)}
+                )
     updated.append({"role": "user", "content": user_text})
     updated.append({"role": "assistant", "content": assistant_text})
     return updated
@@ -69,12 +73,16 @@ def history_to_messages(history: list) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     for item in history:
         if isinstance(item, dict):
-            messages.append({"role": item["role"], "content": item["content"]})
+            messages.append(
+                {"role": item["role"], "content": extract_message_text(item["content"])}
+            )
         else:
             user_msg, assistant_msg = item
-            messages.append({"role": "user", "content": str(user_msg)})
+            messages.append({"role": "user", "content": extract_message_text(user_msg)})
             if assistant_msg:
-                messages.append({"role": "assistant", "content": str(assistant_msg)})
+                messages.append(
+                    {"role": "assistant", "content": extract_message_text(assistant_msg)}
+                )
     return messages
 
 

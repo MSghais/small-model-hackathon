@@ -15,6 +15,7 @@ from echocoach.teacher_voice import (
     history_to_messages,
 )
 from echocoach.voiceout import (
+    extract_message_text,
     last_assistant_message,
     split_sentences,
     strip_references_for_tts,
@@ -105,6 +106,12 @@ def test_split_sentences():
     assert split_sentences(text) == ["Hello there.", "How are you?", "Great!"]
 
 
+def test_extract_message_text():
+    assert extract_message_text("Hello") == "Hello"
+    assert extract_message_text([{"text": "Hello there."}]) == "Hello there."
+    assert extract_message_text([{"text": "A"}, {"text": "B"}]) == "A\nB"
+
+
 def test_last_assistant_message():
     history = [
         {"role": "user", "content": "Hi"},
@@ -112,6 +119,11 @@ def test_last_assistant_message():
     ]
     assert last_assistant_message(history) == "Hello there."
     assert last_assistant_message([]) is None
+    gradio_history = [
+        {"role": "user", "content": [{"text": "Hi"}]},
+        {"role": "assistant", "content": [{"text": "Hello there."}]},
+    ]
+    assert last_assistant_message(gradio_history) == "Hello there."
 
 
 def test_strip_references_for_tts():
