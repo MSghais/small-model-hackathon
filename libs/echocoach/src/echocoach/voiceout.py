@@ -29,6 +29,8 @@ def extract_message_text(content: object) -> str:
             if isinstance(block, str):
                 text = block.strip()
             elif isinstance(block, dict):
+                if block.get("path") or block.get("file"):
+                    continue
                 text = str(block.get("text") or block.get("content") or "").strip()
             else:
                 text = str(block).strip()

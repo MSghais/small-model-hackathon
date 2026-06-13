@@ -21,6 +21,9 @@ from echocoach.voiceout import (
     strip_references_for_tts,
 )
 
+_THINK_OPEN = "<" + "think" + ">"
+_THINK_CLOSE = "</" + "think" + ">"
+
 
 class _MockBackend:
     def load(self) -> None:
@@ -63,6 +66,36 @@ def test_append_chat_turn_migrates_legacy_tuples():
         {"role": "assistant", "content": "New reply."},
     ]
     assert history[0] == {"role": "user", "content": "Old question"}
+
+
+def test_append_chat_turn_attaches_voice_to_assistant_message(tmp_path):
+    wav = tmp_path / "reply.wav"
+    wav.write_bytes(b"RIFF")
+
+    history = append_chat_turn(
+        [],
+        "Hi",
+        "Hello",
+        assistant_display=f"{_THINK_OPEN}plan{_THINK_CLOSE}\n\nHello",
+        voice_path=str(wav),
+    )
+    assistant = history[-1]
+    assert assistant["role"] == "assistant"
+    assert isinstance(assistant["content"], list)
+    assert assistant["content"][0].startswith(_THINK_OPEN)
+    assert assistant["content"][1] == {"path": str(wav)}
+
+
+def test_history_to_messages_strips_assistant_reasoning():
+    history = [
+        {"role": "user", "content": "Hi"},
+        {
+            "role": "assistant",
+            "content": f"{_THINK_OPEN}planning{_THINK_CLOSE}\n\nHello there.",
+        },
+    ]
+    messages = history_to_messages(history)
+    assert messages[-1]["content"] == "Hello there."
 
 
 def test_history_to_messages_tuple_pairs():
@@ -190,6 +223,11 @@ def test_run_teacher_voice_text_turn_mock(monkeypatch, tmp_path):
     assert result.user_text == "Tell me about plants."
     assert "sunlight" in result.assistant_text
     assert len(result.history) == 2
+    assistant = result.history[-1]
+    assert assistant["role"] == "assistant"
+    assert isinstance(assistant["content"], list)
+    assert assistant["content"][0] == "Plants use sunlight to make food."
+    assert assistant["content"][1]["path"]
     assert result.trace.get("skill") == "teacher-voice"
 
 

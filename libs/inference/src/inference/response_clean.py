@@ -64,6 +64,17 @@ def looks_like_reasoning_only(text: str) -> bool:
     return any(sample.startswith(opener) for opener in _REASONING_OPENERS)
 
 
+def prepare_display_reply(text: str) -> str:
+    """Normalize model output for chat UI while preserving thinking blocks."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if _MALFORMED_THINK_OPEN.match(cleaned):
+        body = _MALFORMED_THINK_OPEN.sub("", cleaned, count=1).strip()
+        return f"{_THINK_OPEN}\n{body}\n{_THINK_CLOSE}"
+    return cleaned
+
+
 def strip_reasoning_output(text: str) -> str:
     """Remove model chain-of-thought / thinking traces from user-visible replies."""
     cleaned = text.strip()

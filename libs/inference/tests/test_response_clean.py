@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from inference.response_clean import strip_reasoning_output
+from inference.response_clean import prepare_display_reply, strip_reasoning_output
 
 _RT_OPEN = "<" + "redacted_thinking" + ">"
 _RT_CLOSE = "</" + "redacted_thinking" + ">"
@@ -32,3 +32,11 @@ Summary: This review covers AI agent applications, evaluation, and future work [
 def test_preserves_normal_answer():
     text = "AI agents combine perception, planning, and action [1]."
     assert strip_reasoning_output(text) == text
+
+
+def test_prepare_display_reply_wraps_malformed_think_prefix():
+    raw = "think> We need to plan the answer.\n\nThe answer is 42."
+    out = prepare_display_reply(raw)
+    assert out.startswith(_THINK_OPEN)
+    assert _THINK_CLOSE in out
+    assert "We need to plan the answer." in out

@@ -32,16 +32,18 @@ from inference.factory import get_backend
 _config = get_echo_coach_config()
 _TURN_MAX = min(15, _config.max_seconds)
 _MODE_CHOICES = [(label, key) for key, label in MODE_LABELS.items()]
-
-
-def _voiceout_update(path: str | None) -> dict:
-    return gr.update(value=path, visible=bool(path))
+_THINK_OPEN = "<" + "think" + ">"
+_THINK_CLOSE = "</" + "think" + ">"
+_REASONING_TAGS = [
+    (_THINK_OPEN, _THINK_CLOSE),
+    ("<think>", "</think>"),
+    ("<thinking>", "</thinking>"),
+]
 
 
 def _empty_turn() -> tuple:
     return (
         [],
-        _voiceout_update(None),
         "_Type a message or record audio, then send._",
         "",
         {},
@@ -60,11 +62,8 @@ def _turn_result(result) -> tuple:
             first_line = first_line[:117] + "…"
         status += f" VoiceOut note: {first_line} _(details in Advanced)_"
 
-    playback = str(result.voiceout_path) if result.voiceout_path else None
-
     return (
         result.history,
-        _voiceout_update(playback),
         status,
         f"Trace saved: `{result.trace_path}`",
         trace_as_dict(result.trace),
@@ -75,7 +74,6 @@ def _turn_result(result) -> tuple:
 def _turn_error(history: list | None, message: str) -> tuple:
     return (
         history or [],
-        _voiceout_update(None),
         f"**TeacherVoice failed:** {message}",
         "",
         {},
@@ -104,7 +102,6 @@ def send_turn(
     if not audio_path:
         return (
             history or [],
-            _voiceout_update(None),
             "_Record or upload audio, then click **Send voice turn**._",
             "",
             {},
@@ -153,7 +150,6 @@ def send_text_turn(
     if not message.strip():
         return (
             history or [],
-            _voiceout_update(None),
             "_Type your question above, then click **Send text turn**._",
             "",
             {},
@@ -470,8 +466,13 @@ def build_teacher_voice_tab() -> None:
                 with gr.Row(elem_classes=["tv-replay-row"]):
                     speak_full_btn = gr.Button("Speak full reply", variant="secondary", size="sm")
                     speak_quick_btn = gr.Button("Speak first sentence", variant="secondary", size="sm")
+                voiceout = gr.Audio(
+                    label="Replay audio",
+                    type="filepath",
+                    visible=False,
+                )
                 speak_status = gr.Markdown(
-                    value="_VoiceOut auto-plays after each turn. Use replay if you missed it._",
+                    value="_Each reply includes an audio player in the chat. Use replay to regenerate speech._",
                     elem_classes=["form-status"],
                 )
 
@@ -483,16 +484,11 @@ def build_teacher_voice_tab() -> None:
             chatbot = gr.Chatbot(
                 label="Conversation",
                 height=360,
+                reasoning_tags=_REASONING_TAGS,
                 placeholder=(
                     "Your back-and-forth with the teacher will show here. "
                     "Type a message or record audio on the left, then send a turn."
                 ),
-            )
-            voiceout = gr.Audio(
-                label="Teacher reply (auto-plays)",
-                type="filepath",
-                autoplay=True,
-                visible=False,
             )
 
     mode_dd.change(
@@ -566,7 +562,6 @@ def build_teacher_voice_tab() -> None:
 
     turn_outputs = [
         chatbot,
-        voiceout,
         status,
         advanced.trace_summary,
         advanced.trace_box,

@@ -9,7 +9,7 @@ from typing import Any
 
 from agent.trace import TraceRecorder
 from inference.base import InferenceBackend
-from inference.response_clean import strip_reasoning_output
+from inference.response_clean import prepare_display_reply, strip_reasoning_output
 from researchmind.citations import format_context_block, format_references
 from researchmind.config import get_config as get_researchmind_config
 from researchmind.ingest import IngestPipeline
@@ -45,18 +45,29 @@ class TeacherVoiceTurnResult:
     trace: dict[str, Any] = field(default_factory=dict)
 
 
+def _assistant_content_for_chat(
+    display_text: str,
+    *,
+    voice_path: str | None = None,
+) -> str | list:
+    if voice_path:
+        return [display_text, {"path": voice_path}]
+    return display_text
+
+
 def append_chat_turn(
     history: list,
     user_text: str,
     assistant_text: str,
-) -> list[dict[str, str]]:
+    *,
+    assistant_display: str | None = None,
+    voice_path: str | None = None,
+) -> list[dict[str, Any]]:
     """Append a turn in Gradio 5 messages format."""
-    updated: list[dict[str, str]] = []
+    updated: list[dict[str, Any]] = []
     for item in history or []:
         if isinstance(item, dict) and "role" in item and "content" in item:
-            updated.append(
-                {"role": str(item["role"]), "content": extract_message_text(item["content"])}
-            )
+            updated.append({"role": str(item["role"]), "content": item["content"]})
         elif isinstance(item, (list, tuple)) and len(item) == 2:
             user_msg, assistant_msg = item
             updated.append({"role": "user", "content": extract_message_text(user_msg)})
@@ -65,23 +76,40 @@ def append_chat_turn(
                     {"role": "assistant", "content": extract_message_text(assistant_msg)}
                 )
     updated.append({"role": "user", "content": user_text})
-    updated.append({"role": "assistant", "content": assistant_text})
+    display_text = assistant_display if assistant_display is not None else assistant_text
+    updated.append(
+        {
+            "role": "assistant",
+            "content": _assistant_content_for_chat(display_text, voice_path=voice_path),
+        }
+    )
     return updated
+
+
+def _message_text_for_llm(role: str, content: object) -> str:
+    text = extract_message_text(content)
+    if role == "assistant":
+        return strip_reasoning_output(text)
+    return text
 
 
 def history_to_messages(history: list) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
     for item in history:
         if isinstance(item, dict):
+            role = str(item["role"])
             messages.append(
-                {"role": item["role"], "content": extract_message_text(item["content"])}
+                {"role": role, "content": _message_text_for_llm(role, item["content"])}
             )
         else:
             user_msg, assistant_msg = item
             messages.append({"role": "user", "content": extract_message_text(user_msg)})
             if assistant_msg:
                 messages.append(
-                    {"role": "assistant", "content": extract_message_text(assistant_msg)}
+                    {
+                        "role": "assistant",
+                        "content": strip_reasoning_output(extract_message_text(assistant_msg)),
+                    }
                 )
     return messages
 
@@ -187,10 +215,12 @@ def _generate_teacher_reply(
     )
     raw_reply = backend.chat(messages, max_tokens=512, temperature=0.5)
     assistant_text = strip_reasoning_output(raw_reply).strip()
+    display_reply = prepare_display_reply(raw_reply)
     trace.log_llm(messages[-1]["content"], raw_reply)
 
     if rag_refs:
         assistant_text = f"{assistant_text}\n\n{rag_refs}"
+        display_reply = f"{display_reply}\n\n{rag_refs}".strip() if display_reply else rag_refs
 
     voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
         strip_references_for_tts(assistant_text),
@@ -202,7 +232,13 @@ def _generate_teacher_reply(
     if voiceout_path:
         trace.set_artifact(voiceout_path)
 
-    new_history = append_chat_turn(history, user_text, assistant_text)
+    new_history = append_chat_turn(
+        history,
+        user_text,
+        assistant_text,
+        assistant_display=display_reply,
+        voice_path=voiceout_path,
+    )
 
     trace_path = trace.save()
     return TeacherVoiceTurnResult(
@@ -345,7 +381,12 @@ def run_teacher_voice_turn(
         )
         if omni_wav_or_note and omni_user and omni_reply and Path(omni_wav_or_note).is_file():
             trace.log_note("omni_turn", path=omni_wav_or_note)
-            new_history = append_chat_turn(history, omni_user, omni_reply)
+            new_history = append_chat_turn(
+                history,
+                omni_user,
+                omni_reply,
+                voice_path=omni_wav_or_note,
+            )
             trace_path = trace.save()
             return TeacherVoiceTurnResult(
                 user_text=omni_user,
