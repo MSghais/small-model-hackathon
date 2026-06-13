@@ -9,10 +9,15 @@ import soundfile as sf
 from echocoach.prompts import PITCH_SYSTEM, system_prompt_for_mode
 from echocoach.teacher_voice import (
     RagContext,
+    append_chat_turn,
     build_teacher_messages,
     fetch_rag_context,
     history_to_messages,
+)
+from echocoach.voiceout import (
+    last_assistant_message,
     split_sentences,
+    strip_references_for_tts,
 )
 
 
@@ -57,6 +62,9 @@ def test_append_chat_turn_migrates_legacy_tuples():
         {"role": "assistant", "content": "New reply."},
     ]
     assert history[0] == {"role": "user", "content": "Old question"}
+
+
+def test_history_to_messages_tuple_pairs():
     history = [("Hi", "Hello"), ("What is AI?", "Machine learning.")]
     messages = history_to_messages(history)
     assert messages == [
@@ -95,6 +103,20 @@ def test_pitch_mode_system_prompt():
 def test_split_sentences():
     text = "Hello there. How are you? Great!"
     assert split_sentences(text) == ["Hello there.", "How are you?", "Great!"]
+
+
+def test_last_assistant_message():
+    history = [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello there."},
+    ]
+    assert last_assistant_message(history) == "Hello there."
+    assert last_assistant_message([]) is None
+
+
+def test_strip_references_for_tts():
+    text = "Answer here.\n\n**References**\n[1] Source"
+    assert strip_references_for_tts(text) == "Answer here."
 
 
 def test_fetch_rag_context_empty_store_warns(research_env):
@@ -139,7 +161,7 @@ def test_run_teacher_voice_turn_mock_asr(monkeypatch, tmp_path):
             return str(out), None
 
     monkeypatch.setattr("echocoach.teacher_voice.get_asr_backend", lambda _: _Asr())
-    monkeypatch.setattr("echocoach.teacher_voice.get_tts_backend", lambda _: _Tts())
+    monkeypatch.setattr("echocoach.voiceout.get_tts_backend", lambda _: _Tts())
 
     result = run_teacher_voice_turn(
         str(wav),

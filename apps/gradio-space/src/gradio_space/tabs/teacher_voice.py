@@ -22,6 +22,7 @@ from gradio_space.research_helpers import (
     refresh_sessions,
 )
 from echocoach.omni import omni_status_message
+from gradio_space.voice_helpers import speak_last_assistant_reply
 from inference.factory import get_backend
 
 _config = get_echo_coach_config()
@@ -161,6 +162,16 @@ def send_turn(
     )
 
 
+def speak_full_reply(history: list, language: str) -> tuple[str | None, str]:
+    playback, status = speak_last_assistant_reply(history, language, first_sentence_only=False)
+    return playback, status
+
+
+def speak_quick_reply(history: list, language: str) -> tuple[str | None, str]:
+    playback, status = speak_last_assistant_reply(history, language, first_sentence_only=True)
+    return playback, status
+
+
 def build_teacher_voice_tab() -> None:
     lang_choices = _config.language_choices()
     asr_choices = _config.asr_choices()
@@ -231,7 +242,14 @@ Latency is typically a few seconds per turn on GPU; CPU may take longer.
 
         with gr.Column(scale=2):
             chatbot = gr.Chatbot(label="Conversation", height=360)
-            voiceout = gr.Audio(label="Teacher reply (plays first sentence quickly when available)", type="filepath")
+            with gr.Row():
+                speak_full_btn = gr.Button("Speak last reply", variant="secondary")
+                speak_quick_btn = gr.Button("Speak first sentence", variant="secondary")
+            voiceout = gr.Audio(
+                label="Teacher reply (auto after Send turn, or use Speak buttons)",
+                type="filepath",
+                autoplay=True,
+            )
             trace_note = gr.Markdown()
             trace_json = gr.JSON(label="Trace")
 
@@ -280,6 +298,17 @@ Latency is typically a few seconds per turn on GPU; CPU may take longer.
     )
 
     clear_btn.click(clear_conversation, outputs=[chatbot, voiceout, status, trace_note, trace_json])
+
+    speak_full_btn.click(
+        speak_full_reply,
+        inputs=[chatbot, language],
+        outputs=[voiceout, status],
+    )
+    speak_quick_btn.click(
+        speak_quick_reply,
+        inputs=[chatbot, language],
+        outputs=[voiceout, status],
+    )
 
 
 def teacher_voice_allowed_paths() -> list[str]:

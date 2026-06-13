@@ -140,9 +140,20 @@ The **TeacherVoice** tab is a **multi-turn voice teacher** — not full duplex l
 | TTS | One VoiceOut clip per analysis | Voice reply every turn (first sentence plays quickly when Piper is installed) |
 | RAG | No | Optional ResearchMind grounding (Explain / Lesson) |
 
-**Flow per turn:** record up to **15s** (configurable cap) → ASR → text LLM with chat history → Piper TTS.
+**Flow per turn:** record up to **15s** → ASR → text LLM with chat history → Piper TTS (auto-plays when installed).
+
+After each reply, use **Speak last reply** or **Speak first sentence** to generate or replay VoiceOut from the latest assistant message (works even if auto-TTS was skipped).
+
+Install Piper for voice output:
+
+```bash
+uv sync --package echocoach --extra piper
+python -m piper.download_voices en_US-lessac-medium
+```
 
 Enable RAG in the accordion: pick a ResearchMind session and optional documents (same scope rules as Chat debug).
+
+Reuse VoiceOut in other tabs via `gradio_space.voice_helpers.speak_last_assistant_reply`.
 
 Optional omni profile (GPU, experimental — falls back to ASR+LLM+Piper):
 

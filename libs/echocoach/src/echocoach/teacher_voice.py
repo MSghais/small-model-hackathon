@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,7 +19,7 @@ from echocoach.asr.factory import get_asr_backend
 from echocoach.audio_io import clamp_duration, load_audio_mono_16k, write_wav_temp
 from echocoach.config import get_echo_coach_config, outputs_dir
 from echocoach.prompts import TeacherVoiceMode, system_prompt_for_mode, topic_context_block
-from echocoach.tts.piper import get_tts_backend
+from echocoach.voiceout import strip_references_for_tts, synthesize_voice_reply
 
 RAG_MODES: frozenset[TeacherVoiceMode] = frozenset({"explain", "lesson"})
 
@@ -141,43 +140,6 @@ def build_teacher_messages(
     return messages
 
 
-def split_sentences(text: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [p.strip() for p in parts if p.strip()]
-
-
-def synthesize_voice_reply(
-    text: str,
-    *,
-    language: str,
-    tts_preset: str | None,
-    chunk_first: bool = True,
-) -> tuple[str | None, str | None, str | None]:
-    """Return (full_wav, first_sentence_wav, warning)."""
-    if not text.strip():
-        return None, None, "No text to synthesize."
-
-    tts = get_tts_backend(tts_preset)
-    out_dir = outputs_dir() / "teacher_voice"
-    full_path, warning = tts.synthesize(text, language=language, out_dir=out_dir)
-
-    first_path = None
-    if chunk_first:
-        sentences = split_sentences(text)
-        if len(sentences) > 1:
-            first_path, first_warning = tts.synthesize(
-                sentences[0],
-                language=language,
-                out_dir=out_dir,
-            )
-            if first_warning and not warning:
-                warning = first_warning
-        elif full_path:
-            first_path = full_path
-
-    return full_path, first_path, warning
-
-
 def run_teacher_voice_turn(
     audio_path: str,
     history: list,
@@ -295,10 +257,11 @@ def run_teacher_voice_turn(
         assistant_text = f"{assistant_text}\n\n{rag_refs}"
 
     voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
-        assistant_text.split("\n\n## References")[0].split("\n\n**References**")[0],
+        strip_references_for_tts(assistant_text),
         language=language,
         tts_preset=tts_key,
         chunk_first=True,
+        out_subdir="teacher_voice",
     )
     if voiceout_path:
         trace.set_artifact(voiceout_path)
