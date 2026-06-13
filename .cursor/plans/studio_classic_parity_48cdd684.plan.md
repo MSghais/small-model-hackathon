@@ -4,7 +4,7 @@ overview: "Bring the Studio HTML UI (`/`) to near feature parity with Classic Gr
 todos:
   - id: phase1-ui-wins
     content: "Phase 1: EchoCoach charts/transcript/VoiceOut, slide gallery (flip skip_preview_images), debug trace drawer, K-12 grades — UI-only"
-    status: pending
+    status: in_progress
   - id: phase2-settings
     content: "Phase 2a: Add reload_model + model_choices APIs and Settings slide-over drawer in Studio"
     status: pending

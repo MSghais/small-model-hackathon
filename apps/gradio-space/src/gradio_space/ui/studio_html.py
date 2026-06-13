@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from typing import Any
 
 
@@ -48,12 +49,69 @@ def render_slide_canvas(preview_html: str, *, empty_message: str | None = None) 
     return f'<div class="studio-canvas-inner">{preview_html}</div>'
 
 
+def render_gallery_strip(image_paths: list[str]) -> str:
+    if not image_paths:
+        return ""
+    items: list[str] = []
+    for index, path in enumerate(image_paths):
+        if not path:
+            continue
+        src = html.escape(f"/file={path}")
+        alt = html.escape(f"Slide {index + 1}")
+        items.append(
+            f'<a class="studio-gallery-item" href="{src}" target="_blank" rel="noopener">'
+            f'<img src="{src}" alt="{alt}" loading="lazy" /></a>'
+        )
+    if not items:
+        return ""
+    return f'<div class="studio-gallery-strip">{"".join(items)}</div>'
+
+
+def render_trace_details(
+    *,
+    trace_summary: str = "",
+    trace_json: str = "",
+    progress_log: str = "",
+) -> str:
+    blocks: list[str] = []
+    if trace_summary:
+        safe = html.escape(trace_summary)
+        blocks.append(f'<pre class="studio-trace-summary">{safe}</pre>')
+    if progress_log:
+        if "<" in progress_log and ">" in progress_log:
+            blocks.append(f'<div class="studio-trace-log">{progress_log}</div>')
+        else:
+            blocks.append(
+                f'<pre class="studio-trace-log">{html.escape(progress_log)}</pre>'
+            )
+    if trace_json:
+        try:
+            parsed = json.loads(trace_json)
+            pretty = html.escape(json.dumps(parsed, indent=2))
+        except json.JSONDecodeError:
+            pretty = html.escape(trace_json)
+        blocks.append(f'<pre class="studio-trace-json">{pretty}</pre>')
+    if not blocks:
+        return ""
+    return f'<div class="studio-trace-details">{"".join(blocks)}</div>'
+
+
+def _file_url(path: str | None) -> str:
+    if not path:
+        return ""
+    return html.escape(f"/file={path}")
+
+
 def render_echo_coach_panel(
     *,
     pace_score: int | None = None,
     wpm: float | None = None,
     tip: str | None = None,
     report_md: str | None = None,
+    transcript_html: str | None = None,
+    filler_chart: str | None = None,
+    pace_chart: str | None = None,
+    voiceout_path: str | None = None,
     listening: bool = False,
 ) -> str:
     if listening:
@@ -66,7 +124,7 @@ def render_echo_coach_panel(
   <p class="studio-coach-hint">Speak your lesson, then analyze for pace and filler feedback.</p>
 </div>"""
 
-    if pace_score is None and not tip and not report_md:
+    if pace_score is None and not tip and not report_md and not transcript_html:
         return """
 <div class="studio-coach-panel studio-coach-idle">
   <p class="studio-coach-hint">Record a pitch in the Coach view, then click <strong>Analyze pitch</strong> for metrics.</p>
@@ -77,8 +135,38 @@ def render_echo_coach_panel(
     tip_html = html.escape(tip or "")
     report_block = ""
     if report_md:
-        safe = html.escape(report_md[:600])
+        safe = html.escape(report_md[:1200])
         report_block = f'<div class="studio-coach-report">{safe}</div>'
+
+    transcript_block = ""
+    if transcript_html:
+        transcript_block = f'<div class="studio-coach-transcript">{transcript_html}</div>'
+
+    charts: list[str] = []
+    filler_url = _file_url(filler_chart)
+    pace_url = _file_url(pace_chart)
+    if filler_url:
+        charts.append(
+            f'<figure class="studio-coach-chart"><figcaption>Filler words</figcaption>'
+            f'<img src="{filler_url}" alt="Filler words chart" /></figure>'
+        )
+    if pace_url:
+        charts.append(
+            f'<figure class="studio-coach-chart"><figcaption>Pace timeline</figcaption>'
+            f'<img src="{pace_url}" alt="Pace timeline chart" /></figure>'
+        )
+    charts_block = ""
+    if charts:
+        charts_block = f'<div class="studio-coach-charts">{"".join(charts)}</div>'
+
+    voiceout_block = ""
+    voiceout_url = _file_url(voiceout_path)
+    if voiceout_url:
+        voiceout_block = (
+            f'<div class="studio-coach-voiceout">'
+            f'<p class="studio-coach-voiceout-label">VoiceOut feedback</p>'
+            f'<audio controls src="{voiceout_url}"></audio></div>'
+        )
 
     return f"""
 <div class="studio-coach-panel studio-coach-results">
@@ -97,5 +185,8 @@ def render_echo_coach_panel(
     </div>
   </div>
   {f'<p class="studio-coach-tip">{tip_html}</p>' if tip_html else ''}
+  {transcript_block}
+  {charts_block}
+  {voiceout_block}
   {report_block}
 </div>"""

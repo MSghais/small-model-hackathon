@@ -6,8 +6,8 @@ Build Small hackathon UI — custom **Studio** frontend plus Classic Gradio tabs
 
 | URL | What |
 |-----|------|
-| `/` | **Studio UI** — custom HTML/CSS/JS served via `gradio.Server` |
-| `/classic` | Full Gradio Blocks app (all tabs, settings, debug) |
+| `/` | **Studio UI** — custom HTML/CSS/JS served via `gradio.Server` (near parity with Classic) |
+| `/classic` | Full Gradio Blocks app (fallback / power-user tabs) |
 
 ```bash
 uv run --package gradio-space python -m gradio_space.server
@@ -25,20 +25,34 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 
 ### Studio API names
 
-- `list_sessions`, `list_documents`
-- `ingest_url`, `ingest_files`, `save_upload`
-- `generate_slides`
-- `teacher_voice_turn`
-- `analyze_pitch`
-- `model_status`
+**Research & slides**
+
+- `list_sessions`, `list_documents`, `session_memory`
+- `discover_sources`, `auto_search_ingest`, `ingest_sources`, `ingest_url`, `ingest_files`
+- `research_chat`, `generate_slides` (supports `source_mode`: none / web / rag)
+
+**Voice & coach**
+
+- `teacher_voice_turn`, `teacher_voice_audio_turn`
+- `analyze_pitch` (language, ASR preset, `speak_rewrite`)
+- `recording_status`, `recording_start`, `recording_stop`
+- `voice_presets`
+
+**Settings & debug**
+
+- `model_status`, `model_choices`, `reload_model`
+- `debug_chat`
+- `save_upload`
 
 ## Demo script (judges)
 
 1. Open `/` — Photosynthesis project workspace
 2. Paste a URL in Research → **Ingest URL** → documents appear with **RAG Active**
-3. Center column → **Generate Slides** → slide preview canvas fills
-4. Right column → Teacher Voice **Coach** mode → send a question
-5. Coach view → upload/record audio → **Analyze pitch** for EchoCoach metrics
-6. Fallback: `/classic` for Chat (debug), traces, and model settings
+3. Center column → **Generate Slides** → slide preview canvas + thumbnail strip
+4. Optional: expand **Research sources** → Web search or RAG modes
+5. Voice view → text or **mic** → Teacher Voice Coach mode
+6. Coach view → record/upload → **Analyze pitch** (charts, transcript, VoiceOut)
+7. Debug sidebar → plain chat or RAG-grounded test with traces
+8. Settings drawer → model status / reload (Classic at `/classic` still available)
 
 Space card metadata lives in the [repository root README.md](../../README.md).
