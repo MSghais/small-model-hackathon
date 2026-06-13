@@ -49,6 +49,13 @@ uv run --package gradio-space python -m gradio_space.app
 
 Open [http://localhost:7860](http://localhost:7860).
 
+| URL | UI |
+|-----|-----|
+| `/` | **Studio** — custom HTML/CSS/JS workspace (Off Brand entry) |
+| `/classic` | **Classic** — full Gradio tabs, settings, Chat (debug) |
+
+The header in Classic includes a link back to Studio UI.
+
 The model loads on the **first Generate** (Lesson slides) or chat message. Agent traces are written to `outputs/traces/`. After code changes, restart the process to pick up updates.
 
 ### Lesson slides — research sources
@@ -230,7 +237,7 @@ docker run --rm -p 7860:7860 \
   hackathon-space
 ```
 
-Open [http://localhost:7860](http://localhost:7860). Stop with `Ctrl+C`.
+Open [http://localhost:7860](http://localhost:7860) — Studio at `/`, Classic tabs at `/classic`. Stop with `Ctrl+C`.
 
 To use a pre-downloaded local model inside Docker, mount it and set `MODEL_PATH`:
 

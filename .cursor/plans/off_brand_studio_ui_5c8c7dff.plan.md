@@ -4,25 +4,25 @@ overview: Win the Off Brand track by serving a custom Photosynthesis "AI Studio"
 todos:
   - id: server-scaffold
     content: "Create server.py: gradio.Server, static mount, mount build_demo() at /classic, update entrypoint"
-    status: in_progress
+    status: completed
   - id: api-wrappers
     content: Add api/studio.py + serializers wrapping research_mind, education_pptx, teacher_voice, echo_coach functions
-    status: pending
+    status: completed
   - id: static-shell
     content: Port mockup to static/studio/ (index.html, studio.css, studio.js) with M3 tokens and sidebar/topbar
-    status: pending
+    status: completed
   - id: research-column
     content: "Wire left column: ingest URL/upload, document cards, RAG Active badge via list_documents API"
-    status: pending
+    status: completed
   - id: slides-column
     content: "Wire center column: topic/grade/slider, generate_slides API, hero preview canvas, export links"
-    status: pending
+    status: completed
   - id: voice-coach-column
     content: "Wire right column: TeacherVoice mode cards + turn API; EchoCoach post-analysis metrics panel"
-    status: pending
+    status: completed
   - id: polish-docs
     content: Loading/error states, mobile sidebar, Classic cross-link, README Off Brand section + demo script
-    status: pending
+    status: completed
 isProject: false
 ---
 

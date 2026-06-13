@@ -32,13 +32,24 @@ function showError(msg) {
   el.classList.remove("hidden");
 }
 
+function unwrapApiPayload(result) {
+  const raw = result?.data ?? result;
+  if (Array.isArray(raw)) {
+    if (raw.length === 1 && raw[0] !== null && typeof raw[0] === "object") {
+      return raw[0];
+    }
+    return raw;
+  }
+  return raw;
+}
+
 async function callApi(name, args = []) {
   setLoading(true);
   showError("");
   try {
     const client = await getClient();
     const result = await client.predict(`/${name}`, args);
-    const data = result?.data ?? result;
+    const data = unwrapApiPayload(result);
     if (data && data.ok === false) {
       throw new Error(data.error || "Request failed");
     }
@@ -129,8 +140,13 @@ async function generateSlides() {
   ]);
 
   $("#generate-status").textContent = stripMd(data.status || "Slides generated.");
-  $("#slide-canvas").innerHTML =
+  const canvasHtml =
     data.canvas_html ||
+    (data.preview_html
+      ? `<div class="studio-canvas-inner">${data.preview_html}</div>`
+      : "");
+  $("#slide-canvas").innerHTML =
+    canvasHtml ||
     '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
 
   state.downloads = data.downloads;
