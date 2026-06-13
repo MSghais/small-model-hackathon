@@ -29,7 +29,34 @@ class _MockBackend:
         return self.chat([{"role": "user", "content": prompt}], max_tokens=max_tokens)
 
 
-def test_history_to_messages_tuple_pairs():
+def test_append_chat_turn_messages_format():
+    from echocoach.teacher_voice import append_chat_turn
+
+    history = append_chat_turn([], "Hi", "Hello")
+    assert history == [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello"},
+    ]
+
+    extended = append_chat_turn(history, "Next?", "Sure.")
+    assert extended == [
+        {"role": "user", "content": "Hi"},
+        {"role": "assistant", "content": "Hello"},
+        {"role": "user", "content": "Next?"},
+        {"role": "assistant", "content": "Sure."},
+    ]
+
+
+def test_append_chat_turn_migrates_legacy_tuples():
+    from echocoach.teacher_voice import append_chat_turn
+
+    legacy = [("Old question", "Old answer")]
+    history = append_chat_turn(legacy, "New?", "New reply.")
+    assert history[-2:] == [
+        {"role": "user", "content": "New?"},
+        {"role": "assistant", "content": "New reply."},
+    ]
+    assert history[0] == {"role": "user", "content": "Old question"}
     history = [("Hi", "Hello"), ("What is AI?", "Machine learning.")]
     messages = history_to_messages(history)
     assert messages == [
@@ -123,5 +150,7 @@ def test_run_teacher_voice_turn_mock_asr(monkeypatch, tmp_path):
     )
     assert result.user_text == "Tell me about plants."
     assert "sunlight" in result.assistant_text
-    assert len(result.history) == 1
+    assert len(result.history) == 2
+    assert result.history[0]["role"] == "user"
+    assert result.history[1]["role"] == "assistant"
     assert result.trace.get("skill") == "teacher-voice"

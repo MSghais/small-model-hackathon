@@ -37,13 +37,33 @@ class RagContext:
 class TeacherVoiceTurnResult:
     user_text: str
     assistant_text: str
-    history: list[tuple[str, str]]
+    history: list[dict[str, str]]
     voiceout_path: str | None
     voiceout_first_path: str | None
     voiceout_warning: str | None
     rag_references: str | None
     trace_path: str
     trace: dict[str, Any] = field(default_factory=dict)
+
+
+def append_chat_turn(
+    history: list,
+    user_text: str,
+    assistant_text: str,
+) -> list[dict[str, str]]:
+    """Append a turn in Gradio 5 messages format."""
+    updated: list[dict[str, str]] = []
+    for item in history or []:
+        if isinstance(item, dict) and "role" in item and "content" in item:
+            updated.append({"role": str(item["role"]), "content": str(item["content"])})
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            user_msg, assistant_msg = item
+            updated.append({"role": "user", "content": str(user_msg)})
+            if assistant_msg:
+                updated.append({"role": "assistant", "content": str(assistant_msg)})
+    updated.append({"role": "user", "content": user_text})
+    updated.append({"role": "assistant", "content": assistant_text})
+    return updated
 
 
 def history_to_messages(history: list) -> list[dict[str, str]]:
@@ -228,8 +248,7 @@ def run_teacher_voice_turn(
         )
         if omni_wav_or_note and omni_user and omni_reply and Path(omni_wav_or_note).is_file():
             trace.log_note("omni_turn", path=omni_wav_or_note)
-            new_history = list(history)
-            new_history.append((omni_user, omni_reply))
+            new_history = append_chat_turn(history, omni_user, omni_reply)
             trace_path = trace.save()
             return TeacherVoiceTurnResult(
                 user_text=omni_user,
@@ -284,8 +303,7 @@ def run_teacher_voice_turn(
     if voiceout_path:
         trace.set_artifact(voiceout_path)
 
-    new_history = list(history)
-    new_history.append((user_text, assistant_text))
+    new_history = append_chat_turn(history, user_text, assistant_text)
 
     trace_path = trace.save()
     return TeacherVoiceTurnResult(
