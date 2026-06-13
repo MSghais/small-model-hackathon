@@ -312,6 +312,17 @@ button.primary-cta:hover,
   margin: 0.35rem 0 !important;
 }
 
+.lesson-processing-log {
+  font-size: 0.82rem !important;
+  color: #374151 !important;
+  background: #f9fafb !important;
+  border: 1px solid #e5e7eb !important;
+  border-radius: 10px !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 1rem !important;
+  line-height: 1.45 !important;
+}
+
 .form-section-label {
   font-size: 0.8rem;
   font-weight: 600;

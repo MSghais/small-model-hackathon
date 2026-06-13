@@ -1,6 +1,13 @@
 import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client@1.14.0/+esm";
 
 const $ = (sel) => document.querySelector(sel);
+const SLIDE_PIPELINE_STEPS = [
+  "Load language model",
+  "Gather lesson sources",
+  "Generate slide outline",
+  "Build PPTX, DOCX, and HTML exports",
+];
+
 const state = {
   sessionId: "",
   topic: "Photosynthesis for 6th Grade",
@@ -8,6 +15,8 @@ const state = {
   history: [],
   downloads: null,
   client: null,
+  progressTimer: null,
+  progressStartedAt: null,
 };
 
 async function getClient() {
@@ -19,6 +28,100 @@ async function getClient() {
 
 function setLoading(on) {
   $("#studio-loading").classList.toggle("hidden", !on);
+}
+
+function startProgressPanel() {
+  const panel = $("#progress-panel");
+  const stepsEl = $("#progress-steps");
+  panel.classList.remove("hidden");
+  state.progressStartedAt = Date.now();
+  stepsEl.innerHTML = SLIDE_PIPELINE_STEPS.map(
+    (label, index) =>
+      `<li data-step="${index}" class="progress-step pending">${label}</li>`
+  ).join("");
+  $("#progress-log").classList.add("hidden");
+  $("#progress-log").textContent = "";
+  $("#progress-eta").textContent = "Est. remaining: calculating…";
+  updateProgressElapsed();
+  if (state.progressTimer) clearInterval(state.progressTimer);
+  state.progressTimer = setInterval(updateProgressElapsed, 500);
+}
+
+function updateProgressElapsed() {
+  if (!state.progressStartedAt) return;
+  const elapsed = (Date.now() - state.progressStartedAt) / 1000;
+  $("#progress-elapsed").textContent = `Elapsed: ${elapsed.toFixed(1)}s`;
+  const eta = estimateRemaining(elapsed);
+  $("#progress-eta").textContent =
+    eta !== null ? `Est. remaining: ~${Math.max(0, Math.round(eta))}s` : "";
+}
+
+function estimateRemaining(elapsed) {
+  if (elapsed < 3) return null;
+  const stepNodes = [...document.querySelectorAll("#progress-steps .progress-step")];
+  const activeIndex = stepNodes.findIndex((node) => node.classList.contains("active"));
+  const doneCount = stepNodes.filter((node) => node.classList.contains("done")).length;
+  const progress = Math.max((doneCount + (activeIndex >= 0 ? 0.35 : 0)) / stepNodes.length, 0.15);
+  return elapsed / progress - elapsed;
+}
+
+function markProgressStep(index, status) {
+  const node = document.querySelector(`#progress-steps [data-step="${index}"]`);
+  if (!node) return;
+  node.classList.remove("pending", "active", "done");
+  node.classList.add(status);
+}
+
+function advanceProgressWhileWaiting() {
+  let current = 0;
+  markProgressStep(current, "active");
+  const timer = setInterval(() => {
+    if (!$("#progress-panel") || $("#progress-panel").classList.contains("hidden")) {
+      clearInterval(timer);
+      return;
+    }
+    if (current < SLIDE_PIPELINE_STEPS.length - 1) {
+      markProgressStep(current, "done");
+      current += 1;
+      markProgressStep(current, "active");
+    }
+  }, 9000);
+  return timer;
+}
+
+function finishProgressPanel(data) {
+  if (state.progressTimer) {
+    clearInterval(state.progressTimer);
+    state.progressTimer = null;
+  }
+
+  const stepsEl = $("#progress-steps");
+  const traceSteps = data?.progress?.steps || [];
+  if (traceSteps.length) {
+    stepsEl.innerHTML = traceSteps
+      .map((step) => {
+        const duration =
+          step.duration_s != null ? ` (${step.duration_s}s)` : "";
+        const detail = step.detail ? ` — ${step.detail}` : "";
+        return `<li class="progress-step done">${step.label}${duration}${detail}</li>`;
+      })
+      .join("");
+  } else {
+    document.querySelectorAll("#progress-steps .progress-step").forEach((node) => {
+      node.classList.remove("pending", "active");
+      node.classList.add("done");
+    });
+  }
+
+  if (data?.progress_log) {
+    const logEl = $("#progress-log");
+    logEl.textContent = stripMd(data.progress_log);
+    logEl.classList.remove("hidden");
+  }
+  if (data?.elapsed_seconds != null) {
+    $("#progress-elapsed").textContent = `Elapsed: ${Number(data.elapsed_seconds).toFixed(1)}s`;
+  }
+  $("#progress-eta").textContent = "Complete";
 }
 
 function showError(msg) {
@@ -131,13 +234,29 @@ async function generateSlides() {
   const useRag = $("#use-rag").checked;
   state.topic = topic;
 
-  const data = await callApi("generate_slides", [
-    topic,
-    grade,
-    slideCount,
-    state.sessionId,
-    useRag,
-  ]);
+  startProgressPanel();
+  const waitTimer = advanceProgressWhileWaiting();
+  let data;
+  try {
+    data = await callApi("generate_slides", [
+      topic,
+      grade,
+      slideCount,
+      state.sessionId,
+      useRag,
+    ]);
+  } catch (_err) {
+    $("#progress-eta").textContent = "Failed";
+    throw _err;
+  } finally {
+    clearInterval(waitTimer);
+    if (state.progressTimer) {
+      clearInterval(state.progressTimer);
+      state.progressTimer = null;
+    }
+  }
+
+  finishProgressPanel(data);
 
   $("#generate-status").textContent = stripMd(data.status || "Slides generated.");
   const canvasHtml =
