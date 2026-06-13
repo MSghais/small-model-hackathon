@@ -2,7 +2,7 @@
 
 How to run the **Lesson Agent** Gradio app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **EchoCoach** for voice practice feedback, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -71,6 +71,45 @@ When **Web search** is selected, choose a **search workflow**:
 **RAG** mode accepts an optional ResearchMind session, document checkboxes (scope), pasted URLs, and PDF/DOCX uploads. Indexed content is retrieved and passed to the outline step.
 
 Web discover/auto search requires network access. MemRAG data is stored under `RESEARCHMIND_DATA_DIR` (default `outputs/researchmind`).
+
+Web discover/auto search requires network access. MemRAG data is stored under `RESEARCHMIND_DATA_DIR` (default `outputs/researchmind`).
+
+### EchoCoach — voice practice
+
+The **EchoCoach** tab records up to 30 seconds (mic locally, or upload on HF Space), then runs a local pipeline:
+
+1. **ASR** — Cohere Transcribe 2B (14 languages) or Whisper.cpp tiny/base
+2. **Analysis** — filler highlights, pace score, matplotlib charts
+3. **Coach** — rewrite + tips from the text LLM (`ACTIVE_MODEL`, default `minicpm5-1b`)
+4. **VoiceOut** — Piper TTS speaks the summary (or full rewrite if checked)
+
+Install optional extras:
+
+```bash
+# Whisper.cpp fallback ASR (CPU)
+uv sync --package echocoach --extra whisper
+
+# Piper VoiceOut TTS
+uv sync --package echocoach --extra piper
+python -m piper.download_voices en_US-lessac-medium
+```
+
+Configure presets in [`voice_models.yaml`](voice_models.yaml) or via `.env`:
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `ECHOCOACH_ASR_PRESET` | `whisper-cpp-tiny` | ASR preset key |
+| `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key |
+| `ECHOCOACH_COACH_MODEL` | `minicpm5-1b` | Text coach preset (from `models.yaml`) |
+| `ECHOCOACH_MAX_SECONDS` | `30` | Max recording length |
+
+**Cohere Transcribe** (`cohere-transcribe`) is gated on Hugging Face — run `huggingface-cli login`, accept the model terms, then set `ECHOCOACH_ASR_PRESET=cohere-transcribe`. GPU recommended for ASR + coach together.
+
+Smoke tests (analysis only, no GPU):
+
+```bash
+bash scripts/echo_coach_smoke.sh
+```
 
 ### 5. Upload agent trace (Sharing is Caring badge)
 

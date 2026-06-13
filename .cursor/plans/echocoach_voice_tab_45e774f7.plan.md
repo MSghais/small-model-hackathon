@@ -4,22 +4,22 @@ overview: "Add an EchoCoach tab to the existing Gradio app: record a pitch local
 todos:
   - id: scaffold-echocoach-lib
     content: Create libs/echocoach package with config.py, voice_models.yaml loader, EchoCoachResult types, and workspace pyproject wiring
-    status: in_progress
+    status: completed
   - id: analysis-module
     content: Implement filler detection, pace scoring, and matplotlib chart generation (fillers bar + pace timeline)
-    status: pending
+    status: completed
   - id: asr-backends
     content: Add Cohere Transcribe ASR backend (primary) and pywhispercpp tiny/base fallback with factory pattern
-    status: pending
+    status: completed
   - id: coach-tts
     content: Wire coach prompts to existing inference backend; add Piper TTS VoiceOut with per-language voice map
-    status: pending
+    status: completed
   - id: gradio-tab
     content: Build echo_coach.py tab (mic record, language, analyze, transcript HTML, charts, audio out, trace) and register in app.py
-    status: pending
+    status: completed
   - id: docs-docker
     content: Update voice_models.yaml, .env.example, USAGE.md, Dockerfile copy paths; add unit tests and smoke fixture
-    status: pending
+    status: completed
 isProject: false
 ---
 

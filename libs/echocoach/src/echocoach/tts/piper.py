@@ -64,8 +64,22 @@ class PiperTtsBackend:
             download_voice = None
 
         if download_voice is not None:
-            downloaded = download_voice(voice_name)
-            return Path(downloaded)
+            try:
+                downloaded = download_voice(voice_name)
+                return Path(downloaded)
+            except Exception:
+                pass
+
+        import subprocess
+        import sys
+
+        subprocess.run(
+            [sys.executable, "-m", "piper.download_voices", voice_name],
+            check=True,
+        )
+        for path in candidates:
+            if path.is_file():
+                return path
 
         raise FileNotFoundError(
             f"Piper voice {voice_name!r} not found. "

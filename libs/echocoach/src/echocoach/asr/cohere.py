@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
-
 from echocoach.audio_io import TARGET_SAMPLE_RATE, load_audio_mono_16k
 from echocoach.config import AsrPreset
 

@@ -9,8 +9,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from echocoach.analysis.fillers import analyze_fillers
-from echocoach.audio_io import count_words
 from echocoach.models import FillerAnalysis, PaceAnalysis
 
 
