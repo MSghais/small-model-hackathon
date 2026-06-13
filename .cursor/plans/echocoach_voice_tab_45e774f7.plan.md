@@ -4,7 +4,7 @@ overview: "Add an EchoCoach tab to the existing Gradio app: record a pitch local
 todos:
   - id: scaffold-echocoach-lib
     content: Create libs/echocoach package with config.py, voice_models.yaml loader, EchoCoachResult types, and workspace pyproject wiring
-    status: pending
+    status: in_progress
   - id: analysis-module
     content: Implement filler detection, pace scoring, and matplotlib chart generation (fillers bar + pace timeline)
     status: pending
