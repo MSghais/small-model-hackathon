@@ -75,19 +75,25 @@
     <section class="col col-research">
       <div class="research-layout">
         <div class="research-sources">
-          <h2 class="section-label">Step 1 · Research Library</h2>
-          <div class="card">
-            <p class="card-title">Add Sources</p>
-            <label class="field">
+          <div class="research-sources-head">
+            <h2 class="section-label">
+              <span class="label-full">Step 1 · Research Library</span>
+              <span class="label-compact">Sources for slides</span>
+            </h2>
+            <span id="research-doc-count" class="research-doc-count hidden">0 docs</span>
+          </div>
+          <div class="card card-ingest">
+            <p class="card-title">Add sources</p>
+            <label class="field ingest-workflow-field">
               <span>Ingest workflow</span>
               <select id="ingest-workflow" class="input">
-                <option value="select">Discover → select URLs → ingest</option>
-                <option value="auto">Auto-scrape &amp; index (skip URL pick)</option>
-                <option value="direct">Paste URL or upload only</option>
+                <option value="select">Discover &amp; select URLs</option>
+                <option value="auto">Auto-scrape (no URL pick)</option>
+                <option value="direct">Paste URL or upload</option>
               </select>
             </label>
             <div id="ingest-discover-row" class="ingest-action-row">
-              <button type="button" id="btn-discover" class="btn btn-secondary">
+              <button type="button" id="btn-discover" class="btn btn-secondary btn-block">
                 <span class="material-symbols-outlined">travel_explore</span>
                 Discover on web
               </button>
@@ -95,9 +101,9 @@
             <div id="ingest-auto-row" class="ingest-action-row hidden">
               <button type="button" id="btn-auto-ingest" class="btn btn-secondary btn-block">
                 <span class="material-symbols-outlined">bolt</span>
-                Run auto-ingest from web
+                Run auto-ingest
               </button>
-              <p class="status-text">Skips URL review — searches, verifies, and indexes in one step.</p>
+              <p class="status-text ingest-hint-full">Skips URL review — searches, verifies, and indexes in one step.</p>
             </div>
             <div id="url-choices-panel" class="url-choices-panel hidden">
               <div class="url-choices-head">
@@ -109,24 +115,33 @@
               </div>
               <div id="url-choices-list" class="url-choices-list"></div>
             </div>
-            <input id="ingest-url" type="url" class="input" placeholder="Paste URL here…" />
-            <button type="button" id="btn-ingest-url" class="btn btn-secondary btn-block">Ingest selected sources</button>
-            <label class="upload-zone">
+            <div class="ingest-url-row">
+              <input id="ingest-url" type="url" class="input" placeholder="Paste URL…" />
+              <button type="button" id="btn-ingest-url" class="btn btn-secondary">Ingest</button>
+            </div>
+            <p class="ingest-url-caption status-text">Ingests pasted URL plus any selected sources above.</p>
+            <label class="upload-zone upload-zone-compact">
               <input id="ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
               <span class="material-symbols-outlined">upload_file</span>
               <span>Upload PDF or Doc</span>
             </label>
             <p id="ingest-status" class="status-text"></p>
           </div>
-          <div class="card card-grow">
+          <div class="card card-grow card-docs-rail">
             <div class="card-row">
-              <h3 class="card-title">Indexed Documents</h3>
+              <h3 class="card-title">Indexed documents</h3>
             </div>
-            <div id="documents-panel"></div>
+            <div id="documents-panel" class="documents-panel-scroll"></div>
+          </div>
+          <div class="research-rail-footer">
+            <button type="button" id="btn-open-research-view" class="btn btn-ghost btn-block research-rail-link">
+              <span class="material-symbols-outlined">forum</span>
+              Open Research chat
+            </button>
           </div>
         </div>
-        <div class="research-chat">
-          <h2 class="section-label">Step 2 · Ask with RAG</h2>
+        <div class="research-chat" id="research-chat-panel">
+          <h2 class="section-label label-full">Step 2 · Ask with RAG</h2>
           <div class="card card-chat">
             <div class="card-row">
               <h3 class="card-title">Research chat</h3>

@@ -76,6 +76,31 @@ function syncIngestWorkflowUi() {
   );
 }
 
+function syncResearchLayout() {
+  syncIngestWorkflowUi();
+  updateResearchDocCount(state.workspaceDocIds?.length || 0);
+}
+
+function updateResearchDocCount(count) {
+  const badge = $("#research-doc-count");
+  if (!badge) return;
+  if (!count) {
+    badge.classList.add("hidden");
+    badge.textContent = "0 docs";
+    return;
+  }
+  badge.classList.remove("hidden");
+  badge.textContent = count === 1 ? "1 doc" : `${count} docs`;
+}
+
+function openResearchView() {
+  const researchNav = document.querySelector('.nav-item[data-view="research"]');
+  researchNav?.click();
+  window.setTimeout(() => {
+    $("#research-question")?.focus();
+  }, 80);
+}
+
 function getSelectedDiscoveredUrls() {
   const boxes = document.querySelectorAll("#url-choices-list input[type=checkbox]:checked");
   return [...boxes].map((el) => el.value);
@@ -125,6 +150,7 @@ function applyIngestResult(data) {
     data.documents_html || '<p class="studio-empty-docs">No documents indexed yet.</p>';
   renderWorkspaceDocList(data.documents || []);
   updateResearchRagBadge();
+  updateResearchDocCount((data.documents || []).length);
 }
 
 async function discoverSources() {
@@ -431,6 +457,7 @@ function renderWorkspaceDocList(docs) {
     container.innerHTML = "<p class=\"status-text\">No documents in this session yet.</p>";
     state.workspaceDocIds = [];
     updateWorkspaceRagHint();
+    updateResearchDocCount(0);
     return;
   }
   state.workspaceDocIds = docs.map((d) => d.id);
@@ -448,6 +475,7 @@ function renderWorkspaceDocList(docs) {
   });
   updateWorkspaceRagHint();
   updateResearchRagBadge();
+  updateResearchDocCount(docs.length);
 }
 
 async function refreshWorkspaceSessions(selectId) {
@@ -488,7 +516,7 @@ async function refreshDocuments() {
 
 async function initWorkspace() {
   $("#workspace-topic").value = state.workspaceTopic;
-  syncIngestWorkflowUi();
+  syncResearchLayout();
   updateProjectTitle();
   updateResearchRagBadge();
   await refreshWorkspaceSessions();
@@ -609,9 +637,12 @@ function bindUi() {
       );
       btn.classList.add("active");
       $(".workspace").dataset.view = btn.dataset.view;
+      syncResearchLayout();
       $("#sidebar").classList.remove("open");
     });
   });
+
+  $("#btn-open-research-view")?.addEventListener("click", openResearchView);
 
   $("#sidebar-open")?.addEventListener("click", () =>
     $("#sidebar").classList.add("open")
