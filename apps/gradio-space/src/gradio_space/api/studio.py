@@ -47,6 +47,7 @@ from gradio_space.ui.studio_html import (
     render_slide_canvas,
     render_trace_details,
 )
+from gradio_space.voice_helpers import speak_last_assistant_reply
 from inference.config import get_app_config
 from inference.factory import get_backend
 from researchmind.config import get_config as get_research_config
@@ -528,7 +529,7 @@ def api_teacher_voice_turn(
     topic: str = "",
     session_id: str = "",
     use_rag: bool = True,
-    history: list[list[str]] | None = None,
+    history: list | None = None,
     doc_ids: list[str] | None = None,
     language: str = "en",
     asr_preset: str | None = None,
@@ -571,7 +572,7 @@ def api_teacher_voice_audio_turn(
     topic: str = "",
     session_id: str = "",
     use_rag: bool = True,
-    history: list[list[str]] | None = None,
+    history: list | None = None,
     doc_ids: list[str] | None = None,
     language: str = "en",
     asr_preset: str | None = None,
@@ -611,6 +612,29 @@ def api_teacher_voice_audio_turn(
         voiceout_path=result.voiceout_path,
         user_text=result.user_text,
     )
+
+
+def api_teacher_voice_clear() -> dict[str, Any]:
+    return ok(
+        history=[],
+        assistant="",
+        status="Conversation cleared.",
+    )
+
+
+def api_teacher_voice_speak(
+    history: list | None = None,
+    language: str = "en",
+    first_sentence_only: bool = False,
+) -> dict[str, Any]:
+    playback, status = speak_last_assistant_reply(
+        history or [],
+        language,
+        first_sentence_only=first_sentence_only,
+    )
+    if not playback:
+        return err(status)
+    return ok(voiceout_path=playback, status=status)
 
 
 def api_analyze_pitch(
@@ -860,7 +884,7 @@ def register_studio_apis(server: gr.Server) -> None:
         topic: str = "",
         session_id: str = "",
         use_rag: bool = True,
-        history: list[list[str]] | None = None,
+        history: list | None = None,
         doc_ids: list[str] | None = None,
         language: str = "en",
         asr_preset: str | None = None,
@@ -884,7 +908,7 @@ def register_studio_apis(server: gr.Server) -> None:
         topic: str = "",
         session_id: str = "",
         use_rag: bool = True,
-        history: list[list[str]] | None = None,
+        history: list | None = None,
         doc_ids: list[str] | None = None,
         language: str = "en",
         asr_preset: str | None = None,
@@ -900,6 +924,18 @@ def register_studio_apis(server: gr.Server) -> None:
             language,
             asr_preset,
         )
+
+    @server.api(name="teacher_voice_clear")
+    def _teacher_voice_clear() -> dict[str, Any]:
+        return api_teacher_voice_clear()
+
+    @server.api(name="teacher_voice_speak")
+    def _teacher_voice_speak(
+        history: list | None = None,
+        language: str = "en",
+        first_sentence_only: bool = False,
+    ) -> dict[str, Any]:
+        return api_teacher_voice_speak(history, language, first_sentence_only)
 
     @server.api(name="analyze_pitch")
     def _analyze_pitch(

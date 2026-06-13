@@ -16,6 +16,8 @@ const state = {
   selectedUrls: [],
   slideDiscoveredUrls: [],
   slideSelectedUrls: [],
+  voiceDiscoveredUrls: [],
+  voiceSelectedUrls: [],
   researchChatHistory: [],
   debugChatHistory: [],
   voiceMode: "lesson",
@@ -194,6 +196,163 @@ function renderResearchUrlChoices(urls, selected) {
   });
   syncUrlSelectAll();
   if (getIngestWorkflow() === "select") panel?.classList.remove("hidden");
+}
+
+function voiceEffectiveTopic() {
+  if (state.voiceMode === "pitch") return effectiveTopic("");
+  return effectiveTopic($("#voice-topic")?.value || "");
+}
+
+function voiceUseRag() {
+  return $("#use-rag").checked && state.voiceMode !== "pitch";
+}
+
+function voiceMessageText(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const textPart = content.find((part) => typeof part === "string");
+    return textPart || "";
+  }
+  if (typeof content === "object" && content.text) return String(content.text);
+  return String(content);
+}
+
+function ingestSucceeded(status) {
+  const text = (status || "").toLowerCase();
+  return !(
+    text.includes("error") ||
+    text.includes("enter a research topic") ||
+    text.includes("add urls") ||
+    text.includes("no verified urls found")
+  );
+}
+
+function applyVoiceIngestResult(data) {
+  $("#voice-ingest-status").textContent = stripMd(data.status || "Ingest complete.");
+  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
+  $("#workspace-session").value = state.workspaceSessionId;
+  if (data.documents_html) {
+    $("#documents-panel").innerHTML = data.documents_html;
+  }
+  renderWorkspaceDocList(data.documents || []);
+  updateResearchRagBadge();
+  updateResearchDocCount((data.documents || []).length);
+  if (ingestSucceeded(data.status)) {
+    $("#use-rag").checked = true;
+  }
+}
+
+async function discoverVoiceSources() {
+  const topic = voiceEffectiveTopic();
+  if (!topic) {
+    showError("Set a focus or workspace topic before discovering sources.");
+    return;
+  }
+  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+  $("#voice-ingest-status").textContent = stripMd(data.status || "Discovery complete.");
+  renderVoiceUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  if (data.session_id) {
+    state.workspaceSessionId = data.session_id;
+    $("#workspace-session").value = data.session_id;
+  }
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function autoVoiceIngest() {
+  const topic = voiceEffectiveTopic();
+  if (!topic) {
+    showError("Set a focus or workspace topic before auto-ingest.");
+    return;
+  }
+  const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
+  applyVoiceIngestResult(data);
+  state.voiceDiscoveredUrls = [];
+  state.voiceSelectedUrls = [];
+  renderVoiceUrlChoices([], []);
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function ingestVoiceSources() {
+  const topic = voiceEffectiveTopic();
+  const pasted = $("#voice-urls-text")?.value.trim() || "";
+  const selected = getSelectedDiscoveredUrls("#voice-url-choices-list");
+  const paths = [];
+  const files = $("#voice-ingest-file")?.files;
+  if (files?.length) {
+    for (const file of files) {
+      paths.push(await uploadFile(file));
+    }
+  }
+  if (!pasted && !selected.length && !paths.length) {
+    showError("Add URLs, select suggested sources, or upload a file — then ingest.");
+    return;
+  }
+  const data = await callApi("ingest_sources", [
+    topic,
+    state.workspaceSessionId,
+    pasted,
+    selected,
+    paths,
+  ]);
+  applyVoiceIngestResult(data);
+  if (pasted) $("#voice-urls-text").value = "";
+  if (files?.length) $("#voice-ingest-file").value = "";
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+function syncVoiceModeUi() {
+  const ragMode = state.voiceMode === "explain" || state.voiceMode === "lesson";
+  $("#voice-topic-wrap")?.classList.toggle("hidden", !ragMode);
+  $("#voice-rag-sources")?.classList.toggle("hidden", !ragMode);
+  const placeholders = {
+    explain: "e.g. How does finetuning differ from pretraining?",
+    lesson: "What is the difference between pretraining and finetuning a small model?",
+    pitch: "e.g. Here is my opening line — how can I improve it?",
+  };
+  const messageEl = $("#voice-message");
+  if (messageEl) messageEl.placeholder = placeholders[state.voiceMode] || placeholders.lesson;
+}
+
+function renderVoiceChat() {
+  const container = $("#voice-chat-messages");
+  if (!container) return;
+  if (!state.history.length) {
+    container.innerHTML =
+      '<p class="research-chat-empty">Type a message or record audio, then send.</p>';
+    return;
+  }
+  const parts = [];
+  for (const item of state.history) {
+    if (item && typeof item === "object" && item.role) {
+      const role = item.role === "user" ? "user" : "assistant";
+      const label = role === "user" ? "You" : "Teacher";
+      const body = renderMarkdownLite(voiceMessageText(item.content));
+      parts.push(
+        `<div class="research-chat-bubble research-chat-${role}"><div class="research-chat-role">${label}</div><div class="research-chat-body">${body}</div></div>`
+      );
+    } else if (Array.isArray(item) && item.length === 2) {
+      const [user, assistant] = item;
+      parts.push(
+        `<div class="research-chat-bubble research-chat-user"><div class="research-chat-role">You</div><div class="research-chat-body">${renderMarkdownLite(user)}</div></div>` +
+          `<div class="research-chat-bubble research-chat-assistant"><div class="research-chat-role">Teacher</div><div class="research-chat-body">${renderMarkdownLite(assistant)}</div></div>`
+      );
+    }
+  }
+  container.innerHTML = parts.join("");
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderVoiceUrlChoices(urls, selected) {
+  state.voiceDiscoveredUrls = urls || [];
+  state.voiceSelectedUrls = selected?.length ? selected : [...state.voiceDiscoveredUrls];
+  renderUrlChoices(
+    urls,
+    selected,
+    "#voice-url-choices-list",
+    "#voice-url-choices-panel",
+    { discovered: state.voiceDiscoveredUrls, selected: state.voiceSelectedUrls }
+  );
 }
 
 function renderSlideUrlChoices(urls, selected) {
@@ -705,6 +864,8 @@ async function initWorkspace() {
   await refreshDocuments();
   await initVoicePresets();
   await initSettings();
+  syncVoiceModeUi();
+  renderVoiceChat();
   const recStatus = await callApi("recording_status", []);
   state.useBrowserMic = !recStatus.backend || /unavailable|no capture/i.test(recStatus.message || "");
 }
@@ -802,20 +963,28 @@ async function generateSlides() {
   }
 }
 
-function renderVoiceReply(data) {
-  $("#voice-reply").textContent = data.assistant || data.status || "";
+function renderVoiceReply(data, { keepAudio = false } = {}) {
+  state.history = data.history ?? state.history;
+  renderVoiceChat();
+  if (data.status) {
+    $("#voice-turn-status").textContent = stripMd(data.status);
+  }
   const out = $("#voice-audio-out");
   if (data.voiceout_path) {
     out.innerHTML = `<audio controls src="${fileUrl(data.voiceout_path)}"></audio>`;
-  } else {
+  } else if (!keepAudio) {
     out.innerHTML = "";
   }
 }
 
 async function sendVoiceTurn() {
   const message = $("#voice-message").value.trim();
-  const topic = effectiveTopic("");
-  const useRag = $("#use-rag").checked;
+  if (!message) {
+    showError("Enter a message first.");
+    return;
+  }
+  const topic = voiceEffectiveTopic();
+  const useRag = voiceUseRag();
   const docIds = effectiveDocIds([]);
   const language = state.voicePresets?.default_language || "en";
   const data = await callApi("teacher_voice_turn", [
@@ -829,13 +998,13 @@ async function sendVoiceTurn() {
     language,
     null,
   ]);
-  state.history = data.history || [];
+  $("#voice-message").value = "";
   renderVoiceReply(data);
 }
 
 async function sendVoiceAudioTurn(audioPath) {
-  const topic = effectiveTopic("");
-  const useRag = $("#use-rag").checked;
+  const topic = voiceEffectiveTopic();
+  const useRag = voiceUseRag();
   const docIds = effectiveDocIds([]);
   const language = state.voicePresets?.default_language || "en";
   const asr = state.voicePresets?.default_asr || null;
@@ -850,9 +1019,26 @@ async function sendVoiceAudioTurn(audioPath) {
     language,
     asr,
   ]);
-  state.history = data.history || [];
   if (data.user_text) $("#voice-message").value = data.user_text;
   renderVoiceReply(data);
+}
+
+async function speakVoiceReply(firstSentenceOnly) {
+  const language = state.voicePresets?.default_language || "en";
+  const data = await callApi("teacher_voice_speak", [state.history, language, firstSentenceOnly]);
+  $("#voice-turn-status").textContent = stripMd(data.status || "VoiceOut ready.");
+  if (data.voiceout_path) {
+    $("#voice-audio-out").innerHTML = `<audio controls src="${fileUrl(data.voiceout_path)}"></audio>`;
+  }
+}
+
+async function clearVoiceConversation() {
+  const data = await callApi("teacher_voice_clear", []);
+  state.history = [];
+  renderVoiceChat();
+  $("#voice-message").value = "";
+  $("#voice-turn-status").textContent = stripMd(data.status || "Conversation cleared.");
+  $("#voice-audio-out").innerHTML = "";
 }
 
 async function analyzePitchWithPath(audioPath) {
@@ -1032,6 +1218,13 @@ function bindUi() {
   $("#btn-generate").addEventListener("click", () => generateSlides().catch(() => {}));
   $("#btn-voice-send").addEventListener("click", () => sendVoiceTurn().catch(() => {}));
   $("#btn-voice-audio-send").addEventListener("click", () => sendVoiceFromRecording().catch(() => {}));
+  $("#btn-voice-discover")?.addEventListener("click", () => discoverVoiceSources().catch(() => {}));
+  $("#btn-voice-auto-ingest")?.addEventListener("click", () => autoVoiceIngest().catch(() => {}));
+  $("#btn-voice-ingest")?.addEventListener("click", () => ingestVoiceSources().catch(() => {}));
+  $("#voice-ingest-file")?.addEventListener("change", (e) => ingestVoiceSources().catch(() => {}));
+  $("#btn-voice-speak-full")?.addEventListener("click", () => speakVoiceReply(false).catch(() => {}));
+  $("#btn-voice-speak-quick")?.addEventListener("click", () => speakVoiceReply(true).catch(() => {}));
+  $("#btn-voice-clear")?.addEventListener("click", () => clearVoiceConversation().catch(() => {}));
   $("#btn-analyze").addEventListener("click", () => analyzePitch().catch(() => {}));
   $("#btn-debug-send").addEventListener("click", () => sendDebugMessage().catch(() => {}));
   $("#debug-message")?.addEventListener("keydown", (e) => {
@@ -1077,6 +1270,7 @@ function bindUi() {
       document.querySelectorAll(".mode-card").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       state.voiceMode = btn.dataset.mode;
+      syncVoiceModeUi();
     });
   });
 }

@@ -299,6 +299,35 @@
           <button type="button" class="mode-card active" data-mode="lesson">Coach</button>
           <button type="button" class="mode-card" data-mode="pitch">Practice</button>
         </div>
+        <label class="field voice-topic-wrap" id="voice-topic-wrap">
+          <span>Focus topic</span>
+          <input id="voice-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
+        </label>
+        <details class="voice-rag-sources" id="voice-rag-sources">
+          <summary>ResearchMind sources (optional)</summary>
+          <p class="status-text">Set focus topic, then discover or ingest sources. Enable RAG above to ground answers in your library.</p>
+          <div class="ingest-action-row">
+            <button type="button" id="btn-voice-discover" class="btn btn-secondary">Discover on web</button>
+            <button type="button" id="btn-voice-auto-ingest" class="btn btn-secondary">Auto-ingest from web</button>
+          </div>
+          <div id="voice-url-choices-panel" class="url-choices-panel hidden">
+            <div id="voice-url-choices-list" class="url-choices-list"></div>
+          </div>
+          <label class="field">
+            <span>Paste URLs (one per line)</span>
+            <textarea id="voice-urls-text" class="input" rows="2" placeholder="https://…"></textarea>
+          </label>
+          <label class="upload-zone upload-zone-compact">
+            <input id="voice-ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
+            <span class="material-symbols-outlined">upload_file</span>
+            <span>Upload PDF or Doc</span>
+          </label>
+          <button type="button" id="btn-voice-ingest" class="btn btn-secondary btn-block">Ingest sources</button>
+          <p id="voice-ingest-status" class="status-text"></p>
+        </details>
+        <div id="voice-chat-messages" class="research-chat-messages voice-chat-messages">
+          <p class="research-chat-empty">Type a message or record audio, then send.</p>
+        </div>
         <label class="field voice-panel" id="voice-panel">
           <span>Ask the teacher</span>
           <textarea id="voice-message" class="input" rows="3" placeholder="What is the difference between pretraining and finetuning a small model?"></textarea>
@@ -310,9 +339,14 @@
           <p id="voice-record-status" class="status-text"></p>
           <button type="button" id="btn-voice-send" class="btn btn-secondary btn-block">Send text</button>
           <button type="button" id="btn-voice-audio-send" class="btn btn-primary btn-block">Send voice turn</button>
-          <div id="voice-reply" class="voice-reply"></div>
-          <div id="voice-audio-out" class="voice-audio-out"></div>
         </label>
+        <p id="voice-turn-status" class="status-text"></p>
+        <div class="voice-replay-row">
+          <button type="button" id="btn-voice-speak-full" class="btn btn-secondary">Speak full reply</button>
+          <button type="button" id="btn-voice-speak-quick" class="btn btn-secondary">Speak first sentence</button>
+          <button type="button" id="btn-voice-clear" class="btn btn-ghost">Clear conversation</button>
+        </div>
+        <div id="voice-audio-out" class="voice-audio-out"></div>
       </div>
       <div class="card coach-panel-wrap">
         <h2 class="section-label">EchoCoach Feedback</h2>
