@@ -169,7 +169,7 @@ def run_teacher_voice_turn(
 
     config = get_echo_coach_config()
     asr_key = asr_preset or config.asr_preset
-    tts_key = tts_preset or config.tts_preset
+    tts_key = tts_preset or config.realtime_tts_preset or config.tts_preset
     model_key = coach_model or config.coach_model
     turn_cap = max_turn_seconds or min(15, config.max_seconds)
     run_id = uuid.uuid4().hex[:12]

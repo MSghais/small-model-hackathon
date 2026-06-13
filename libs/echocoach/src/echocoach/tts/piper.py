@@ -135,6 +135,10 @@ class PiperTtsBackend:
 def get_tts_backend(preset_key: str | None = None) -> TtsBackend:
     config = get_echo_coach_config()
     preset = config.get_tts(preset_key)
+    if preset.backend == "vibevoice":
+        from echocoach.tts.vibevoice import get_vibevoice_backend
+
+        return get_vibevoice_backend(preset)
     if preset.key not in _tts_cache:
         _tts_cache[preset.key] = PiperTtsBackend(preset)
     return _tts_cache[preset.key]

@@ -4,6 +4,8 @@
 defaults:
   asr_preset: whisper-cpp-tiny
   tts_preset: piper-multilingual
+  # Realtime streaming TTS for TeacherVoice VoiceOut (set ECHOCOACH_TTS_PRESET to match)
+  realtime_tts_preset: vibevoice-realtime-0.5b
   coach_model: minicpm5-1b
   max_seconds: 30
 
@@ -80,3 +82,16 @@ tts:
       vi: vi_VN-25hours-single
       ko: ko_KR-kss-medium
     fallback_voice: en_US-lessac-medium
+
+  # Microsoft VibeVoice Realtime — streaming TTS, ~300ms to first audio (GPU recommended).
+  # https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B
+  # English-first; also supports de, fr, it, es, pt, nl, pl, ja, ko (experimental).
+  # Requires transformers + torch; falls back to Piper until fully wired in echocoach.
+  vibevoice-realtime-0.5b:
+    label: VibeVoice Realtime 0.5B (streaming, ~300ms)
+    backend: vibevoice
+    model_id: microsoft/VibeVoice-Realtime-0.5B
+    streaming: true
+    realtime: true
+    languages: [en, de, fr, it, es, pt, nl, pl, ja, ko]
+    fallback_language: en

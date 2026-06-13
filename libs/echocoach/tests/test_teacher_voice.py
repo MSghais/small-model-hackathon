@@ -126,6 +126,19 @@ def test_last_assistant_message():
     assert last_assistant_message(gradio_history) == "Hello there."
 
 
+def test_vibevoice_preset_in_voice_models():
+    from echocoach.config import get_echo_coach_config
+
+    config = get_echo_coach_config(reload=True)
+    preset = config.get_tts("vibevoice-realtime-0.5b")
+    assert preset.backend == "vibevoice"
+    assert preset.model_id == "microsoft/VibeVoice-Realtime-0.5B"
+    assert preset.realtime is True
+    assert preset.streaming is True
+    assert "en" in preset.supported_languages
+    assert config.realtime_tts_preset == "vibevoice-realtime-0.5b"
+
+
 def test_strip_references_for_tts():
     text = "Answer here.\n\n**References**\n[1] Source"
     assert strip_references_for_tts(text) == "Answer here."

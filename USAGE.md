@@ -109,7 +109,8 @@ Configure presets in [`voice_models.yaml`](voice_models.yaml) or via `.env`:
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `ECHOCOACH_ASR_PRESET` | `whisper-cpp-tiny` | ASR preset key |
-| `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key |
+| `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key (EchoCoach, default VoiceOut) |
+| `ECHOCOACH_REALTIME_TTS_PRESET` | `vibevoice-realtime-0.5b` | TeacherVoice streaming TTS (see below) |
 | `ECHOCOACH_COACH_MODEL` | `minicpm5-1b` | Text coach preset (from `models.yaml`) |
 | `ECHOCOACH_MAX_SECONDS` | `30` | Max recording length |
 
@@ -152,6 +153,8 @@ python -m piper.download_voices en_US-lessac-medium
 ```
 
 Voices are stored under `models/piper/` (gitignored) or `~/.local/share/piper/voices/`. **Restart the Gradio app** after installing Piper so the Speak buttons can synthesize audio.
+
+**Realtime TTS (VibeVoice)** — [microsoft/VibeVoice-Realtime-0.5B](https://huggingface.co/microsoft/VibeVoice-Realtime-0.5B) is registered in `voice_models.yaml` as `vibevoice-realtime-0.5b` (~300 ms to first audio, streaming text-in). TeacherVoice uses `realtime_tts_preset` from YAML by default; override with `ECHOCOACH_REALTIME_TTS_PRESET` or set `ECHOCOACH_TTS_PRESET=vibevoice-realtime-0.5b` globally. GPU recommended; falls back to Piper until the model loads. English-first; de/fr/it/es/pt/nl/pl/ja/ko are experimental per the model card.
 
 Enable RAG in the accordion: pick a ResearchMind session and optional documents (same scope rules as Chat debug).
 
