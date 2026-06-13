@@ -10,16 +10,16 @@ todos:
     status: completed
   - id: voice-tabs
     content: Refactor EchoCoach + TeacherVoice to use shared recording, step strips, Advanced panels; promote TeacherVoice RAG checkbox
-    status: in_progress
+    status: completed
   - id: lesson-slides
     content: "Redesign education_pptx.py as wizard: source mode radio, optional sources accordion, move trace to Advanced"
-    status: pending
+    status: completed
   - id: researchmind
     content: Two-column ResearchMind layout; split Discover vs Auto-ingest buttons; compact memory; optional citation display in chat
-    status: pending
+    status: completed
   - id: chat-polish
     content: Group Chat (debug) RAG controls; dev tab styling; optional RAG trace surfacing
-    status: pending
+    status: completed
 isProject: false
 ---
 

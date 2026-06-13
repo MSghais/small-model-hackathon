@@ -10,7 +10,6 @@ from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
 from gradio_space.ui.components import (
     build_advanced_panel,
     build_recording_block,
-    empty_state,
     tab_hero,
     wire_recording_handlers,
 )
@@ -143,59 +142,15 @@ def build_echo_coach_tab() -> None:
             )
 
         with gr.Column(scale=2):
-            results_placeholder = gr.HTML(
-                value=empty_state(
-                    f"Record up to {_config.max_seconds}s, then click <strong>Analyze pitch</strong>."
-                )
-            )
-            transcript_html = gr.HTML(label="Transcript", visible=False)
-            report_md = gr.Markdown(label="Coach report", visible=False)
+            transcript_html = gr.HTML(label="Transcript")
+            report_md = gr.Markdown(label="Coach report")
             with gr.Row():
-                filler_chart = gr.Image(label="Filler words", type="filepath", visible=False)
-                pace_chart = gr.Image(label="Pace timeline", type="filepath", visible=False)
-            voiceout = gr.Audio(label="VoiceOut", type="filepath", visible=False)
+                filler_chart = gr.Image(label="Filler words", type="filepath")
+                pace_chart = gr.Image(label="Pace timeline", type="filepath")
+            voiceout = gr.Audio(label="VoiceOut", type="filepath")
 
     advanced = build_advanced_panel(use_json=True)
     trace_note = gr.Markdown()
-
-    def _show_results(
-        st: str,
-        transcript: str,
-        report: str,
-        filler,
-        pace,
-        voice,
-        note: str,
-        trace: dict,
-    ) -> tuple:
-        has_error = transcript.startswith("<p style=")
-        if has_error:
-            return (
-                st,
-                gr.update(visible=False),
-                gr.update(value=transcript, visible=True),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(visible=False),
-                gr.update(value=empty_state(st)),
-                note,
-                trace,
-                "",
-            )
-        return (
-            st,
-            gr.update(visible=False),
-            gr.update(value=transcript, visible=True),
-            gr.update(value=report, visible=True),
-            gr.update(value=filler, visible=True),
-            gr.update(value=pace, visible=True),
-            gr.update(value=voice, visible=True),
-            gr.update(visible=False),
-            note,
-            trace,
-            note,
-        )
 
     analyze_btn.click(
         analyze_pitch,
@@ -214,31 +169,6 @@ def build_echo_coach_tab() -> None:
             voiceout,
             trace_note,
             advanced.trace_box,
-        ],
-    ).then(
-        _show_results,
-        inputs=[
-            status,
-            transcript_html,
-            report_md,
-            filler_chart,
-            pace_chart,
-            voiceout,
-            trace_note,
-            advanced.trace_box,
-        ],
-        outputs=[
-            status,
-            results_placeholder,
-            transcript_html,
-            report_md,
-            filler_chart,
-            pace_chart,
-            voiceout,
-            results_placeholder,
-            trace_note,
-            advanced.trace_box,
-            advanced.trace_summary,
         ],
     )
 

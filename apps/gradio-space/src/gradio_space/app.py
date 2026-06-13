@@ -19,11 +19,7 @@ from gradio_space.ui.theme import get_theme, load_css
 
 
 def build_demo() -> gr.Blocks:
-    with gr.Blocks(
-        title="Build Small — Lesson Agent",
-        theme=get_theme(),
-        css=load_css(),
-    ) as demo:
+    with gr.Blocks(title="Build Small — Lesson Agent") as demo:
         with gr.Row(elem_classes=["app-header"]):
             gr.HTML(
                 """
@@ -78,6 +74,8 @@ def main() -> None:
     demo.launch(
         server_name=server_name,
         server_port=port,
+        theme=get_theme(),
+        css=load_css(),
         allowed_paths=[
             *gradio_allowed_paths(),
             *researchmind_allowed_paths(),

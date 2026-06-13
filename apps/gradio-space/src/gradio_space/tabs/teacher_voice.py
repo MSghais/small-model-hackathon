@@ -3,25 +3,21 @@ from __future__ import annotations
 import gradio as gr
 
 from echocoach.config import get_echo_coach_config
+from echocoach.omni import omni_status_message
 from echocoach.prompts import MODE_LABELS, TeacherVoiceMode
-from echocoach.recording import (
-    ServerRecordingError,
-    recording_backend_status,
-    recording_elapsed_seconds,
-    recording_level_warning,
-    start_server_recording,
-    stop_server_recording,
-)
 from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_turn
-from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
+from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
 from gradio_space.research_helpers import (
-    list_doc_choices,
     list_session_choices,
     rag_scope_hint,
     refresh_doc_choices,
     refresh_sessions,
 )
-from echocoach.omni import omni_status_message
+from gradio_space.ui.components import (
+    build_recording_block,
+    tab_hero,
+    wire_recording_handlers,
+)
 from gradio_space.voice_helpers import speak_last_assistant_reply
 from inference.factory import get_backend
 
@@ -34,64 +30,10 @@ def _empty_turn() -> tuple:
     return (
         [],
         None,
-        "Start recording, speak your question, stop, then click **Send turn**.",
+        "Record your question, then click **Send turn**.",
         "",
         {},
     )
-
-
-def ui_start_recording(max_seconds: int) -> tuple[str, dict, dict]:
-    try:
-        start_server_recording(int(max_seconds))
-    except ServerRecordingError as exc:
-        return (
-            str(exc),
-            gr.update(interactive=True),
-            gr.update(interactive=False),
-        )
-    return (
-        (
-            f"Recording… speak now, then click **Stop recording** "
-            f"(auto-stops after {int(max_seconds)}s)."
-        ),
-        gr.update(interactive=False),
-        gr.update(interactive=True),
-    )
-
-
-def ui_stop_recording() -> tuple[str | None, str, dict, dict]:
-    try:
-        elapsed = recording_elapsed_seconds()
-        path = stop_server_recording()
-        warning = recording_level_warning(path)
-    except ServerRecordingError as exc:
-        return (
-            None,
-            str(exc),
-            gr.update(interactive=True),
-            gr.update(interactive=False),
-        )
-    except Exception as exc:  # noqa: BLE001
-        return (
-            None,
-            f"Recording failed: {exc}",
-            gr.update(interactive=True),
-            gr.update(interactive=False),
-        )
-
-    status = f"Recording saved ({elapsed:.1f}s). Click **Send turn** to talk to TeacherVoice."
-    if warning:
-        status += f" Warning: {warning}"
-    return (
-        gr.update(value=str(path)),
-        status,
-        gr.update(interactive=True),
-        gr.update(interactive=False),
-    )
-
-
-def clear_conversation() -> tuple:
-    return _empty_turn()
 
 
 def send_turn(
@@ -104,55 +46,47 @@ def send_turn(
     use_rag: bool,
     session_id: str,
     doc_ids: list[str] | None,
+    progress: gr.Progress = gr.Progress(),
 ) -> tuple:
+    progress(0, desc="Loading model…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        return (
-            history,
-            None,
-            load_error,
-            "",
-            {},
-        )
+        return [], None, load_error, "", {}
 
     if not audio_path:
-        return (
-            history,
-            None,
-            "Record or upload audio, then click **Send turn**.",
-            "",
-            {},
-        )
+        return _empty_turn()
 
     try:
+        progress(0.15, desc="Listening…")
         result = run_teacher_voice_turn(
             audio_path,
             history,
             mode=mode,
             language=language,
-            topic=topic or None,
             asr_preset=asr_preset,
+            topic=topic.strip() or None,
             backend=get_backend(model_key),
             use_rag=use_rag and mode in RAG_MODES,
-            session_id=session_id,
-            doc_ids=doc_ids,
+            session_id=session_id or None,
+            doc_ids=doc_ids or None,
             max_turn_seconds=_TURN_MAX,
         )
     except Exception as exc:  # noqa: BLE001
-        return (
-            history,
-            None,
-            f"TeacherVoice failed: {exc}",
-            "",
-            {},
-        )
+        return [], None, f"TeacherVoice failed: {exc}", "", {}
 
-    status = f"Turn complete — transcribed {len(result.user_text)} chars, replied in voice."
+    progress(1.0, desc="Done")
+    status = (
+        f"Turn complete — user {result.user_chars} chars, "
+        f"teacher {result.assistant_chars} chars."
+    )
     if result.voiceout_warning:
         status += f" VoiceOut: {result.voiceout_warning}"
 
-    playback = result.voiceout_first_path or result.voiceout_path
+    playback = result.voiceout_path
+    if playback:
+        playback = str(playback)
+
     return (
         result.history,
         playback,
@@ -160,6 +94,10 @@ def send_turn(
         f"Trace saved: `{result.trace_path}`",
         result.trace,
     )
+
+
+def clear_conversation() -> tuple:
+    return _empty_turn()
 
 
 def _format_speak_status(status: str) -> str:
@@ -178,114 +116,115 @@ def speak_quick_reply(history: list, language: str) -> tuple[str | None, str, st
     return playback, status, _format_speak_status(status)
 
 
+def _topic_visible(mode: str) -> dict:
+    return gr.update(visible=mode in ("explain", "lesson"))
+
+
+def _rag_visible(mode: str) -> dict:
+    return gr.update(visible=mode in RAG_MODES)
+
+
 def build_teacher_voice_tab() -> None:
     lang_choices = _config.language_choices()
     asr_choices = _config.asr_choices()
     default_lang = lang_choices[0][1] if lang_choices else "en"
     default_asr = _config.asr_preset
-    mic_status = recording_backend_status()
-
     omni_note = omni_status_message()
-    gr.Markdown(
-        f"""
-**TeacherVoice** — turn-based voice conversation with a local teacher (not full duplex).
 
-1. Choose a mode → record a short turn (max **{_TURN_MAX}s**) → **Send turn** → hear the reply.
-2. **Explain** — tutor any topic. **Lesson coach** — outline and discuss lessons. **Pitch practice** — live speaking tips.
-3. For deep pitch analysis (pace charts, filler counts), use the **EchoCoach** tab.
-
-Latency is typically a few seconds per turn on GPU; CPU may take longer.
-{omni_note or ""}
-"""
+    tab_hero(
+        "Turn-based voice conversation with a local teacher — record, send, hear the reply.",
+        steps=["Mode", "Record", "Send", "Listen"],
+        active_step=0,
     )
+    if omni_note:
+        gr.Markdown(omni_note)
 
     with gr.Row():
         with gr.Column(scale=1):
-            mode_dd = gr.Dropdown(
+            mode_dd = gr.Radio(
                 label="Mode",
                 choices=_MODE_CHOICES,
                 value="explain",
+                elem_classes=["mode-cards"],
             )
             topic_tb = gr.Textbox(
                 label="Topic (Explain / Lesson modes)",
                 placeholder="e.g. Photosynthesis for grade 6",
             )
-            record_status_md = gr.Markdown(mic_status)
-            with gr.Accordion("Record from this computer", open=True):
-                record_seconds = gr.Slider(
-                    label="Max turn length (seconds)",
-                    minimum=3,
-                    maximum=_TURN_MAX,
-                    value=_TURN_MAX,
-                    step=1,
-                )
-                with gr.Row():
-                    record_start_btn = gr.Button("Start recording", variant="secondary")
-                    record_stop_btn = gr.Button("Stop recording", variant="stop", interactive=False)
-            audio_in = gr.Audio(
-                label="Your turn (browser mic or upload)",
-                sources=["upload", "microphone"],
-                type="filepath",
-                format="wav",
+
+            use_rag = gr.Checkbox(
+                label="Use my ResearchMind sources",
+                value=False,
             )
-            language = gr.Dropdown(label="Language", choices=lang_choices, value=default_lang)
-            asr_preset = gr.Dropdown(label="ASR preset", choices=asr_choices, value=default_asr)
-            with gr.Accordion("ResearchMind RAG (Explain / Lesson)", open=False):
-                use_rag = gr.Checkbox(label="Ground answers in ingested sources", value=False)
+            with gr.Row():
                 session_dd = gr.Dropdown(
                     label="Session",
                     choices=list_session_choices(),
                     value="",
+                    scale=4,
                 )
-                refresh_sessions_btn = gr.Button("Refresh sessions", size="sm")
-                doc_dd = gr.CheckboxGroup(label="Documents (empty = all in session)", choices=[], value=[])
-                rag_hint = gr.Markdown(value=rag_scope_hint("", []))
-            with gr.Row():
-                send_btn = gr.Button("Send turn", variant="primary")
-                clear_btn = gr.Button("Clear conversation", variant="secondary")
+                refresh_sessions_btn = gr.Button("↻", size="sm", scale=0, min_width=40)
+            doc_dd = gr.CheckboxGroup(
+                label="Documents (empty = all in session)",
+                choices=[],
+                value=[],
+            )
+            rag_hint = gr.Markdown(value="_RAG off — model knowledge only._")
+
+            rec = build_recording_block(
+                max_seconds=_TURN_MAX,
+                default_seconds=_TURN_MAX,
+                lang_choices=lang_choices,
+                asr_choices=asr_choices,
+                default_lang=default_lang,
+                default_asr=default_asr,
+                audio_label="Your turn (mic or upload)",
+                advanced_open=True,
+            )
             status = gr.Textbox(label="Status", interactive=False, lines=3)
-            coach_status = gr.Markdown(model_status(get_active_model_key()))
+            rec.status = status
+
+            with gr.Row():
+                send_btn = gr.Button("Send turn", variant="primary", elem_classes=["primary-cta"])
+                clear_btn = gr.Button("Clear", variant="secondary")
+
+            wire_recording_handlers(
+                rec,
+                stop_next_action="Click **Send turn**.",
+                status_output=status,
+            )
 
         with gr.Column(scale=2):
-            chatbot = gr.Chatbot(label="Conversation", height=360)
-            with gr.Row():
-                speak_full_btn = gr.Button("Speak last reply", variant="secondary")
-                speak_quick_btn = gr.Button("Speak first sentence", variant="secondary")
-            speak_status = gr.Markdown(
-                value="_Use **Speak** buttons to hear the latest teacher reply._"
-            )
+            chatbot = gr.Chatbot(label="Conversation", height=400)
             voiceout = gr.Audio(
-                label="Teacher reply (auto after Send turn, or use Speak buttons)",
+                label="Teacher reply",
                 type="filepath",
                 autoplay=True,
             )
-            trace_note = gr.Markdown()
-            trace_json = gr.JSON(label="Trace")
 
-    record_start_btn.click(
-        ui_start_recording,
-        inputs=[record_seconds],
-        outputs=[status, record_start_btn, record_stop_btn],
-    )
-    record_stop_btn.click(
-        ui_stop_recording,
-        outputs=[audio_in, status, record_start_btn, record_stop_btn],
-    ).then(
-        lambda: recording_backend_status(),
-        outputs=[record_status_md],
-    )
+    with gr.Accordion("Advanced & debug", open=False):
+        with gr.Row():
+            speak_full_btn = gr.Button("Speak last reply", variant="secondary")
+            speak_quick_btn = gr.Button("Speak first sentence", variant="secondary")
+        speak_status = gr.Markdown(
+            value="_VoiceOut auto-plays after each turn. Use Speak buttons to replay._"
+        )
+        trace_note = gr.Markdown()
+        trace_json = gr.JSON(label="Trace")
+
+    mode_dd.change(fn=_topic_visible, inputs=[mode_dd], outputs=[topic_tb])
+    mode_dd.change(fn=_rag_visible, inputs=[mode_dd], outputs=[use_rag])
+
+    def _update_rag_hint(rag_on: bool, sid: str, docs: list[str] | None) -> str:
+        if not rag_on:
+            return "_RAG off — model knowledge only._"
+        return rag_scope_hint(sid, docs)
 
     refresh_sessions_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
-    session_dd.change(
-        fn=refresh_doc_choices,
-        inputs=[session_dd, doc_dd],
-        outputs=[doc_dd],
-    )
+    session_dd.change(fn=refresh_doc_choices, inputs=[session_dd, doc_dd], outputs=[doc_dd])
     for trigger in (use_rag, session_dd, doc_dd):
         trigger.change(
-            fn=lambda rag_on, sid, docs: (
-                rag_scope_hint(sid, docs) if rag_on else "_RAG off — model knowledge only._"
-            ),
+            fn=_update_rag_hint,
             inputs=[use_rag, session_dd, doc_dd],
             outputs=[rag_hint],
         )
@@ -293,11 +232,11 @@ Latency is typically a few seconds per turn on GPU; CPU may take longer.
     send_btn.click(
         send_turn,
         inputs=[
-            audio_in,
+            rec.audio_in,
             chatbot,
             mode_dd,
-            language,
-            asr_preset,
+            rec.language,
+            rec.asr_preset,
             topic_tb,
             use_rag,
             session_dd,
@@ -306,16 +245,19 @@ Latency is typically a few seconds per turn on GPU; CPU may take longer.
         outputs=[chatbot, voiceout, status, trace_note, trace_json],
     )
 
-    clear_btn.click(clear_conversation, outputs=[chatbot, voiceout, status, trace_note, trace_json])
+    clear_btn.click(
+        clear_conversation,
+        outputs=[chatbot, voiceout, status, trace_note, trace_json],
+    )
 
     speak_full_btn.click(
         speak_full_reply,
-        inputs=[chatbot, language],
+        inputs=[chatbot, rec.language],
         outputs=[voiceout, status, speak_status],
     )
     speak_quick_btn.click(
         speak_quick_reply,
-        inputs=[chatbot, language],
+        inputs=[chatbot, rec.language],
         outputs=[voiceout, status, speak_status],
     )
 

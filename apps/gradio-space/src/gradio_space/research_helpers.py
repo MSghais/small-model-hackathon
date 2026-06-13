@@ -130,6 +130,27 @@ def merge_lesson_urls(pasted: str, selected: list[str] | None) -> list[str]:
     return list(dict.fromkeys([*direct, *(selected or [])]))
 
 
+def format_citations_markdown(trace_json: str) -> str:
+    """Extract citation lines from RAG trace JSON for chat display."""
+    if not trace_json or not trace_json.strip().startswith("{"):
+        return ""
+    try:
+        data = json.loads(trace_json)
+    except json.JSONDecodeError:
+        return ""
+    citations = data.get("citations") or []
+    if not citations:
+        return ""
+    lines = ["", "---", "**Sources:**"]
+    for i, cite in enumerate(citations[:5], start=1):
+        title = cite.get("title") or cite.get("uri") or "Source"
+        uri = cite.get("uri") or ""
+        lines.append(f"{i}. [{title}]({uri})" if uri else f"{i}. {title}")
+    if len(citations) > 5:
+        lines.append(f"_…and {len(citations) - 5} more (see Advanced trace)._")
+    return "\n".join(lines)
+
+
 def rag_scope_hint(session_id: str, doc_ids: list[str] | None) -> str:
     if doc_ids:
         return f"RAG scope: **{len(doc_ids)}** selected document(s)."
@@ -192,14 +213,18 @@ def rag_aware_chat(
     use_rag: bool,
     session_id: str,
     doc_ids: list[str] | None,
-) -> str:
+) -> tuple[str, str, str]:
+    """Returns (reply, trace_json, trace_summary) for debug chat."""
     if not use_rag:
-        return chat(message, history, model_key)
+        return chat(message, history, model_key), "", ""
 
-    answer, _, _ = run_research_question(
+    answer, trace_json, trace_summary = run_research_question(
         message,
         session_id=session_id,
         doc_ids=doc_ids,
         model_key=model_key,
     )
-    return answer
+    citations = format_citations_markdown(trace_json)
+    if citations:
+        answer = f"{answer}\n{citations}"
+    return answer, trace_json, trace_summary

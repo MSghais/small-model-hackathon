@@ -4,13 +4,14 @@ import gradio as gr
 
 from agent.runner import AgentRunner
 from agent.tools.pptx import get_outputs_dir
-from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
+from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
 from gradio_space.research_helpers import (
     list_session_choices,
     merge_lesson_urls,
     refresh_doc_choices,
     refresh_sessions,
 )
+from gradio_space.ui.components import build_advanced_panel, tab_hero
 from inference.factory import get_backend
 from researchmind.config import get_config
 
@@ -21,7 +22,7 @@ SOURCE_MODES = [
 ]
 
 SEARCH_WORKFLOWS = [
-    ("Two-step search (suggest & confirm)", "two_step"),
+    ("Two-step (discover & confirm)", "two_step"),
     ("Auto search & ingest", "auto"),
 ]
 
@@ -70,6 +71,7 @@ def update_source_visibility(source_mode_label: str, search_workflow_label: str)
     is_rag = mode == "rag"
     is_sources = is_web or is_rag
     is_two_step = is_web and workflow == "two_step"
+    is_auto = is_web and workflow == "auto"
     return (
         gr.update(visible=is_web),
         gr.update(visible=is_two_step),
@@ -78,13 +80,20 @@ def update_source_visibility(source_mode_label: str, search_workflow_label: str)
         gr.update(visible=is_sources),
         gr.update(visible=is_rag),
         gr.update(visible=is_rag),
+        gr.update(visible=is_rag),
+        gr.update(visible=is_rag),
+        gr.update(
+            value="Search web & generate" if is_auto else "Generate lesson slides",
+        ),
     )
 
 
 def discover_lesson_sources(
     topic: str,
     session_id: str,
+    progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, object, object]:
+    progress(0, desc="Discovering sources…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
@@ -114,6 +123,7 @@ def discover_lesson_sources(
                 f"Found **{len(choices)}** verified URL(s). Select sources, then click "
                 "**Generate lesson slides**."
             )
+        progress(1.0, desc="Done")
         return (
             summary,
             gr.update(choices=choices, value=choices),
@@ -135,7 +145,9 @@ def generate_lesson_slides(
     upload_files: list[str] | None,
     session_id: str,
     doc_ids: list[str] | None,
+    progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, str, list[str], str | None, str | None, str | None, str, str, str]:
+    progress(0, desc="Loading model…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
@@ -151,6 +163,7 @@ def generate_lesson_slides(
     files = [Path(p) for p in (upload_files or [])]
 
     try:
+        progress(0.1, desc="Generating lesson slides…")
         runner = AgentRunner()
         result = runner.run_education_pptx(
             topic=topic,
@@ -165,10 +178,11 @@ def generate_lesson_slides(
             session_id=session_id or None,
             doc_ids=doc_ids or [],
         )
-    except Exception as exc:  # noqa: BLE001 — show agent errors in UI
+    except Exception as exc:  # noqa: BLE001
         message = f"Agent error: {exc}"
         return _empty_outputs(message)
 
+    progress(1.0, desc="Done")
     gallery = [str(Path(p).resolve()) for p in result.preview_images]
     trace_summary = (
         f"Run `{result.trace.run_id}` · skill `{result.trace.skill}` · "
@@ -190,27 +204,23 @@ def generate_lesson_slides(
 
 
 def build_education_pptx_tab() -> None:
-    model_key = get_active_model_key()
-
-    gr.Markdown(
-        """
-### Lesson slide builder
-
-Enter a topic and grade level. A **local small model** drafts the outline;
-optionally ground it with **web search** or **RAG** from indexed sources.
-"""
+    tab_hero(
+        "Draft lesson slides locally — add web or RAG sources optionally.",
+        steps=["Lesson details", "Sources", "Generate", "Preview"],
+        active_step=0,
     )
-    gr.Markdown(model_status(model_key))
 
     with gr.Row():
         topic = gr.Textbox(
             label="Lesson topic",
             placeholder="e.g. Photosynthesis, Fractions, The water cycle",
+            scale=3,
         )
         grade = gr.Dropdown(
             label="Grade level",
             choices=["K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "Adult"],
             value="6",
+            scale=1,
         )
         slide_count = gr.Slider(
             minimum=3,
@@ -218,56 +228,55 @@ optionally ground it with **web search** or **RAG** from indexed sources.
             step=1,
             value=5,
             label="Content slides",
+            scale=1,
         )
 
-    gr.Markdown("#### Research sources (optional)")
-    with gr.Row():
-        source_mode = gr.Dropdown(
+    with gr.Accordion("Add research sources (optional)", open=False):
+        source_mode = gr.Radio(
             label="Source mode",
             choices=[m[0] for m in SOURCE_MODES],
             value=SOURCE_MODES[0][0],
         )
-        search_workflow = gr.Dropdown(
-            label="Search workflow",
+        search_workflow = gr.Radio(
+            label="Web search workflow",
             choices=[m[0] for m in SEARCH_WORKFLOWS],
             value=SEARCH_WORKFLOWS[0][0],
             visible=False,
         )
-
-    with gr.Row():
         discover_btn = gr.Button("Discover sources", variant="secondary", visible=False)
-        session_dd = gr.Dropdown(
-            label="ResearchMind session",
-            choices=list_session_choices(),
-            value="",
+        with gr.Row():
+            session_dd = gr.Dropdown(
+                label="ResearchMind session",
+                choices=list_session_choices(),
+                value="",
+                visible=False,
+            )
+            refresh_sess_btn = gr.Button("↻", size="sm", visible=False, min_width=40)
+        url_choices = gr.CheckboxGroup(
+            label="Suggested URLs to use",
+            choices=[],
+            visible=False,
+        )
+        urls_text = gr.Textbox(
+            label="URLs (one per line, optional)",
+            lines=3,
+            placeholder="https://en.wikipedia.org/wiki/...",
+            visible=False,
+        )
+        upload_files = gr.File(
+            label="Upload PDF or DOCX",
+            file_count="multiple",
+            file_types=[".pdf", ".docx"],
+            visible=False,
+        )
+        doc_dd = gr.CheckboxGroup(
+            label="Documents in session (RAG scope)",
+            choices=[],
+            value=[],
             visible=False,
         )
 
-    url_choices = gr.CheckboxGroup(
-        label="Suggested URLs to use",
-        choices=[],
-        visible=False,
-    )
-    urls_text = gr.Textbox(
-        label="URLs (one per line, optional)",
-        lines=3,
-        placeholder="https://en.wikipedia.org/wiki/...",
-        visible=False,
-    )
-    upload_files = gr.File(
-        label="Upload PDF or DOCX",
-        file_count="multiple",
-        file_types=[".pdf", ".docx"],
-        visible=False,
-    )
-    doc_dd = gr.CheckboxGroup(
-        label="Documents in session (RAG scope)",
-        choices=[],
-        value=[],
-        visible=False,
-    )
-
-    generate_btn = gr.Button("Generate lesson slides", variant="primary")
+    generate_btn = gr.Button("Generate lesson slides", variant="primary", elem_classes=["primary-cta"])
     source_status = gr.Markdown(value="_No sources gathered yet._")
 
     with gr.Tabs():
@@ -294,23 +303,16 @@ optionally ground it with **web search** or **RAG** from indexed sources.
             interactive=False,
         )
 
-    gr.Markdown(
-        """
-**Open in Google Docs:** download the `.docx` file, upload it to [Google Drive](https://drive.google.com),
+    with gr.Accordion("Export help — open in Google Docs", open=False):
+        gr.Markdown(
+            """
+Download the `.docx` file, upload it to [Google Drive](https://drive.google.com),
 then choose **Open with → Google Docs**. You can also upload the `.html` file via
 **Google Docs → File → Open → Upload**.
 """
-    )
+        )
 
-    trace_box = gr.Textbox(
-        label="Agent trace (JSON)",
-        lines=12,
-        max_lines=20,
-        interactive=False,
-    )
-
-    with gr.Accordion("Trace summary", open=False):
-        trace_summary = gr.Markdown()
+    advanced = build_advanced_panel()
 
     source_controls = [
         search_workflow,
@@ -319,7 +321,9 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
         urls_text,
         upload_files,
         session_dd,
+        refresh_sess_btn,
         doc_dd,
+        generate_btn,
     ]
 
     def _refresh_visibility(mode_label: str, workflow_label: str):
@@ -336,6 +340,7 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
         outputs=source_controls,
     )
 
+    refresh_sess_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
     session_dd.change(
         fn=refresh_doc_choices,
         inputs=[session_dd, doc_dd],
@@ -369,8 +374,8 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
             pptx_file,
             docx_file,
             html_file,
-            trace_summary,
-            trace_box,
+            advanced.trace_summary,
+            advanced.trace_box,
             source_status,
         ],
     )
