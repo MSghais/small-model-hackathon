@@ -27,8 +27,13 @@ _ANSWER_SPLITS = [
     re.compile(r"\n\n(?:In summary|To summarize)[,:]\s*", re.IGNORECASE),
 ]
 _ANSWER_MARKER = re.compile(
-    r"(?:^|\n)(?:Final answer|Let me write|Let's draft|Let me draft|Answer|Summary):\s*",
+    r"(?:^|\n)(?:Final answer|Let me write|Let's draft|Let me draft|Answer|Summary|"
+    r"Now, write the response):\s*",
     re.IGNORECASE | re.MULTILINE,
+)
+_SENTENCE_PART = re.compile(
+    r"Sentence\s+\d+:\s*(.+?)(?=\n(?:Sentence\s+\d+:|That's\b|I can\b|Let me\b|So,|\Z))",
+    re.IGNORECASE | re.DOTALL,
 )
 _META_TAIL = re.compile(
     r"\n\n(?:Now,|We need|Also,|But we|However,|The instruction|So we|"
@@ -36,8 +41,9 @@ _META_TAIL = re.compile(
     re.IGNORECASE,
 )
 _META_AFTER_ANSWER = re.compile(
-    r"\n\n(?:That's about|I think it covers|I'll add|To be more precise|"
-    r"Let me write|Let me count|Let me draft|I need to make sure).*",
+    r"\n\n(?:That's about|That's two|I think it covers|I'll add|To be more precise|"
+    r"Let me write|Let me count|Let me draft|Let me check|I need to make sure|"
+    r"I can add|I can make|So, three|So, two).*",
     re.DOTALL | re.IGNORECASE,
 )
 _COMPLETE_SENTENCE = re.compile(r"[.!?][\"')\]]*\s*$")
@@ -45,13 +51,16 @@ _LIST_OUTLINE = re.compile(r"^\d+\.\s", re.MULTILINE)
 _REASONING_OPENERS = (
     "we need to",
     "first,",
+    "first, the",
     "next,",
     "the user",
     "let me",
     "okay,",
     "now, let",
+    "now, write",
     "i need to",
     "i should",
+    "i recall",
 )
 
 
@@ -86,6 +95,20 @@ def _is_list_outline(text: str) -> bool:
     return numbered >= max(2, len(lines) // 2)
 
 
+def _extract_labeled_sentences(text: str) -> str | None:
+    parts: list[str] = []
+    for match in _SENTENCE_PART.finditer(text):
+        sentence = _clean_answer_candidate(match.group(1))
+        if not sentence:
+            continue
+        if sentence.lower().startswith(("that's ", "so, ", "i can ", "let me ")):
+            continue
+        parts.append(sentence)
+    if not parts:
+        return None
+    return " ".join(parts)
+
+
 def _extract_answer_candidates(text: str) -> list[str]:
     candidates: list[str] = []
     for match in _ANSWER_MARKER.finditer(text):
@@ -103,6 +126,10 @@ def _extract_answer_candidates(text: str) -> list[str]:
 
 
 def _extract_best_answer(text: str) -> str | None:
+    labeled = _extract_labeled_sentences(text)
+    if labeled:
+        return labeled
+
     candidates = _extract_answer_candidates(text)
     if not candidates:
         return None
@@ -134,8 +161,21 @@ def _split_reasoning_and_answer(text: str) -> tuple[str | None, str]:
 
 
 def looks_like_reasoning_only(text: str) -> bool:
-    sample = text[:240].lower()
-    return any(sample.startswith(opener) for opener in _REASONING_OPENERS)
+    sample = text[:320].lower()
+    if any(sample.startswith(opener) for opener in _REASONING_OPENERS):
+        return True
+    return bool(_SENTENCE_PART.search(text) and len(text) > 120)
+
+
+def needs_teacher_compaction(text: str) -> bool:
+    cleaned = text.strip()
+    if not cleaned:
+        return True
+    if looks_like_reasoning_only(cleaned):
+        return True
+    if _ANSWER_MARKER.search(cleaned) or _SENTENCE_PART.search(cleaned):
+        return True
+    return len(cleaned) > 420
 
 
 def prepare_display_reply(text: str) -> str:
@@ -182,7 +222,7 @@ def strip_reasoning_output(text: str) -> str:
             return extracted
         cleaned = body
 
-    if looks_like_reasoning_only(cleaned) or _ANSWER_MARKER.search(cleaned):
+    if looks_like_reasoning_only(cleaned) or _ANSWER_MARKER.search(cleaned) or _SENTENCE_PART.search(cleaned):
         extracted = _extract_best_answer(cleaned)
         if extracted:
             return extracted

@@ -10,7 +10,12 @@ from typing import Any
 from agent.runner import AgentRunner
 from agent.trace import TraceRecorder
 from inference.base import InferenceBackend
-from inference.response_clean import prepare_display_reply, strip_reasoning_output
+from inference.response_clean import (
+    needs_teacher_compaction,
+    prepare_display_reply,
+    strip_reasoning_output,
+)
+from researchmind.ingest import IngestPipeline
 from researchmind.scope import retrieval_query
 
 from echocoach.asr.factory import get_asr_backend
@@ -20,6 +25,10 @@ from echocoach.prompts import TeacherVoiceMode, system_prompt_for_mode, topic_co
 from echocoach.voiceout import extract_message_text, strip_references_for_tts, synthesize_voice_reply
 
 RAG_MODES: frozenset[TeacherVoiceMode] = frozenset({"explain", "lesson"})
+_VOICE_USER_SUFFIX = (
+    "Reply now in 2-4 complete spoken sentences only. "
+    "No planning, outlines, sentence labels, or meta commentary."
+)
 
 
 @dataclass
@@ -195,6 +204,74 @@ def _rag_turn_via_agent(
     return assistant_text, rag_refs, rag_status, display_reply
 
 
+def _indexed_scope_available(session_id: str, doc_ids: list[str] | None) -> bool:
+    store = IngestPipeline().store
+    if doc_ids:
+        return True
+    if session_id:
+        return bool(store.list_documents(session_id=session_id))
+    return bool(store.list_documents())
+
+
+def _rag_off_status(session_id: str, doc_ids: list[str] | None) -> str | None:
+    if _indexed_scope_available(session_id, doc_ids):
+        return (
+            "_Sources are indexed but RAG is off — enable **Answer from my indexed sources** "
+            "for cited, source-grounded replies._"
+        )
+    return (
+        "_No sources used. Set a focus topic, **Discover/Auto-ingest** sources, then enable "
+        "**Answer from my indexed sources** for citations._"
+    )
+
+
+def _compact_teacher_reply(
+    raw_reply: str,
+    *,
+    mode: TeacherVoiceMode,
+    backend: InferenceBackend,
+    trace: TraceRecorder,
+) -> str:
+    seed = strip_reasoning_output(raw_reply).strip() or raw_reply.strip()[:1200]
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                f"{system_prompt_for_mode(mode)}\n\n"
+                "Rewrite the draft below into ONLY 2-4 spoken sentences for voice playback. "
+                "Keep any [n] citations. No planning or labels."
+            ),
+        },
+        {"role": "user", "content": seed},
+    ]
+    compact_raw = backend.chat(messages, max_tokens=220, temperature=0.2)
+    trace.log_note("teacher_compact")
+    trace.log_llm(messages[-1]["content"], compact_raw)
+    compact = strip_reasoning_output(compact_raw).strip()
+    return compact or seed
+
+
+def _finalize_non_rag_reply(
+    raw_reply: str,
+    *,
+    mode: TeacherVoiceMode,
+    backend: InferenceBackend,
+    trace: TraceRecorder,
+) -> tuple[str, str]:
+    assistant_text = strip_reasoning_output(raw_reply).strip()
+    if needs_teacher_compaction(raw_reply) or not assistant_text:
+        assistant_text = _compact_teacher_reply(
+            raw_reply,
+            mode=mode,
+            backend=backend,
+            trace=trace,
+        )
+    display_reply = prepare_display_reply(raw_reply)
+    if needs_teacher_compaction(display_reply):
+        display_reply = prepare_display_reply(assistant_text)
+    return assistant_text, display_reply
+
+
 def build_teacher_messages(
     *,
     mode: TeacherVoiceMode,
@@ -217,7 +294,7 @@ def build_teacher_messages(
             "Use these source excerpts as grounding. Cite with [1], [2], etc. when relevant.\n\n"
             f"{rag.context_block}"
         )
-    user_parts.append(user_text.strip())
+    user_parts.append(f"{user_text.strip()}\n\n{_VOICE_USER_SUFFIX}")
     messages.append({"role": "user", "content": "\n\n".join(user_parts)})
     return messages
 
@@ -257,12 +334,16 @@ def _generate_teacher_reply(
             user_text=user_text,
             topic=topic,
         )
-        raw_reply = backend.chat(messages, max_tokens=384, temperature=0.3)
-        display_reply = prepare_display_reply(raw_reply)
-        assistant_text = strip_reasoning_output(raw_reply).strip()
-        if not assistant_text:
-            assistant_text = extract_message_text(display_reply).strip()
+        raw_reply = backend.chat(messages, max_tokens=256, temperature=0.2)
+        assistant_text, display_reply = _finalize_non_rag_reply(
+            raw_reply,
+            mode=mode,
+            backend=backend,
+            trace=trace,
+        )
         trace.log_llm(messages[-1]["content"], raw_reply)
+        if mode in RAG_MODES:
+            rag_status = _rag_off_status(session_id, doc_ids)
 
     voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
         strip_references_for_tts(assistant_text),

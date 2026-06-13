@@ -126,7 +126,8 @@ def test_build_teacher_messages_includes_topic_and_rag():
     assert "lesson-planning" in messages[0]["content"]
     assert "Photosynthesis" in messages[0]["content"]
     assert "[1] Plants need light." in messages[-1]["content"]
-    assert messages[-1]["content"].endswith("How do plants eat?")
+    assert "How do plants eat?" in messages[-1]["content"]
+    assert "Reply now in 2-4 complete spoken sentences only" in messages[-1]["content"]
 
 
 def test_pitch_mode_system_prompt():

@@ -73,6 +73,31 @@ Finetuning teaches a small model to specialize on your task using extra training
     assert "First, I need to plan" in out
 
 
+def test_extracts_labeled_sentence_draft():
+    raw = """First, the user wants me to explain finetuning.
+
+Let me outline my response:
+1. Start with a simple definition.
+
+Now, write the response:
+
+Sentence 1: Finetuning is training a small model to improve its performance on a specific task, like recognizing objects in photos.
+
+Sentence 2: For example, a model might be fine-tuned on a dataset of medical scans to detect tumors more accurately.
+
+That's two sentences. I can add one more if needed.
+
+Sentence 3: This process enhances efficiency and reduces overfitting.
+
+So, three"""
+    out = strip_reasoning_output(raw)
+    assert "Finetuning is training a small model" in out
+    assert "medical scans" in out
+    assert "enhances efficiency" in out
+    assert "First, the user" not in out
+    assert "Sentence 1:" not in out
+
+
 def test_prepare_display_reply_wraps_malformed_think_prefix():
     raw = "think> We need to plan the answer.\n\nThe answer is 42."
     out = prepare_display_reply(raw)
