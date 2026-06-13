@@ -33,18 +33,36 @@ class LlamaCppBackend:
             cache_dir=cache_dir,
         )
 
+    def unload(self) -> None:
+        self._model = None
+        self._model_path = None
+
     def load(self) -> None:
         if self._model is not None:
             return
 
         self._model_path = self._resolve_model_path()
-
-        self._model = Llama(
-            model_path=self._model_path,
-            n_ctx=self._config.n_ctx,
-            n_gpu_layers=self._config.n_gpu_layers,
-            verbose=False,
-        )
+        gpu_layers = self._config.n_gpu_layers
+        try:
+            self._model = Llama(
+                model_path=self._model_path,
+                n_ctx=self._config.n_ctx,
+                n_gpu_layers=gpu_layers,
+                verbose=False,
+            )
+        except Exception as exc:
+            if gpu_layers <= 0:
+                raise
+            print(
+                f"[inference] llama.cpp GPU offload failed ({exc}); using CPU (n_gpu_layers=0)…",
+                flush=True,
+            )
+            self._model = Llama(
+                model_path=self._model_path,
+                n_ctx=self._config.n_ctx,
+                n_gpu_layers=0,
+                verbose=False,
+            )
 
     def generate(
         self,
