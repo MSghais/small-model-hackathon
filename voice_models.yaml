@@ -53,6 +53,13 @@ asr:
     backend: whisper_cpp
     model_size: base
 
+# Optional omni speech-in/speech-out (GPU; set ECHOCOACH_VOICE_PROFILE=omni)
+omni:
+  minicpm-o-4.5:
+    label: MiniCPM-o 4.5 (GPU omni — falls back to pipeline until wired)
+    model_id: openbmb/MiniCPM-o-4_5
+    languages: [en, zh]
+
 tts:
   piper-multilingual:
     label: Piper TTS (local VoiceOut)

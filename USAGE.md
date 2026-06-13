@@ -2,7 +2,7 @@
 
 How to run the **Lesson Agent** Gradio app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **EchoCoach** for voice practice feedback, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **TeacherVoice** for spoken back-and-forth tutoring, **EchoCoach** for one-shot pitch analysis, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -119,6 +119,42 @@ Smoke tests (analysis only, no GPU):
 
 ```bash
 bash scripts/echo_coach_smoke.sh
+```
+
+### TeacherVoice — spoken conversation (turn-based)
+
+The **TeacherVoice** tab is a **multi-turn voice teacher** — not full duplex like a phone call, but speak → wait → hear a reply → repeat.
+
+| Mode | Purpose |
+| ---- | ------- |
+| **Explain** | Tutor any topic in plain language |
+| **Lesson coach** | Discuss and outline lesson content verbally |
+| **Pitch practice** | Short live speaking tips each turn |
+
+**EchoCoach vs TeacherVoice**
+
+| | EchoCoach | TeacherVoice |
+| --- | --- | --- |
+| Interaction | One-shot after **Analyze pitch** | Multi-turn **Send turn** |
+| Best for | Pace/filler charts, JSON rewrite report | Q&A, lesson discussion, conversational pitch tips |
+| TTS | One VoiceOut clip per analysis | Voice reply every turn (first sentence plays quickly when Piper is installed) |
+| RAG | No | Optional ResearchMind grounding (Explain / Lesson) |
+
+**Flow per turn:** record up to **15s** (configurable cap) → ASR → text LLM with chat history → Piper TTS.
+
+Enable RAG in the accordion: pick a ResearchMind session and optional documents (same scope rules as Chat debug).
+
+Optional omni profile (GPU, experimental — falls back to ASR+LLM+Piper):
+
+```bash
+ECHOCOACH_VOICE_PROFILE=omni
+ECHOCOACH_OMNI_MODEL=openbmb/MiniCPM-o-4_5
+```
+
+Unit tests (no GPU):
+
+```bash
+uv run pytest libs/echocoach/tests/test_teacher_voice.py -q
 ```
 
 ### 5. Upload agent trace (Sharing is Caring badge)

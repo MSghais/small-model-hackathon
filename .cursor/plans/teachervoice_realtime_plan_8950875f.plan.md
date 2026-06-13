@@ -4,10 +4,10 @@ overview: EchoCoach today is a one-shot pitch *review* pipeline (record → anal
 todos:
   - id: teacher-voice-core
     content: Add teacher_voice.py + mode prompts + TeacherVoiceTurnResult; wire ASR → chat(history) → TTS per turn
-    status: pending
+    status: completed
   - id: teacher-voice-ui
     content: Create teacher_voice.py Gradio tab (modes, push-to-talk, chatbot, audio reply, optional RAG); register in app.py
-    status: pending
+    status: in_progress
   - id: rag-lesson-modes
     content: Integrate ResearchMind retrieval into Explain/Lesson modes (reuse run_research_question / rag scope from chat tab)
     status: pending
