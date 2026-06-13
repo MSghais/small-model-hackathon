@@ -475,19 +475,26 @@ button.primary-cta:hover,
 }
 
 .doc-choice-list label span,
-.doc-choice-list label p {
+.doc-choice-list label p,
+.doc-choice-list .label-text {
   color: #374151 !important;
   background: transparent !important;
   font-weight: 400 !important;
 }
 
+.doc-choice-list label.selected,
 .doc-choice-list label:has(input:checked) {
   background: #f3f4f6 !important;
   border-color: #9ca3af !important;
+  color: #111827 !important;
 }
 
+.doc-choice-list label.selected span,
+.doc-choice-list label.selected p,
+.doc-choice-list label.selected .label-text,
 .doc-choice-list label:has(input:checked) span,
-.doc-choice-list label:has(input:checked) p {
+.doc-choice-list label:has(input:checked) p,
+.doc-choice-list label:has(input:checked) .label-text {
   color: #111827 !important;
   font-weight: 500 !important;
 }

@@ -28,6 +28,9 @@ def get_theme() -> gr.Theme:
         input_background_fill="#ffffff",
         body_text_color="#374151",
         border_color_primary="#e5e7eb",
+        checkbox_label_background_fill_selected="#f3f4f6",
+        checkbox_label_text_color_selected="#111827",
+        checkbox_label_border_color_selected="#9ca3af",
     )
 
 
