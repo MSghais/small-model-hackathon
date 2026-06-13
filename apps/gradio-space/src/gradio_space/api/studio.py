@@ -96,6 +96,18 @@ def _documents_payload(session_id: str) -> list[dict[str, Any]]:
     ]
 
 
+def _session_has_rag_sources(session_id: str, doc_ids: list[str] | None) -> bool:
+    if not session_id:
+        return False
+    docs = _documents_payload(session_id)
+    if not docs:
+        return False
+    if doc_ids:
+        valid = {d["id"] for d in docs}
+        return any(doc_id in valid for doc_id in doc_ids)
+    return True
+
+
 def _sessions_payload() -> list[dict[str, str]]:
     sessions: list[dict[str, str]] = []
     for label, sid in list_session_choices():
@@ -266,10 +278,24 @@ def api_generate_slides(
     use_rag: bool = True,
     doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    sid = session_id or _pick_session(topic)
-    source_label = "RAG (indexed sources)" if use_rag and sid else "None (model only)"
-    workflow_label = "Two-step (discover & confirm)"
     rag_docs = doc_ids or []
+    sid = (session_id or "").strip()
+    if use_rag and not sid:
+        sid = _pick_session(topic)
+
+    has_sources = _session_has_rag_sources(sid, rag_docs) if use_rag else False
+    use_rag_effective = bool(use_rag and has_sources)
+    rag_notice = ""
+    if use_rag and not use_rag_effective:
+        rag_notice = (
+            "Cross-Reference Sources is on, but this session has no indexed documents — "
+            "generated from model knowledge only. Ingest sources in Step 1 to enable RAG."
+        )
+
+    source_label = "RAG (indexed sources)" if use_rag_effective else "None (model only)"
+    workflow_label = "Two-step (discover & confirm)"
+    effective_sid = sid if use_rag_effective else ""
+    effective_docs = rag_docs if use_rag_effective else []
 
     gen = generate_lesson_slides(
         topic,
@@ -280,11 +306,11 @@ def api_generate_slides(
         "",
         [],
         None,
-        sid if use_rag else "",
-        rag_docs,
+        effective_sid,
+        effective_docs,
         topic,
-        sid if use_rag else "",
-        rag_docs,
+        effective_sid,
+        effective_docs,
         _NoopProgress(),
         skip_preview_images=True,
     )
@@ -310,6 +336,9 @@ def api_generate_slides(
     if preview_html and "form-error" in preview_html:
         return err(status or "Generation failed.", status=status, progress_log=processing_log)
 
+    if rag_notice:
+        status = f"{rag_notice}\n\n{status or 'Slides generated.'}".strip()
+
     downloads = {
         "pptx": pptx,
         "docx": docx,
@@ -324,6 +353,7 @@ def api_generate_slides(
         gallery=gallery or [],
         downloads=downloads,
         status=status,
+        rag_fallback=bool(rag_notice),
         progress_log=processing_log,
         trace_summary=trace_sum,
         trace_json=trace_json,
