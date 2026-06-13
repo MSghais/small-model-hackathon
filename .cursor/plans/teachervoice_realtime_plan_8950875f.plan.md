@@ -7,19 +7,19 @@ todos:
     status: completed
   - id: teacher-voice-ui
     content: Create teacher_voice.py Gradio tab (modes, push-to-talk, chatbot, audio reply, optional RAG); register in app.py
-    status: in_progress
+    status: completed
   - id: rag-lesson-modes
     content: Integrate ResearchMind retrieval into Explain/Lesson modes (reuse run_research_question / rag scope from chat tab)
-    status: pending
+    status: completed
   - id: docs-tests
     content: Update USAGE.md with EchoCoach vs TeacherVoice; add mock-backend unit tests and trace skill teacher-voice
-    status: pending
+    status: completed
   - id: phase2-chunked-tts
     content: "Optional: sentence-chunked Piper + shorter turn cap for faster time-to-first-audio"
-    status: pending
+    status: completed
   - id: phase3-omni
     content: "Optional: MiniCPM-o 4.5 omni preset behind ECHOCOACH_VOICE_PROFILE=omni for speech-in/speech-out"
-    status: pending
+    status: completed
 isProject: false
 ---
 

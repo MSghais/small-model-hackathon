@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import gradio as gr
 
 from echocoach.config import get_echo_coach_config
@@ -24,6 +22,7 @@ from gradio_space.research_helpers import (
     refresh_sessions,
 )
 from echocoach.omni import omni_status_message
+from inference.factory import get_backend
 
 _config = get_echo_coach_config()
 _TURN_MAX = min(15, _config.max_seconds)
