@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Build Small — AI Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/studio/studio.css" />
+</head>
+<body>
+  <div id="studio-error" class="studio-banner studio-banner-error hidden" role="alert"></div>
+  <div id="studio-loading" class="studio-banner studio-banner-loading hidden">Working…</div>
+
+  <aside id="sidebar" class="sidebar">
+    <button type="button" id="sidebar-close" class="sidebar-close material-symbols-outlined" aria-label="Close menu">close</button>
+    <div class="sidebar-brand">
+      <h1>Build Small</h1>
+      <p>AI Studio</p>
+    </div>
+    <button type="button" id="btn-new-session" class="btn btn-primary btn-block">
+      <span class="material-symbols-outlined">add</span>
+      New session topic
+    </button>
+    <nav class="sidebar-nav">
+      <button type="button" class="nav-item" data-view="research"><span class="material-symbols-outlined">search</span>Research</button>
+      <button type="button" class="nav-item active" data-view="slides"><span class="material-symbols-outlined">present_to_all</span>Slides</button>
+      <button type="button" class="nav-item" data-view="voice"><span class="material-symbols-outlined">mic</span>Voice</button>
+      <button type="button" class="nav-item" data-view="coach"><span class="material-symbols-outlined">school</span>Coach</button>
+      <a href="/classic" class="nav-item nav-link"><span class="material-symbols-outlined">settings</span>Classic / Settings</a>
+    </nav>
+    <div class="sidebar-footer">
+      <p class="sidebar-foot-label">Powered by local small models</p>
+      <a href="/classic">Open Classic UI</a>
+    </div>
+  </aside>
+
+  <header class="topbar">
+    <button type="button" id="sidebar-open" class="topbar-icon material-symbols-outlined" aria-label="Open menu">menu</button>
+    <nav class="breadcrumb">
+      <span>Projects</span>
+      <span class="material-symbols-outlined crumb-sep">chevron_right</span>
+      <strong id="project-title">Photosynthesis</strong>
+    </nav>
+    <div class="topbar-actions">
+      <a href="/classic" class="btn btn-ghost">Classic UI</a>
+      <button type="button" id="btn-export" class="btn btn-primary" disabled>Export</button>
+    </div>
+  </header>
+
+  <main class="workspace" data-view="slides">
+    <section class="col col-research">
+      <h2 class="section-label">Step 1 · Research Library</h2>
+      <div class="card">
+        <p class="card-title">Add Sources</p>
+        <input id="ingest-url" type="url" class="input" placeholder="Paste URL here…" />
+        <button type="button" id="btn-ingest-url" class="btn btn-secondary btn-block">Ingest URL</button>
+        <label class="upload-zone">
+          <input id="ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
+          <span class="material-symbols-outlined">upload_file</span>
+          <span>Upload PDF or Doc</span>
+        </label>
+        <p id="ingest-status" class="status-text"></p>
+      </div>
+      <div class="card card-grow">
+        <div class="card-row">
+          <h3 class="card-title">Indexed Documents</h3>
+        </div>
+        <div id="documents-panel"></div>
+      </div>
+    </section>
+
+    <section class="col col-slides">
+      <div class="card card-tall">
+        <div class="card-header">
+          <div class="step-badge">2</div>
+          <h2>Lesson Creation</h2>
+        </div>
+        <div class="controls-panel">
+          <div class="controls-grid">
+            <label class="field">
+              <span>Topic</span>
+              <input id="lesson-topic" type="text" class="input" value="Photosynthesis for 6th Grade" />
+            </label>
+            <label class="field">
+              <span>Grade</span>
+              <select id="lesson-grade" class="input">
+                <option value="6" selected>6</option>
+                <option value="5">5</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="Adult">Adult</option>
+              </select>
+            </label>
+            <label class="field field-wide">
+              <span>Slides: <strong id="slide-count-val">5</strong></span>
+              <input id="slide-count" type="range" min="3" max="8" value="5" />
+            </label>
+          </div>
+          <div class="controls-actions">
+            <button type="button" id="btn-generate" class="btn btn-primary">
+              <span class="material-symbols-outlined">auto_awesome</span>
+              Generate Slides
+            </button>
+          </div>
+          <p id="generate-status" class="status-text"></p>
+        </div>
+        <div id="slide-canvas" class="slide-canvas">
+          <div class="studio-canvas-empty"><p>Generate slides to preview your lesson here.</p></div>
+        </div>
+        <div id="downloads" class="downloads hidden"></div>
+      </div>
+    </section>
+
+    <section class="col col-studio">
+      <h2 class="section-label">Step 3 · Studio Controls</h2>
+      <div class="card">
+        <p class="card-title">RAG Scope</p>
+        <label class="toggle-row">
+          <span>Cross-Reference Sources</span>
+          <input id="use-rag" type="checkbox" checked />
+        </label>
+        <input id="session-id" type="hidden" value="" />
+      </div>
+      <div class="card">
+        <p class="card-title">Teacher Voice Mode</p>
+        <div class="mode-cards" id="voice-modes">
+          <button type="button" class="mode-card" data-mode="explain">Explain</button>
+          <button type="button" class="mode-card active" data-mode="lesson">Coach</button>
+          <button type="button" class="mode-card" data-mode="pitch">Practice</button>
+        </div>
+        <label class="field voice-panel" id="voice-panel">
+          <span>Ask the teacher</span>
+          <textarea id="voice-message" class="input" rows="3" placeholder="What are the main steps of photosynthesis?"></textarea>
+          <button type="button" id="btn-voice-send" class="btn btn-secondary btn-block">Send message</button>
+          <div id="voice-reply" class="voice-reply"></div>
+        </label>
+      </div>
+      <div class="card coach-panel-wrap">
+        <h2 class="section-label">EchoCoach Feedback</h2>
+        <label class="field">
+          <span>Record or upload pitch (WAV)</span>
+          <input id="coach-audio" type="file" accept="audio/*" />
+        </label>
+        <button type="button" id="btn-analyze" class="btn btn-secondary btn-block">Analyze pitch</button>
+        <div id="coach-panel"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/studio/studio.js"></script>
+</body>
+</html>
