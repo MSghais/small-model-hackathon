@@ -1,11 +1,15 @@
 from agent.models import SlideOutline, SlideSpec
 from agent.preview import outline_to_html, render_slide_images
+from agent.prompts import outline_max_tokens
 from agent.runner import AgentRunner
 from agent.tools.docx import create_docx, create_html_export
 from agent.tools.pptx import create_pptx
 
 
-def test_parse_outline_pads_when_model_returns_too_few():
+def test_outline_max_tokens_scales_with_slide_count():
+    assert outline_max_tokens(5) == 750
+    assert outline_max_tokens(1) == 230
+    assert outline_max_tokens(20) == 1024
     runner = AgentRunner()
     raw = (
         '{"title": "AI Agents", "slides": ['

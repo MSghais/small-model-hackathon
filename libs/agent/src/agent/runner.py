@@ -29,6 +29,7 @@ from agent.prompts import (
     education_outline_repair,
     education_outline_system,
     education_outline_user,
+    outline_max_tokens,
     outline_to_markdown,
 )
 from agent.skills import SkillRegistry
@@ -385,7 +386,8 @@ class AgentRunner:
             {"role": "user", "content": user},
         ]
         prompt_text = system + "\n\n" + user
-        raw = backend.chat(messages, max_tokens=2048, temperature=0.3)
+        token_budget = outline_max_tokens(req.slide_count)
+        raw = backend.chat(messages, max_tokens=token_budget, temperature=0.0)
         trace.log_llm(prompt_text, raw)
 
         try:
@@ -410,7 +412,11 @@ class AgentRunner:
             repair_prompt = education_outline_repair(
                 raw, str(first_error), expected_slides=req.slide_count
             )
-            repaired = backend.chat(repair_messages, max_tokens=2048, temperature=0.1)
+            repaired = backend.chat(
+                repair_messages,
+                max_tokens=min(512, token_budget),
+                temperature=0.0,
+            )
             trace.log_llm(repair_prompt, repaired)
             repaired_outline = self._parse_outline(repaired, req.slide_count, trace)
             repair_ms = int((monotonic() - repair_started) * 1000)

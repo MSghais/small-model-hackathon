@@ -159,7 +159,12 @@ function finishProgressPanel(data) {
 
   if (data?.progress_log) {
     const logEl = $("#progress-log");
-    logEl.textContent = stripMd(data.progress_log);
+    const log = data.progress_log;
+    if (/<[a-z][\s\S]*>/i.test(log)) {
+      logEl.innerHTML = log;
+    } else {
+      logEl.textContent = stripMd(log);
+    }
     logEl.classList.remove("hidden");
   }
   if (data?.elapsed_seconds != null) {
