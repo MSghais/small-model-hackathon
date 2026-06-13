@@ -9,8 +9,9 @@ const SLIDE_PIPELINE_STEPS = [
 ];
 
 const state = {
-  sessionId: "",
-  topic: "Photosynthesis for 6th Grade",
+  workspaceTopic: "photosynthesis",
+  workspaceSessionId: "",
+  workspaceDocIds: [],
   voiceMode: "lesson",
   history: [],
   downloads: null,
@@ -18,6 +19,49 @@ const state = {
   progressTimer: null,
   progressStartedAt: null,
 };
+
+function effectiveTopic(local) {
+  const localVal = (local || "").trim();
+  if (localVal) return localVal;
+  return (state.workspaceTopic || "").trim();
+}
+
+function effectiveSession(local) {
+  const localVal = (local || "").trim();
+  if (localVal) return localVal;
+  return (state.workspaceSessionId || "").trim();
+}
+
+function selectedWorkspaceDocIds() {
+  const boxes = document.querySelectorAll("#workspace-doc-list input[type=checkbox]:checked");
+  return [...boxes].map((el) => el.value);
+}
+
+function effectiveDocIds(localIds) {
+  if (localIds && localIds.length) return localIds;
+  const selected = selectedWorkspaceDocIds();
+  if (selected.length) return selected;
+  return state.workspaceDocIds;
+}
+
+function updateProjectTitle() {
+  const topic = state.workspaceTopic || "";
+  const short = topic.split(" for ")[0] || topic || "Project";
+  $("#project-title").textContent = short.slice(0, 40);
+}
+
+function updateWorkspaceRagHint() {
+  const nDocs = selectedWorkspaceDocIds().length;
+  const sid = state.workspaceSessionId;
+  let hint = "RAG scope: entire indexed corpus (all sessions).";
+  if (sid) {
+    hint = nDocs
+      ? `RAG scope: ${nDocs} selected document(s) in session.`
+      : `RAG scope: all documents in session.`;
+  }
+  const el = $("#workspace-rag-hint");
+  if (el) el.textContent = hint;
+}
 
 async function getClient() {
   if (!state.client) {
@@ -178,49 +222,98 @@ function fileToBase64(file) {
   });
 }
 
+function renderWorkspaceDocList(docs) {
+  const container = $("#workspace-doc-list");
+  if (!docs?.length) {
+    container.innerHTML = "<p class=\"status-text\">No documents in this session yet.</p>";
+    state.workspaceDocIds = [];
+    updateWorkspaceRagHint();
+    return;
+  }
+  state.workspaceDocIds = docs.map((d) => d.id);
+  container.innerHTML = docs
+    .map(
+      (d) =>
+        `<label class="workspace-doc-item"><input type="checkbox" value="${d.id}" checked />${d.title}</label>`
+    )
+    .join("");
+  container.querySelectorAll("input[type=checkbox]").forEach((box) => {
+    box.addEventListener("change", updateWorkspaceRagHint);
+  });
+  updateWorkspaceRagHint();
+}
+
+async function refreshWorkspaceSessions(selectId) {
+  const data = await callApi("list_sessions", []);
+  const sessions = data.sessions || [];
+  const select = $("#workspace-session");
+  const current = selectId || state.workspaceSessionId;
+  select.innerHTML =
+    "<option value=\"\">New session (on ingest)</option>" +
+    sessions
+      .map((s) => `<option value="${s.id}">${s.label || s.topic}</option>`)
+      .join("");
+  if (current && sessions.some((s) => s.id === current)) {
+    select.value = current;
+    state.workspaceSessionId = current;
+  } else {
+    const hint = (state.workspaceTopic || "").toLowerCase();
+    const match = sessions.find((s) => (s.topic || "").toLowerCase().includes(hint));
+    if (match) {
+      select.value = match.id;
+      state.workspaceSessionId = match.id;
+      updateProjectTitle();
+    }
+  }
+}
+
 async function refreshDocuments() {
-  const data = await callApi("list_documents", [state.sessionId]);
+  const data = await callApi("list_documents", [state.workspaceSessionId]);
   $("#documents-panel").innerHTML =
     data.documents_html ||
     '<p class="studio-empty-docs">No documents indexed yet.</p>';
-  if (data.session_id) state.sessionId = data.session_id;
+  if (data.session_id) {
+    state.workspaceSessionId = data.session_id;
+    $("#workspace-session").value = data.session_id;
+  }
+  renderWorkspaceDocList(data.documents || []);
 }
 
-async function initSessions() {
-  const data = await callApi("list_sessions", []);
-  const sessions = data.sessions || [];
-  const match = sessions.find((s) =>
-    (s.topic || "").toLowerCase().includes("photosynthesis")
-  );
-  if (match) {
-    state.sessionId = match.id;
-    $("#project-title").textContent = match.topic || "Photosynthesis";
-  }
+async function initWorkspace() {
+  $("#workspace-topic").value = state.workspaceTopic;
+  updateProjectTitle();
+  await refreshWorkspaceSessions();
   await refreshDocuments();
 }
 
 async function ingestUrl() {
   const url = $("#ingest-url").value.trim();
-  state.topic = $("#lesson-topic").value.trim() || state.topic;
-  const data = await callApi("ingest_url", [state.topic, url, state.sessionId]);
+  const topic = effectiveTopic("");
+  const data = await callApi("ingest_url", [topic, url, state.workspaceSessionId]);
   $("#ingest-status").textContent = stripMd(data.status || "Ingest complete.");
-  state.sessionId = data.session_id || state.sessionId;
+  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
+  $("#workspace-session").value = state.workspaceSessionId;
   $("#documents-panel").innerHTML = data.documents_html || "";
+  renderWorkspaceDocList(data.documents || []);
+  await refreshWorkspaceSessions(state.workspaceSessionId);
 }
 
 async function ingestFiles(files) {
   if (!files?.length) return;
-  state.topic = $("#lesson-topic").value.trim() || state.topic;
+  const topic = effectiveTopic("");
   const paths = [];
   for (const file of files) {
     const b64 = await fileToBase64(file);
     const saved = await callApi("save_upload", [file.name, b64]);
     paths.push(saved.path);
   }
-  const data = await callApi("ingest_files", [state.topic, state.sessionId, paths]);
+  const data = await callApi("ingest_files", [topic, state.workspaceSessionId, paths]);
   $("#ingest-status").textContent = stripMd(data.status || "Upload ingested.");
-  state.sessionId = data.session_id || state.sessionId;
+  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
+  $("#workspace-session").value = state.workspaceSessionId;
   $("#documents-panel").innerHTML = data.documents_html || "";
+  renderWorkspaceDocList(data.documents || []);
+  await refreshWorkspaceSessions(state.workspaceSessionId);
 }
 
 function stripMd(text) {
@@ -228,11 +321,11 @@ function stripMd(text) {
 }
 
 async function generateSlides() {
-  const topic = $("#lesson-topic").value.trim();
+  const topic = effectiveTopic($("#lesson-topic").value);
   const grade = $("#lesson-grade").value;
   const slideCount = Number($("#slide-count").value);
   const useRag = $("#use-rag").checked;
-  state.topic = topic;
+  const docIds = effectiveDocIds([]);
 
   startProgressPanel();
   const waitTimer = advanceProgressWhileWaiting();
@@ -242,8 +335,9 @@ async function generateSlides() {
       topic,
       grade,
       slideCount,
-      state.sessionId,
+      state.workspaceSessionId,
       useRag,
+      docIds,
     ]);
   } catch (_err) {
     $("#progress-eta").textContent = "Failed";
@@ -282,15 +376,17 @@ async function generateSlides() {
 
 async function sendVoiceTurn() {
   const message = $("#voice-message").value.trim();
-  const topic = $("#lesson-topic").value.trim();
+  const topic = effectiveTopic("");
   const useRag = $("#use-rag").checked;
+  const docIds = effectiveDocIds([]);
   const data = await callApi("teacher_voice_turn", [
     message,
     state.voiceMode,
     topic,
-    state.sessionId,
+    state.workspaceSessionId,
     useRag,
     state.history,
+    docIds,
   ]);
   state.history = data.history || [];
   $("#voice-reply").textContent = data.assistant || data.status || "";
@@ -336,6 +432,20 @@ function bindUi() {
     $("#sidebar").classList.remove("open")
   );
 
+  $("#workspace-topic").addEventListener("input", (e) => {
+    state.workspaceTopic = e.target.value.trim();
+    updateProjectTitle();
+  });
+
+  $("#workspace-session").addEventListener("change", (e) => {
+    state.workspaceSessionId = e.target.value;
+    refreshDocuments().catch(() => {});
+  });
+
+  $("#workspace-refresh-sessions").addEventListener("click", () => {
+    refreshWorkspaceSessions(state.workspaceSessionId).catch(() => {});
+  });
+
   $("#btn-ingest-url").addEventListener("click", () => ingestUrl().catch(() => {}));
   $("#ingest-file").addEventListener("change", (e) =>
     ingestFiles(e.target.files).catch(() => {})
@@ -350,9 +460,10 @@ function bindUi() {
   });
 
   $("#btn-new-session").addEventListener("click", () => {
-    state.sessionId = "";
+    state.workspaceSessionId = "";
+    $("#workspace-session").value = "";
     $("#ingest-status").textContent =
-      "Enter a topic and ingest sources to start a new ResearchMind session.";
+      "Set workspace topic and ingest sources to start a new ResearchMind session.";
     refreshDocuments().catch(() => {});
   });
 
@@ -363,16 +474,10 @@ function bindUi() {
       state.voiceMode = btn.dataset.mode;
     });
   });
-
-  $("#lesson-topic").addEventListener("change", (e) => {
-    state.topic = e.target.value;
-    const short = state.topic.split(" for ")[0] || state.topic;
-    $("#project-title").textContent = short.slice(0, 40);
-  });
 }
 
 bindUi();
-initSessions().catch((err) => {
+initWorkspace().catch((err) => {
   console.error(err);
   showError("Could not connect to Studio API. Open /classic for full Gradio UI.");
 });

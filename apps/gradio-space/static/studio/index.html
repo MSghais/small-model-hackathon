@@ -50,6 +50,27 @@
     </div>
   </header>
 
+  <div class="workspace-context-bar" id="workspace-context-bar">
+    <div class="workspace-context-inner">
+      <label class="field ws-field">
+        <span>Workspace topic</span>
+        <input id="workspace-topic" type="text" class="input" value="photosynthesis" placeholder="e.g. Photosynthesis for 6th grade" />
+      </label>
+      <label class="field ws-field">
+        <span>ResearchMind session</span>
+        <select id="workspace-session" class="input">
+          <option value="">New session (on ingest)</option>
+        </select>
+      </label>
+      <button type="button" id="workspace-refresh-sessions" class="btn btn-ghost btn-icon" title="Refresh sessions">↻</button>
+      <details class="workspace-docs-details" id="workspace-docs-details">
+        <summary>Source scope (RAG)</summary>
+        <div id="workspace-doc-list" class="workspace-doc-list"></div>
+        <p id="workspace-rag-hint" class="status-text"></p>
+      </details>
+    </div>
+  </div>
+
   <main class="workspace" data-view="slides">
     <section class="col col-research">
       <h2 class="section-label">Step 1 · Research Library</h2>
@@ -81,8 +102,8 @@
         <div class="controls-panel">
           <div class="controls-grid">
             <label class="field">
-              <span>Topic</span>
-              <input id="lesson-topic" type="text" class="input" value="Photosynthesis for 6th Grade" />
+              <span>Topic override (optional)</span>
+              <input id="lesson-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
             </label>
             <label class="field">
               <span>Grade</span>
@@ -105,18 +126,31 @@
               Generate Slides
             </button>
           </div>
-          <p id="generate-status" class="status-text"></p>
-          <div id="progress-panel" class="progress-panel hidden">
+          <p id="generate-status" class="status-text">Ready to generate.</p>
+          <div id="progress-panel" class="progress-panel">
             <div class="progress-panel-head">
               <span id="progress-elapsed" class="progress-elapsed">Elapsed: 0s</span>
               <span id="progress-eta" class="progress-eta"></span>
             </div>
+            <div class="progress-bar-track" aria-hidden="true">
+              <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <p id="progress-current" class="progress-current">Idle</p>
             <ol id="progress-steps" class="progress-steps"></ol>
             <pre id="progress-log" class="progress-log hidden"></pre>
           </div>
         </div>
         <div id="slide-canvas" class="slide-canvas">
-          <div class="studio-canvas-empty"><p>Generate slides to preview your lesson here.</p></div>
+          <div id="canvas-overlay" class="canvas-overlay hidden" aria-live="polite">
+            <div class="canvas-overlay-inner">
+              <span class="canvas-spinner" aria-hidden="true"></span>
+              <p id="canvas-overlay-text">Generating slides…</p>
+              <p class="canvas-overlay-hint">Local CPU models often take 30–90 seconds.</p>
+            </div>
+          </div>
+          <div id="slide-canvas-content" class="slide-canvas-content">
+            <div class="studio-canvas-empty"><p>Generate slides to preview your lesson here.</p></div>
+          </div>
         </div>
         <div id="downloads" class="downloads hidden"></div>
       </div>
@@ -130,7 +164,7 @@
           <span>Cross-Reference Sources</span>
           <input id="use-rag" type="checkbox" checked />
         </label>
-        <input id="session-id" type="hidden" value="" />
+        <p class="status-text">Session and documents use workspace defaults above unless overridden per tool.</p>
       </div>
       <div class="card">
         <p class="card-title">Teacher Voice Mode</p>
