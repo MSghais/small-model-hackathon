@@ -74,6 +74,21 @@ def warmup(model_key: str | None = None) -> str:
     )
 
 
+def reload_model(model_key: str) -> str:
+    """Clear cached backend and reload weights for settings panel."""
+    global _current_model_key
+
+    key = model_key or _app_config.active_model
+    reset_backend()
+    _current_model_key = None
+    _load_state.pop(key, None)
+    _load_errors.pop(key, None)
+    error = ensure_model_loaded(key)
+    if error:
+        return error
+    return warmup(key)
+
+
 def preload_active_model() -> str:
     """Load the active preset at startup so the first request is fast."""
     key = get_active_model_key()

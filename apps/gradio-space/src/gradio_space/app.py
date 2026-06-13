@@ -14,32 +14,41 @@ from gradio_space.tabs.education_pptx import gradio_allowed_paths
 from gradio_space.tabs.echo_coach import echo_coach_allowed_paths
 from gradio_space.tabs.research_mind import researchmind_allowed_paths
 from gradio_space.tabs.teacher_voice import teacher_voice_allowed_paths
-from inference.config import get_app_config
-
-_app_config = get_app_config()
+from gradio_space.ui.settings_panel import build_settings_panel
+from gradio_space.ui.theme import get_theme, load_css
 
 
 def build_demo() -> gr.Blocks:
-    active = _app_config.active
-    presets_note = (
-        f"Presets file: `{_app_config.presets_path}`"
-        if _app_config.presets_path
-        else "Using built-in presets (models.yaml not found)."
-    )
-
-    with gr.Blocks(title="Lesson Agent + ResearchMind — Build Small Hackathon") as demo:
-        gr.Markdown(
-            f"""
-# Lesson Agent + ResearchMind + EchoCoach + TeacherVoice
-
-Local skill-based agents — **lesson slides**, **research with MemRAG**, **voice conversation (TeacherVoice)**, and **pitch analysis (EchoCoach)** (offline).
-
-- **Model:** `{active.key}` — {active.label}
-- **Backend:** `{active.backend}`
-- {presets_note}
-
-Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
+    with gr.Blocks(
+        title="Build Small — Lesson Agent",
+        theme=get_theme(),
+        css=load_css(),
+    ) as demo:
+        with gr.Row(elem_classes=["app-header"]):
+            gr.HTML(
+                """
+<div class="brand-block">
+  <h1>Build Small</h1>
+  <p>Local lesson slides, research, voice coaching — offline on small models.
+  <a href="https://huggingface.co/build-small-hackathon" target="_blank">Hackathon</a></p>
+</div>
 """
+            )
+            settings_toggle = gr.Button("⚙ Settings", size="sm", variant="secondary")
+
+        with gr.Accordion("Settings", open=False, elem_id="settings-panel") as settings_acc:
+            build_settings_panel()
+
+        settings_open = gr.State(False)
+
+        def _toggle_settings(is_open: bool) -> tuple[bool, dict]:
+            new_open = not is_open
+            return new_open, gr.update(open=new_open)
+
+        settings_toggle.click(
+            fn=_toggle_settings,
+            inputs=[settings_open],
+            outputs=[settings_open, settings_acc],
         )
 
         with gr.Tabs():

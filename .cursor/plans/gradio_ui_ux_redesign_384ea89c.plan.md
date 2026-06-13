@@ -4,13 +4,13 @@ overview: Redesign the Build Small Hackathon Gradio app with a compact global sh
 todos:
   - id: shell-theme
     content: Add theme.py, styles.css, settings_panel.py; refactor app.py header into compact brand + Settings accordion
-    status: pending
+    status: completed
   - id: shared-components
     content: "Create ui/components.py: step indicator HTML, unified recording block, session picker, Advanced accordion helper, gr.Progress wrappers"
-    status: pending
+    status: completed
   - id: voice-tabs
     content: Refactor EchoCoach + TeacherVoice to use shared recording, step strips, Advanced panels; promote TeacherVoice RAG checkbox
-    status: pending
+    status: in_progress
   - id: lesson-slides
     content: "Redesign education_pptx.py as wizard: source mode radio, optional sources accordion, move trace to Advanced"
     status: pending
