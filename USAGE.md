@@ -144,12 +144,14 @@ The **TeacherVoice** tab is a **multi-turn voice teacher** — not full duplex l
 
 After each reply, use **Speak last reply** or **Speak first sentence** to generate or replay VoiceOut from the latest assistant message (works even if auto-TTS was skipped).
 
-Install Piper for voice output:
+Install Piper for voice output (included in `gradio-space` deps after `uv sync`):
 
 ```bash
-uv sync --package echocoach --extra piper
+uv sync
 python -m piper.download_voices en_US-lessac-medium
 ```
+
+Voices are stored under `models/piper/` (gitignored) or `~/.local/share/piper/voices/`. **Restart the Gradio app** after installing Piper so the Speak buttons can synthesize audio.
 
 Enable RAG in the accordion: pick a ResearchMind session and optional documents (same scope rules as Chat debug).
 

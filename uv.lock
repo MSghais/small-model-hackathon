@@ -1164,7 +1164,7 @@ version = "0.1.0"
 source = { editable = "apps/gradio-space" }
 dependencies = [
     { name = "agent" },
-    { name = "echocoach", extra = ["whisper"] },
+    { name = "echocoach", extra = ["piper", "whisper"] },
     { name = "gradio" },
     { name = "inference" },
 ]
@@ -1172,7 +1172,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "agent", editable = "libs/agent" },
-    { name = "echocoach", extras = ["whisper"], editable = "libs/echocoach" },
+    { name = "echocoach", extras = ["piper", "whisper"], editable = "libs/echocoach" },
     { name = "gradio", specifier = ">=5.0.0" },
     { name = "inference", editable = "libs/inference" },
 ]

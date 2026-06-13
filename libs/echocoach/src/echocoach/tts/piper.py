@@ -45,30 +45,46 @@ class PiperTtsBackend:
         self._voices[voice_name] = voice
         return voice
 
-    def _resolve_voice_path(self, voice_name: str) -> Path:
+    def _voice_search_dirs(self) -> list[Path]:
+        dirs: list[Path] = []
         env_dir = __import__("os").environ.get("PIPER_VOICES_DIR")
-        candidates: list[Path] = []
         if env_dir:
-            candidates.append(Path(env_dir) / f"{voice_name}.onnx")
-        home = Path.home() / ".local" / "share" / "piper" / "voices"
-        candidates.append(home / f"{voice_name}.onnx")
-        candidates.append(Path.cwd() / "models" / "piper" / f"{voice_name}.onnx")
+            dirs.append(Path(env_dir))
+        dirs.extend(
+            [
+                Path.home() / ".local" / "share" / "piper" / "voices",
+                Path.cwd() / "models" / "piper",
+                Path.cwd(),
+            ]
+        )
+        return dirs
 
-        for path in candidates:
+    def _resolve_voice_path(self, voice_name: str) -> Path:
+        onnx_name = f"{voice_name}.onnx"
+        for directory in self._voice_search_dirs():
+            path = directory / onnx_name
             if path.is_file():
                 return path
 
+        download_targets = [
+            Path.cwd() / "models" / "piper",
+            Path.home() / ".local" / "share" / "piper" / "voices",
+        ]
         try:
             from piper.download_voices import download_voice
         except ImportError:
             download_voice = None
 
         if download_voice is not None:
-            try:
-                downloaded = download_voice(voice_name)
-                return Path(downloaded)
-            except Exception:
-                pass
+            for directory in download_targets:
+                directory.mkdir(parents=True, exist_ok=True)
+                try:
+                    download_voice(voice_name, directory)
+                    path = directory / onnx_name
+                    if path.is_file():
+                        return path
+                except Exception:
+                    continue
 
         import subprocess
         import sys
@@ -77,7 +93,8 @@ class PiperTtsBackend:
             [sys.executable, "-m", "piper.download_voices", voice_name],
             check=True,
         )
-        for path in candidates:
+        for directory in self._voice_search_dirs():
+            path = directory / onnx_name
             if path.is_file():
                 return path
 
