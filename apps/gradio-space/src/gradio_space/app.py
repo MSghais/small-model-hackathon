@@ -1,8 +1,10 @@
-import os
-
 import gradio as gr
 
-from gradio_space.model_loading import preload_active_model
+from gradio_space.research_helpers import (
+    pick_session_for_topic,
+    refresh_doc_choices,
+    refresh_sessions,
+)
 from gradio_space.tabs import (
     build_chat_tab,
     build_education_pptx_tab,
@@ -10,12 +12,8 @@ from gradio_space.tabs import (
     build_research_mind_tab,
     build_teacher_voice_tab,
 )
-from gradio_space.tabs.education_pptx import gradio_allowed_paths
-from gradio_space.tabs.echo_coach import echo_coach_allowed_paths
-from gradio_space.tabs.research_mind import researchmind_allowed_paths
-from gradio_space.tabs.teacher_voice import teacher_voice_allowed_paths
+from gradio_space.ui.components import build_workspace_bar
 from gradio_space.ui.settings_panel import build_settings_panel
-from gradio_space.ui.theme import get_theme, load_css
 
 
 def build_demo() -> gr.Blocks:
@@ -26,6 +24,7 @@ def build_demo() -> gr.Blocks:
 <div class="brand-block">
   <h1>Build Small</h1>
   <p>Local lesson slides, research, voice coaching — offline on small models.
+  <a href="/">Studio UI</a> ·
   <a href="https://huggingface.co/build-small-hackathon" target="_blank">Hackathon</a></p>
 </div>
 """
@@ -47,42 +46,39 @@ def build_demo() -> gr.Blocks:
             outputs=[settings_open, settings_acc],
         )
 
+        workspace = build_workspace_bar()
+
+        def _seed_workspace_from_topic(topic: str):
+            sid = pick_session_for_topic(topic)
+            sess_up = refresh_sessions(sid)
+            doc_up = refresh_doc_choices(sid, [])
+            return sess_up, doc_up
+
+        demo.load(
+            fn=_seed_workspace_from_topic,
+            inputs=[workspace.topic],
+            outputs=[workspace.session_dd, workspace.doc_dd],
+        )
+
         with gr.Tabs():
             with gr.Tab("Lesson slides"):
-                build_education_pptx_tab()
+                build_education_pptx_tab(workspace)
             with gr.Tab("ResearchMind"):
-                build_research_mind_tab()
+                build_research_mind_tab(workspace)
             with gr.Tab("EchoCoach"):
                 build_echo_coach_tab()
             with gr.Tab("TeacherVoice"):
-                build_teacher_voice_tab()
+                build_teacher_voice_tab(workspace)
             with gr.Tab("Chat (debug)"):
-                build_chat_tab()
+                build_chat_tab(workspace)
 
     return demo
 
 
 def main() -> None:
-    preload_active_model()
-    demo = build_demo()
-    port = int(os.environ.get("PORT", "7860"))
-    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
-    print(
-        f"\n  Local UI (browser mic works here): http://127.0.0.1:{port}\n"
-        f"  Bound address: {server_name}:{port}\n"
-    )
-    demo.launch(
-        server_name=server_name,
-        server_port=port,
-        theme=get_theme(),
-        css=load_css(),
-        allowed_paths=[
-            *gradio_allowed_paths(),
-            *researchmind_allowed_paths(),
-            *echo_coach_allowed_paths(),
-            *teacher_voice_allowed_paths(),
-        ],
-    )
+    from gradio_space.server import main as server_main
+
+    server_main()
 
 
 if __name__ == "__main__":

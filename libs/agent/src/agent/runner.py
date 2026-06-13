@@ -4,9 +4,11 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from time import monotonic
+from typing import Any, Iterator, Literal
 
 from inference.base import InferenceBackend
+from inference.response_clean import strip_thinking_blocks
 from researchmind.citations import format_context_block
 from researchmind.extract import extract_docx
 from researchmind.ingest import IngestPipeline
@@ -23,10 +25,15 @@ from agent.models import (
     SlideSpec,
 )
 from agent.preview import outline_to_html, render_slide_images
+from agent.progress import SlideGenerationProgress
 from agent.prompts import (
     education_outline_repair,
+    education_outline_retry_user,
     education_outline_system,
     education_outline_user,
+    fallback_outline,
+    outline_json_example,
+    outline_max_tokens,
     outline_to_markdown,
 )
 from agent.skills import SkillRegistry
@@ -75,7 +82,48 @@ class AgentRunner:
         files: list[Path] | None = None,
         session_id: str | None = None,
         doc_ids: list[str] | None = None,
+        progress: SlideGenerationProgress | None = None,
+        skip_preview_images: bool = False,
     ) -> AgentResult:
+        result: AgentResult | None = None
+        for item in self.iter_education_pptx(
+            topic=topic,
+            grade=grade,
+            slide_count=slide_count,
+            model_key=model_key,
+            backend=backend,
+            source_mode=source_mode,
+            search_workflow=search_workflow,
+            urls=urls,
+            files=files,
+            session_id=session_id,
+            doc_ids=doc_ids,
+            progress=progress,
+            skip_preview_images=skip_preview_images,
+        ):
+            if isinstance(item, AgentResult):
+                result = item
+        if result is None:
+            raise RuntimeError("Slide generation did not return a result")
+        return result
+
+    def iter_education_pptx(
+        self,
+        *,
+        topic: str,
+        grade: str,
+        slide_count: int,
+        model_key: str,
+        backend: InferenceBackend,
+        source_mode: Literal["none", "web", "rag"] = "none",
+        search_workflow: Literal["two_step", "auto"] = "two_step",
+        urls: list[str] | None = None,
+        files: list[Path] | None = None,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
+        progress: SlideGenerationProgress | None = None,
+        skip_preview_images: bool = False,
+    ) -> Iterator[SlideGenerationProgress | AgentResult]:
         skill = self._skills.get(EDUCATION_PPTX_SKILL)
         req = EducationPptxInput(
             topic=topic.strip(),
@@ -95,16 +143,96 @@ class AgentRunner:
             user_input=req.model_dump(mode="json"),
         )
 
+        try:
+            yield from self._iter_education_pptx_steps(
+                req=req,
+                skill=skill,
+                model_key=model_key,
+                backend=backend,
+                trace=trace,
+                progress=progress,
+                skip_preview_images=skip_preview_images,
+            )
+        except Exception as exc:
+            trace.log_note("Run failed", error=str(exc))
+            try:
+                trace.save()
+            except OSError:
+                pass
+            raise
+
+    def _iter_education_pptx_steps(
+        self,
+        *,
+        req: EducationPptxInput,
+        skill: Any,
+        model_key: str,
+        backend: InferenceBackend,
+        trace: TraceRecorder,
+        progress: SlideGenerationProgress | None,
+        skip_preview_images: bool,
+    ) -> Iterator[SlideGenerationProgress | AgentResult]:
+        if progress is not None:
+            progress.begin("load_model", "Load language model")
+            yield progress
+        load_started = monotonic()
         backend.load()
+        load_ms = int((monotonic() - load_started) * 1000)
+        trace.log_step("load_model", "Load language model", duration_ms=load_ms)
+
+        if progress is not None:
+            progress.begin(
+                "gather_sources",
+                "Gather lesson sources",
+                detail=req.source_mode,
+            )
+            yield progress
+        source_started = monotonic()
         source_context, source_summary, active_session = self._gather_lesson_source_context(
             req, backend, model_key, trace
         )
+        source_ms = int((monotonic() - source_started) * 1000)
+        trace.log_step(
+            "gather_sources",
+            "Gather lesson sources",
+            duration_ms=source_ms,
+            source_mode=req.source_mode,
+        )
         if active_session:
             req = req.model_copy(update={"session_id": active_session})
+        if progress is not None:
+            yield progress
 
+        if progress is not None:
+            progress.begin(
+                "generate_outline",
+                "Generate slide outline",
+                detail=f"{req.slide_count} slides · grade {req.grade}",
+            )
+            yield progress
+        outline_started = monotonic()
         outline = self._generate_outline(
-            skill, req, backend, trace, source_context=source_context
+            skill, req, backend, trace, source_context=source_context, progress=progress
         )
+        outline_ms = int((monotonic() - outline_started) * 1000)
+        trace.log_step(
+            "generate_outline",
+            "Generate slide outline",
+            duration_ms=outline_ms,
+            slide_count=len(outline.slides),
+        )
+        for step in trace.steps:
+            if step.get("type") == "note" and step.get("phase") == "outline_fallback":
+                note = str(step.get("message") or "")
+                source_summary = f"{source_summary}\n\n_{note}_".strip() if source_summary else f"_{note}_"
+
+        if progress is not None:
+            yield progress
+
+        if progress is not None:
+            progress.begin("create_exports", "Build PPTX, DOCX, and HTML exports")
+            yield progress
+        export_started = monotonic()
         tool = self._tools.get("create_pptx")
         pptx_path = tool.handler(outline, run_id=trace.run_id)
         trace.log_tool(
@@ -126,16 +254,52 @@ class AgentRunner:
             {"title": outline.title},
             str(html_export_path),
         )
+        export_ms = int((monotonic() - export_started) * 1000)
+        trace.log_step(
+            "create_exports",
+            "Build PPTX, DOCX, and HTML exports",
+            duration_ms=export_ms,
+        )
 
         trace.set_artifact(pptx_path)
 
         slides_dicts = [s.model_dump() for s in outline.slides]
         markdown = outline_to_markdown(outline.title, slides_dicts)
         html_preview = outline_to_html(outline)
-        preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
+
+        if skip_preview_images:
+            preview_images: list[str] = []
+            trace.log_step(
+                "render_previews",
+                "Render slide thumbnails",
+                duration_ms=0,
+                detail="skipped (HTML preview only)",
+            )
+        else:
+            if progress is not None:
+                progress.begin(
+                    "render_previews",
+                    "Render slide thumbnails",
+                    detail=f"{len(outline.slides) + 1} images",
+                )
+                yield progress
+            preview_started = monotonic()
+            preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
+            preview_ms = int((monotonic() - preview_started) * 1000)
+            trace.log_step(
+                "render_previews",
+                "Render slide thumbnails",
+                duration_ms=preview_ms,
+                image_count=len(preview_images),
+            )
+
+        if progress is not None:
+            progress.finish()
+            yield progress
+
         trace_path = trace.save()
 
-        return AgentResult(
+        yield AgentResult(
             markdown_preview=markdown,
             html_preview=html_preview,
             preview_images=preview_images,
@@ -242,6 +406,10 @@ class AgentRunner:
         summary = f"{ingest_summary}\n\n{retrieve_line}".strip() if ingest_summary else retrieve_line
         return context, summary, session_id
 
+    @staticmethod
+    def _normalize_outline_llm_text(raw: str) -> str:
+        return strip_thinking_blocks(raw)
+
     def _generate_outline(
         self,
         skill: Any,
@@ -250,6 +418,7 @@ class AgentRunner:
         trace: TraceRecorder,
         *,
         source_context: str = "",
+        progress: SlideGenerationProgress | None = None,
     ) -> SlideOutline:
         system = education_outline_system(skill.body)
         user = education_outline_user(req, source_context=source_context)
@@ -258,27 +427,100 @@ class AgentRunner:
             {"role": "user", "content": user},
         ]
         prompt_text = system + "\n\n" + user
-        raw = backend.chat(messages, max_tokens=2048, temperature=0.3)
+        token_budget = outline_max_tokens(req.slide_count)
+
+        raw = self._normalize_outline_llm_text(
+            backend.chat(messages, max_tokens=token_budget, temperature=0.0)
+        )
         trace.log_llm(prompt_text, raw)
 
-        try:
-            return self._parse_outline(raw, req.slide_count, trace)
-        except (json.JSONDecodeError, ValueError) as first_error:
-            repair_messages = messages + [
-                {"role": "assistant", "content": raw},
-                {
-                    "role": "user",
-                    "content": education_outline_repair(
-                        raw, str(first_error), expected_slides=req.slide_count
-                    ),
-                },
-            ]
-            repair_prompt = education_outline_repair(
-                raw, str(first_error), expected_slides=req.slide_count
+        if not raw:
+            trace.log_note(
+                "Empty outline response; retrying with JSON example",
+                phase="outline_retry",
             )
-            repaired = backend.chat(repair_messages, max_tokens=2048, temperature=0.1)
-            trace.log_llm(repair_prompt, repaired)
-            return self._parse_outline(repaired, req.slide_count, trace)
+            example = outline_json_example(req.slide_count)
+            retry_user = education_outline_retry_user(req, example_json=example)
+            retry_messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": retry_user},
+            ]
+            retry_prompt = system + "\n\n" + retry_user
+            raw = self._normalize_outline_llm_text(
+                backend.chat(retry_messages, max_tokens=token_budget, temperature=0.0)
+            )
+            trace.log_llm(retry_prompt, raw)
+
+        outline, parse_error = self._parse_outline_or_error(raw, req.slide_count, trace)
+        if outline is not None:
+            return outline
+
+        if progress is not None:
+            progress.begin(
+                "repair_outline",
+                "Repair outline JSON",
+                detail=(parse_error or "invalid JSON")[:80],
+            )
+        repair_started = monotonic()
+        repair_user = education_outline_repair(
+            raw,
+            parse_error or "invalid JSON",
+            expected_slides=req.slide_count,
+        )
+        repair_messages = messages + [
+            {"role": "assistant", "content": raw},
+            {"role": "user", "content": repair_user},
+        ]
+        repaired = self._normalize_outline_llm_text(
+            backend.chat(
+                repair_messages,
+                max_tokens=min(512, token_budget),
+                temperature=0.0,
+            )
+        )
+        trace.log_llm(repair_user, repaired)
+        outline, repair_error = self._parse_outline_or_error(
+            repaired, req.slide_count, trace
+        )
+        repair_ms = int((monotonic() - repair_started) * 1000)
+        if outline is not None:
+            trace.log_step(
+                "repair_outline",
+                "Repair outline JSON",
+                duration_ms=repair_ms,
+            )
+            return outline
+
+        trace.log_step(
+            "repair_outline",
+            "Repair outline JSON",
+            duration_ms=repair_ms,
+            error=repair_error or parse_error,
+        )
+        trace.log_note(
+            "Model outline invalid after repair; using template slides.",
+            phase="outline_fallback",
+        )
+        if progress is not None:
+            progress.begin(
+                "fallback_outline",
+                "Use template outline",
+                detail=(repair_error or parse_error or "invalid JSON")[:80],
+            )
+        return fallback_outline(req)
+
+    def _parse_outline_or_error(
+        self,
+        raw: str,
+        expected_slides: int,
+        trace: TraceRecorder | None,
+    ) -> tuple[SlideOutline | None, str]:
+        if not raw.strip():
+            return None, "Model returned empty output (no JSON)"
+        try:
+            return self._parse_outline(raw, expected_slides, trace), ""
+        except (json.JSONDecodeError, ValueError) as exc:
+            return None, str(exc)
 
     def _parse_outline(
         self,
@@ -357,9 +599,13 @@ class AgentRunner:
         if fence:
             cleaned = fence.group(1).strip()
 
+        if not cleaned:
+            raise ValueError("Model returned empty output (no JSON)")
+
         start = cleaned.find("{")
         if start < 0:
-            return json.loads(cleaned)
+            preview = cleaned[:120].replace("\n", " ")
+            raise ValueError(f"Model response has no JSON object: {preview!r}")
 
         end = AgentRunner._matching_brace_end(cleaned, start)
         if end is not None:

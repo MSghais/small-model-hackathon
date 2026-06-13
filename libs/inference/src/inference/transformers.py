@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from inference.config import ModelConfig
+from inference.device_utils import (
+    DevicePlan,
+    clear_cuda_cache,
+    is_cuda_oom,
+    iter_inference_device_plans,
+)
 
 
 class TransformersBackend:
@@ -10,51 +16,40 @@ class TransformersBackend:
         self._tokenizer = None
         self._processor = None
         self._device_label: str | None = None
+        self._active_plan: DevicePlan | None = None
 
-    def _resolve_device(self):
+    def unload(self) -> None:
+        self._model = None
+        self._tokenizer = None
+        self._processor = None
+        self._device_label = None
+        self._active_plan = None
+        clear_cuda_cache()
+
+    def _torch_dtype(self, plan: DevicePlan):
         import torch
 
-        if torch.cuda.is_available():
-            return "cuda", torch.float16, "auto"
-        return "cpu", torch.float32, None
+        if plan.torch_dtype_name == "float16":
+            return torch.float16
+        return torch.float32
 
-    def load(self) -> None:
-        if self._model is not None:
-            return
-
-        if not self._config.model_id:
-            raise ValueError(
-                f"Preset {self._config.key!r} requires model_id for transformers backend"
-            )
-
-        try:
-            import torch
-            from transformers import (
-                AutoModelForCausalLM,
-                AutoModelForImageTextToText,
-                AutoProcessor,
-                AutoTokenizer,
-            )
-        except ImportError as exc:
-            raise ImportError(
-                "transformers backend requires torch and transformers. "
-                "Install with: uv sync --all-packages"
-            ) from exc
-
-        device, torch_dtype, device_map = self._resolve_device()
-        self._device_label = (
-            f"cuda ({torch.cuda.get_device_name(0)})"
-            if device == "cuda"
-            else "cpu"
+    def _load_on_plan(self, plan: DevicePlan) -> None:
+        import torch
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoModelForImageTextToText,
+            AutoProcessor,
+            AutoTokenizer,
         )
 
+        torch_dtype = self._torch_dtype(plan)
         common_kwargs = {
             "trust_remote_code": self._config.trust_remote_code,
         }
         model_kwargs = {
             **common_kwargs,
             "dtype": torch_dtype,
-            "device_map": device_map,
+            "device_map": plan.device_map,
         }
 
         if self._config.multimodal:
@@ -88,8 +83,82 @@ class TransformersBackend:
                 )
             self._model = PeftModel.from_pretrained(self._model, str(adapter))
 
-        if device == "cpu":
-            self._model.to(device)
+        if plan.device == "cpu":
+            assert self._model is not None
+            self._model.to("cpu")
+
+        self._active_plan = plan
+        self._device_label = plan.label
+
+    def load(self) -> None:
+        if self._model is not None:
+            return
+
+        if not self._config.model_id:
+            raise ValueError(
+                f"Preset {self._config.key!r} requires model_id for transformers backend"
+            )
+
+        try:
+            import torch  # noqa: F401
+            from transformers import (  # noqa: F401
+                AutoModelForCausalLM,
+                AutoModelForImageTextToText,
+                AutoProcessor,
+                AutoTokenizer,
+            )
+        except ImportError as exc:
+            raise ImportError(
+                "transformers backend requires torch and transformers. "
+                "Install with: uv sync --all-packages"
+            ) from exc
+
+        last_error: Exception | None = None
+        for plan in iter_inference_device_plans():
+            self.unload()
+            try:
+                self._load_on_plan(plan)
+                print(
+                    f"[inference] Loaded {self._config.model_id} on {plan.label}",
+                    flush=True,
+                )
+                return
+            except RuntimeError as exc:
+                if is_cuda_oom(exc):
+                    last_error = exc
+                    print(
+                        f"[inference] CUDA OOM loading on {plan.label}; trying next device…",
+                        flush=True,
+                    )
+                    continue
+                raise
+            except Exception as exc:
+                if plan.device.startswith("cuda") and is_cuda_oom(exc):
+                    last_error = exc
+                    print(
+                        f"[inference] Failed on {plan.label} ({exc}); trying next device…",
+                        flush=True,
+                    )
+                    continue
+                raise
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"Failed to load model {self._config.model_id!r} on any device")
+
+    def _on_cpu(self) -> bool:
+        return self._active_plan is not None and self._active_plan.device == "cpu"
+
+    def _move_model_to_cpu(self) -> None:
+        assert self._model is not None
+        clear_cuda_cache()
+        self._model = self._model.to("cpu")
+        if self._active_plan and self._active_plan.torch_dtype_name == "float16":
+            self._model = self._model.float()
+        self._active_plan = DevicePlan("cpu", "float32", None, "cpu (CUDA OOM fallback)")
+        self._device_label = self._active_plan.label
+        clear_cuda_cache()
+        print(f"[inference] Moved {self._config.model_id} to CPU after CUDA OOM", flush=True)
 
     @property
     def device_label(self) -> str:
@@ -168,6 +237,29 @@ class TransformersBackend:
         generated = output[0][inputs["input_ids"].shape[-1] :]
         return self._tokenizer.decode(generated, skip_special_tokens=True).strip()
 
+    def _run_with_oom_fallback(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> str:
+        try:
+            return self._generate_from_messages(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+        except RuntimeError as exc:
+            if self._on_cpu() or not is_cuda_oom(exc):
+                raise
+            self._move_model_to_cpu()
+            return self._generate_from_messages(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+
     def generate(
         self,
         prompt: str,
@@ -189,7 +281,7 @@ class TransformersBackend:
         temperature: float | None = None,
     ) -> str:
         normalized = self._normalize_messages(messages)
-        return self._generate_from_messages(
+        return self._run_with_oom_fallback(
             normalized,
             max_tokens=max_tokens,
             temperature=temperature,

@@ -36,5 +36,7 @@ def get_backend(model_key: str | None = None) -> InferenceBackend:
 
 def reset_backend() -> None:
     global _backend, _backend_key
+    if _backend is not None and hasattr(_backend, "unload"):
+        _backend.unload()
     _backend = None
     _backend_key = None

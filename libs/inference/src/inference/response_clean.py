@@ -203,6 +203,14 @@ def prepare_display_reply(text: str) -> str:
     return cleaned
 
 
+def strip_thinking_blocks(text: str) -> str:
+    """Remove chain-of-thought wrapper tags; keep remaining text (e.g. JSON) intact."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    return _THINK_BLOCKS.sub("", cleaned).strip()
+
+
 def strip_reasoning_output(text: str) -> str:
     """Remove model chain-of-thought / thinking traces from user-visible replies."""
     cleaned = text.strip()

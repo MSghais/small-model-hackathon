@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agent.models import EducationPptxInput
+from agent.models import EducationPptxInput, SlideOutline, SlideSpec
 
 
 def education_outline_system(skill_body: str) -> str:
@@ -26,10 +26,17 @@ JSON schema:
 
 Rules:
 - Use exactly the requested number of content slides (title slide is added separately by the tool).
-- Bullets should be short, age-appropriate, and factual.
+- At most 3 bullets per slide; each bullet under 12 words.
+- speaker_note: one short sentence (under 20 words) or omit.
+- Output compact JSON only — no preamble, no markdown fences, stop after the final `}}`.
 - When source excerpts are provided, prefer them over general knowledge and keep bullets consistent with those sources.
-- speaker_note is optional but helpful for each slide.
 """
+
+
+def outline_max_tokens(slide_count: int) -> int:
+    """Cap generation length from slide count so CPU inference does not run to 2048 tokens."""
+    count = max(1, min(int(slide_count), 20))
+    return min(1024, 100 + count * 130)
 
 
 def education_outline_user(req: EducationPptxInput, *, source_context: str = "") -> str:
@@ -77,6 +84,46 @@ def outline_to_markdown(title: str, slides: list[dict]) -> str:
             lines.append(f"\n*Teacher note:* {note}")
         lines.append("")
     return "\n".join(lines).strip()
+
+
+def education_outline_retry_user(req: EducationPptxInput, *, example_json: str) -> str:
+    return (
+        f"Topic: {req.topic}\n"
+        f"Grade level: {req.grade}\n"
+        f"Number of content slides: {req.slide_count}\n\n"
+        "Your previous response was empty or invalid. "
+        "Return ONLY valid JSON matching this structure (replace placeholders for the topic):\n"
+        f"{example_json}"
+    )
+
+
+def fallback_outline(req: EducationPptxInput) -> SlideOutline:
+    """Deterministic outline when the model returns empty or unparseable JSON."""
+    topic = req.topic.strip() or "Lesson"
+    grade = req.grade
+    seeds: list[tuple[str, list[str]]] = [
+        ("Introduction", [f"What is {topic}?", f"Overview for grade {grade}"]),
+        ("Key concepts", ["Main idea", "Supporting detail"]),
+        ("Examples", ["Real-world example", "Classroom activity"]),
+        ("Why it matters", ["Connection to students", "Discussion question"]),
+        ("Review", ["Summary points", "Check for understanding"]),
+        ("Going further", ["Extension idea", "Homework prompt"]),
+        ("Vocabulary", ["Important term", "Definition in student language"]),
+        ("Wrap-up", ["Recap", "Preview next lesson"]),
+    ]
+    slides: list[SlideSpec] = []
+    for index in range(req.slide_count):
+        title, bullets = seeds[index % len(seeds)]
+        if index >= len(seeds):
+            title = f"{title} ({index + 1})"
+        slides.append(
+            SlideSpec(
+                title=title,
+                bullets=bullets,
+                speaker_note="Template slide — edit using your lesson sources.",
+            )
+        )
+    return SlideOutline(title=topic[:1].upper() + topic[1:], slides=slides)
 
 
 def outline_json_example(slide_count: int) -> str:

@@ -1,8 +1,10 @@
+from html import escape
 from pathlib import Path
 
 import gradio as gr
 
-from agent.runner import AgentRunner
+from agent.progress import SlideGenerationProgress
+from agent.runner import AgentResult, AgentRunner
 from agent.tools.pptx import get_outputs_dir
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
 from gradio_space.research_helpers import (
@@ -10,8 +12,11 @@ from gradio_space.research_helpers import (
     merge_lesson_urls,
     refresh_doc_choices,
     refresh_sessions,
+    resolve_doc_ids,
+    resolve_session,
+    resolve_topic,
 )
-from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES
+from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES, WorkspaceWidgets
 from inference.factory import get_backend
 from researchmind.config import get_config
 
@@ -51,6 +56,10 @@ def _error_html(message: str) -> str:
 
 
 def _empty_outputs(message: str) -> tuple:
+    log_html = (
+        f'<div class="slide-gen-log"><div class="slide-gen-log-banner error">'
+        f"{message}</div></div>"
+    )
     return (
         message,
         _error_html(message),
@@ -58,10 +67,71 @@ def _empty_outputs(message: str) -> tuple:
         None,
         None,
         None,
+        log_html,
         message,
         message,
         message,
     )
+
+
+def _running_preview_html(step_label: str = "Generating slides…") -> str:
+    safe = (
+        step_label.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return (
+        '<div class="lesson-running-preview">'
+        '<div class="lesson-running-spinner" aria-hidden="true"></div>'
+        f"<p><strong>{safe}</strong></p>"
+        "<p class=\"lesson-running-hint\">Local models can take 30–90s on CPU. "
+        "Steps update live below.</p>"
+        "</div>"
+    )
+
+
+def _interim_outputs(
+    slide_progress: SlideGenerationProgress,
+    *,
+    status: str = "_Generating lesson slides…_",
+    step_label: str = "Generating slides…",
+) -> tuple:
+    log_html = slide_progress.format_log_html(running=True)
+    return (
+        "",
+        _running_preview_html(step_label),
+        [],
+        None,
+        None,
+        None,
+        log_html,
+        "",
+        "",
+        status,
+    )
+
+
+def _format_processing_log(
+    progress: SlideGenerationProgress,
+    *,
+    trace_summary: str = "",
+    source_status: str = "",
+) -> str:
+    footer_parts: list[str] = []
+    if source_status:
+        footer_parts.append(
+            f"<p><strong>Sources:</strong> {escape(strip_md_inline(source_status))}</p>"
+        )
+    if trace_summary:
+        footer_parts.append(
+            f'<pre class="slide-gen-log-trace">{escape(trace_summary)}</pre>'
+        )
+    footer_html = "".join(footer_parts)
+    return progress.format_log_html(running=False, footer_html=footer_html)
+
+
+def strip_md_inline(text: str) -> str:
+    return str(text).replace("**", "").replace("_", "").replace("`", "")
 
 
 def update_source_visibility(source_mode_label: str, search_workflow_label: str):
@@ -91,8 +161,12 @@ def update_source_visibility(source_mode_label: str, search_workflow_label: str)
 def discover_lesson_sources(
     topic: str,
     session_id: str,
+    workspace_topic: str,
+    workspace_session: str,
     progress: gr.Progress = gr.Progress(),
 ) -> tuple[str, object, object]:
+    topic = resolve_topic(topic, workspace_topic)
+    session_id = resolve_session(session_id, workspace_session)
     progress(0, desc="Discovering sources…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -145,27 +219,44 @@ def generate_lesson_slides(
     upload_files: list[str] | None,
     session_id: str,
     doc_ids: list[str] | None,
+    workspace_topic: str = "",
+    workspace_session: str = "",
+    workspace_doc_ids: list[str] | None = None,
     progress: gr.Progress = gr.Progress(),
-) -> tuple[str, str, list[str], str | None, str | None, str | None, str, str, str]:
-    progress(0, desc="Loading model…")
+    *,
+    skip_preview_images: bool = False,
+):
+    topic = resolve_topic(topic, workspace_topic)
+    session_id = resolve_session(session_id, workspace_session)
+    doc_ids = resolve_doc_ids(doc_ids, workspace_doc_ids)
+    slide_progress = SlideGenerationProgress(
+        on_update=lambda fraction, desc: progress(fraction, desc=desc),
+    )
+    slide_progress.begin("load_model", "Load language model")
+
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        return _empty_outputs(load_error)
+        yield _empty_outputs(load_error)
+        return
 
     if not topic.strip():
         message = "Please enter a lesson topic."
-        return _empty_outputs(message)
+        yield _empty_outputs(message)
+        return
 
     source_mode = _source_mode_value(source_mode_label)
     search_workflow = _search_workflow_value(search_workflow_label)
     merged_urls = merge_lesson_urls(urls_text, selected_urls)
     files = [Path(p) for p in (upload_files or [])]
 
+    current_step = "Load language model"
+    yield _interim_outputs(slide_progress, step_label=current_step)
+
+    result = None
     try:
-        progress(0.1, desc="Generating lesson slides…")
         runner = AgentRunner()
-        result = runner.run_education_pptx(
+        for item in runner.iter_education_pptx(
             topic=topic,
             grade=grade,
             slide_count=int(slide_count),
@@ -177,10 +268,35 @@ def generate_lesson_slides(
             files=files,
             session_id=session_id or None,
             doc_ids=doc_ids or [],
-        )
+            progress=slide_progress,
+            skip_preview_images=skip_preview_images,
+        ):
+            if isinstance(item, AgentResult):
+                result = item
+                break
+            current_step = item.steps[-1].label if item.steps else current_step
+            yield _interim_outputs(slide_progress, step_label=current_step)
     except Exception as exc:  # noqa: BLE001
         message = f"Agent error: {exc}"
-        return _empty_outputs(message)
+        slide_progress.finish()
+        yield (
+            message,
+            _error_html(message),
+            [],
+            None,
+            None,
+            None,
+            slide_progress.format_log_html(running=False),
+            message,
+            message,
+            message,
+        )
+        return
+
+    if result is None:
+        message = "Agent error: generation finished without a result."
+        yield _empty_outputs(message)
+        return
 
     progress(1.0, desc="Done")
     gallery = [str(Path(p).resolve()) for p in result.preview_images]
@@ -190,20 +306,26 @@ def generate_lesson_slides(
         f"Trace saved: `{result.trace_path}`"
     )
     source_status = result.source_summary or "_No external sources used (model only)._"
-    return (
+    processing_log = _format_processing_log(
+        slide_progress,
+        trace_summary=trace_summary,
+        source_status=source_status,
+    )
+    yield (
         result.markdown_preview,
         result.html_preview,
         gallery,
         str(Path(result.pptx_path).resolve()),
         str(Path(result.docx_path).resolve()),
         str(Path(result.html_export_path).resolve()),
+        processing_log,
         trace_summary,
         result.trace.to_json(),
         source_status,
     )
 
 
-def build_education_pptx_tab() -> None:
+def build_education_pptx_tab(workspace: WorkspaceWidgets) -> None:
     gr.Markdown("### Create lesson slides", elem_classes=["lesson-tab-heading"])
     gr.HTML(
         '<p class="tab-subtitle">Enter your topic below, adjust grade and length if needed, then generate.</p>'
@@ -291,6 +413,14 @@ def build_education_pptx_tab() -> None:
         )
 
     source_status = gr.Markdown(value="_Ready to generate._", elem_classes=["lesson-status"])
+    processing_log = gr.HTML(
+        value=(
+            '<div class="slide-gen-log slide-gen-log-idle">'
+            "<p>Generation steps and timings appear here when you run.</p>"
+            "</div>"
+        ),
+        elem_classes=["lesson-processing-log"],
+    )
 
     with gr.Tabs():
         with gr.Tab("Slide preview"):
@@ -362,7 +492,7 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
 
     discover_btn.click(
         fn=discover_lesson_sources,
-        inputs=[topic, session_dd],
+        inputs=[topic, session_dd, workspace.topic, workspace.session_dd],
         outputs=[source_status, url_choices, session_dd],
     )
 
@@ -379,6 +509,9 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
             upload_files,
             session_dd,
             doc_dd,
+            workspace.topic,
+            workspace.session_dd,
+            workspace.doc_dd,
         ],
         outputs=[
             outline_preview,
@@ -387,10 +520,37 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
             pptx_file,
             docx_file,
             html_file,
+            processing_log,
             advanced.trace_summary,
             advanced.trace_box,
             source_status,
         ],
+        show_progress="hidden",
+    )
+
+    def _sync_topic_from_workspace(ws_topic: str, local_topic: str) -> str:
+        if not (local_topic or "").strip():
+            return ws_topic
+        return local_topic
+
+    def _sync_session_from_workspace(ws_session: str, local_session: str) -> str:
+        if not (local_session or "").strip():
+            return ws_session
+        return local_session
+
+    workspace.topic.change(
+        fn=_sync_topic_from_workspace,
+        inputs=[workspace.topic, topic],
+        outputs=[topic],
+    )
+    workspace.session_dd.change(
+        fn=_sync_session_from_workspace,
+        inputs=[workspace.session_dd, session_dd],
+        outputs=[session_dd],
+    ).then(
+        fn=refresh_doc_choices,
+        inputs=[session_dd, doc_dd],
+        outputs=[doc_dd],
     )
 
 

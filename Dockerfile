@@ -21,6 +21,7 @@ COPY libs/inference/pyproject.toml libs/inference/README.md libs/inference/
 COPY libs/agent/pyproject.toml libs/agent/README.md libs/agent/
 COPY libs/echocoach/pyproject.toml libs/echocoach/README.md libs/echocoach/
 COPY apps/gradio-space/src apps/gradio-space/src
+COPY apps/gradio-space/static apps/gradio-space/static
 COPY libs/inference/src libs/inference/src
 COPY libs/agent/src libs/agent/src
 COPY libs/echocoach/src libs/echocoach/src

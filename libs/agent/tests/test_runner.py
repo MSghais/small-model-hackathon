@@ -1,11 +1,15 @@
-from agent.models import SlideOutline, SlideSpec
+from agent.models import EducationPptxInput, SlideOutline, SlideSpec
 from agent.preview import outline_to_html, render_slide_images
+from agent.prompts import fallback_outline, outline_max_tokens
 from agent.runner import AgentRunner
 from agent.tools.docx import create_docx, create_html_export
 from agent.tools.pptx import create_pptx
 
 
-def test_parse_outline_pads_when_model_returns_too_few():
+def test_outline_max_tokens_scales_with_slide_count():
+    assert outline_max_tokens(5) == 750
+    assert outline_max_tokens(1) == 230
+    assert outline_max_tokens(20) == 1024
     runner = AgentRunner()
     raw = (
         '{"title": "AI Agents", "slides": ['
@@ -52,6 +56,39 @@ def test_extract_json_ignores_duplicate_object():
     second = '{"title": "Second", "slides": [{"title": "B", "bullets": ["b"]}]}'
     data = AgentRunner._extract_json(f"{first}\n{second}")
     assert data["title"] == "First"
+
+
+def test_extract_json_empty_raises():
+    import pytest
+
+    with pytest.raises(ValueError, match="empty output"):
+        AgentRunner._extract_json("   ")
+
+
+def test_extract_json_after_thinking_block():
+    raw = (
+        "planning the lesson\n"
+        '{"title": "Agents", "slides": [{"title": "Intro", "bullets": ["What is an agent?"]}]}'
+    )
+    from inference.response_clean import strip_thinking_blocks
+
+    cleaned = strip_thinking_blocks(raw)
+    data = AgentRunner._extract_json(cleaned)
+    assert data["title"] == "Agents"
+
+
+def test_parse_outline_or_error_empty():
+    runner = AgentRunner()
+    outline, err = runner._parse_outline_or_error("", 5, None)
+    assert outline is None
+    assert "empty" in err.lower()
+
+
+def test_fallback_outline_slide_count():
+    req = EducationPptxInput(topic="ai agent", grade="6", slide_count=5)
+    outline = fallback_outline(req)
+    assert len(outline.slides) == 5
+    assert "ai agent" in outline.title.lower()
 
 
 def test_create_pptx_writes_file(tmp_path, monkeypatch):
