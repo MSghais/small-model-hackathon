@@ -19,47 +19,55 @@ from gradio_space.research_helpers import (
     run_research_question,
     trace_summary_markdown,
 )
-from gradio_space.ui.components import build_advanced_panel, tab_hero
+from gradio_space.ui.components import build_advanced_panel
 from inference.factory import get_backend
 
 logger = logging.getLogger(__name__)
+
+
+def _require_topic(topic: str) -> str | None:
+    if not topic.strip():
+        return "Enter a research topic first — it names your session and guides web search."
+    return None
 
 
 def discover_sources(
     topic: str,
     session_id: str,
     progress: gr.Progress = gr.Progress(),
-) -> tuple[str, object, str, str, str, str, object]:
+) -> tuple[str, object, str, str, str, str, object, object]:
     progress(0, desc="Searching web…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
         return (
             load_error,
-            gr.update(choices=[], value=[]),
+            gr.update(choices=[], value=[], visible=False),
             session_id,
             load_error,
             load_error,
             memory_summary(session_id),
             refresh_doc_choices(session_id, []),
+            gr.update(visible=False),
         )
 
-    if not topic.strip():
-        msg = "Enter a topic to discover sources."
+    topic_error = _require_topic(topic)
+    if topic_error:
         return (
-            msg,
-            gr.update(choices=[], value=[]),
+            topic_error,
+            gr.update(choices=[], value=[], visible=False),
             session_id,
-            msg,
-            msg,
+            topic_error,
+            topic_error,
             memory_summary(session_id),
             refresh_doc_choices(session_id, []),
+            gr.update(visible=False),
         )
 
     try:
         runner = AgentRunner()
         discover = runner.run_researchmind_discover(
-            topic=topic,
+            topic=topic.strip(),
             auto_search=False,
             session_id=session_id or None,
             model_key=model_key,
@@ -69,34 +77,36 @@ def discover_sources(
         if not choices:
             summary = (
                 "No verified URLs found. Try a more specific topic, paste URLs manually, "
-                "or use **Auto search & ingest**."
+                "or use **Auto-ingest from web**."
             )
         else:
             summary = (
-                f"Found **{len(choices)} verified URL(s)**. Select sources and click "
-                "**Ingest selected**."
+                f"Found **{len(choices)}** verified URL(s). Review the list, then click "
+                "**Ingest selected sources**."
             )
         trace_json = load_trace_json(discover.trace_path)
         progress(1.0, desc="Done")
         return (
             summary,
-            gr.update(choices=choices, value=choices),
+            gr.update(choices=choices, value=choices, visible=bool(choices)),
             discover.session_id,
             trace_summary_markdown(discover.trace_path),
             trace_json,
             memory_summary(discover.session_id),
             refresh_doc_choices(discover.session_id, []),
+            gr.update(visible=bool(choices)),
         )
     except Exception as exc:  # noqa: BLE001
         msg = f"Discover error: {exc}"
         return (
             msg,
-            gr.update(choices=[], value=[]),
+            gr.update(choices=[], value=[], visible=False),
             session_id,
             msg,
             msg,
             memory_summary(session_id),
             refresh_doc_choices(session_id, []),
+            gr.update(visible=False),
         )
 
 
@@ -104,37 +114,39 @@ def auto_search_ingest(
     topic: str,
     session_id: str,
     progress: gr.Progress = gr.Progress(),
-) -> tuple[str, object, str, str, str, str, object]:
+) -> tuple[str, object, str, str, str, str, object, object]:
     progress(0, desc="Auto search & ingest…")
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
         return (
             load_error,
-            gr.update(choices=[], value=[]),
+            gr.update(choices=[], value=[], visible=False),
             session_id,
             load_error,
             load_error,
             memory_summary(session_id),
             refresh_doc_choices(session_id, []),
+            gr.update(visible=False),
         )
 
-    if not topic.strip():
-        msg = "Enter a topic for auto search."
+    topic_error = _require_topic(topic)
+    if topic_error:
         return (
-            msg,
-            gr.update(choices=[], value=[]),
+            topic_error,
+            gr.update(choices=[], value=[], visible=False),
             session_id,
-            msg,
-            msg,
+            topic_error,
+            topic_error,
             memory_summary(session_id),
             refresh_doc_choices(session_id, []),
+            gr.update(visible=False),
         )
 
     try:
         runner = AgentRunner()
         result = runner.run_researchmind_ingest(
-            topic=topic,
+            topic=topic.strip(),
             urls=[],
             files=[],
             auto_search=True,
@@ -146,23 +158,25 @@ def auto_search_ingest(
         progress(1.0, desc="Done")
         return (
             format_ingest_status(result),
-            gr.update(choices=[], value=[]),
+            gr.update(choices=[], value=[], visible=False),
             result.session_id,
             trace_summary_markdown(result.trace_path),
             trace_json,
             memory_summary(result.session_id),
             refresh_doc_choices(result.session_id, []),
+            gr.update(visible=False),
         )
     except Exception as exc:  # noqa: BLE001
         msg = f"Auto ingest error: {exc}"
         return (
             msg,
-            gr.update(choices=[], value=[]),
+            gr.update(choices=[], value=[], visible=False),
             session_id,
             msg,
             msg,
             memory_summary(session_id),
             refresh_doc_choices(session_id, []),
+            gr.update(visible=False),
         )
 
 
@@ -187,12 +201,23 @@ def ingest_selected(
             refresh_doc_choices(session_id, []),
         )
 
+    topic_error = _require_topic(topic)
+    if topic_error:
+        return (
+            topic_error,
+            memory_summary(session_id),
+            topic_error,
+            topic_error,
+            refresh_sessions(session_id),
+            refresh_doc_choices(session_id, []),
+        )
+
     direct_urls = [ln.strip() for ln in urls_text.splitlines() if ln.strip()]
     all_urls = list(dict.fromkeys([*direct_urls, *(selected_urls or [])]))
     files = [Path(p) for p in (upload_files or [])]
 
     if not all_urls and not files:
-        msg = "Provide URLs, select suggested sources, or upload a file."
+        msg = "Add URLs, select suggested sources, or upload a file — then ingest."
         return (
             msg,
             memory_summary(session_id),
@@ -206,7 +231,7 @@ def ingest_selected(
         logger.info("Ingesting %d URL(s) and %d file(s)", len(all_urls), len(files))
         runner = AgentRunner()
         result = runner.run_researchmind_ingest(
-            topic=topic or None,
+            topic=topic.strip(),
             urls=all_urls,
             files=files,
             auto_search=False,
@@ -272,14 +297,23 @@ def ask_question(
 
 
 def build_research_mind_tab() -> None:
-    """ResearchMind UI — ingest library + corpus chat side by side."""
-    tab_hero(
-        "Index sources once, then ask questions offline with citations.",
-        steps=["Ingest", "Ask"],
-        active_step=0,
+    gr.Markdown("### ResearchMind", elem_classes=["form-tab-heading"])
+    gr.HTML(
+        '<p class="tab-subtitle">'
+        "Start with a topic, add sources to your library, then ask questions with citations."
+        "</p>"
     )
 
-    with gr.Row():
+    with gr.Column(elem_classes=["form-primary"]):
+        topic = gr.Textbox(
+            label="What are you researching?",
+            placeholder="e.g. AI agents, Photosynthesis, American Revolution…",
+            lines=2,
+            max_lines=3,
+            elem_classes=["form-topic-input"],
+        )
+
+    with gr.Row(elem_classes=["form-secondary"]):
         session_dd = gr.Dropdown(
             label="Session",
             choices=list_session_choices(),
@@ -288,29 +322,48 @@ def build_research_mind_tab() -> None:
         )
         refresh_btn = gr.Button("↻", size="sm", scale=0, min_width=40)
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.HTML('<div class="panel-card"><h4>Build library</h4></div>')
-            topic = gr.Textbox(
-                label="Topic (optional)",
-                placeholder="e.g. Photosynthesis, American Revolution",
+    with gr.Row(elem_classes=["rm-workflow-columns"]):
+        with gr.Column(scale=1, elem_classes=["rm-ingest-col"]):
+            gr.HTML('<p class="form-section-label">Step 1 · Add sources</p>')
+
+            with gr.Row(elem_classes=["rm-action-row"]):
+                discover_btn = gr.Button("Discover on web", variant="secondary", size="sm")
+                auto_btn = gr.Button("Auto-ingest from web", variant="secondary", size="sm")
+
+            with gr.Accordion("Suggested URLs from web search", open=True, visible=False) as urls_acc:
+                url_choices = gr.CheckboxGroup(
+                    label="Select sources to ingest",
+                    choices=[],
+                    value=[],
+                )
+
+            with gr.Accordion(
+                "Paste URLs or upload files",
+                open=False,
+                elem_classes=["form-optional-accordion"],
+            ):
+                urls_text = gr.Textbox(
+                    label="URLs (one per line)",
+                    lines=3,
+                    placeholder="https://en.wikipedia.org/wiki/...",
+                )
+                upload_files = gr.File(
+                    label="Upload PDF or DOCX",
+                    file_count="multiple",
+                    file_types=[".pdf", ".docx"],
+                )
+
+            with gr.Row(elem_classes=["form-cta-row"]):
+                ingest_btn = gr.Button(
+                    "Ingest selected sources",
+                    variant="primary",
+                    elem_classes=["primary-cta"],
+                )
+
+            ingest_status = gr.Markdown(
+                value="_Enter a topic, then discover or paste sources to ingest._",
+                elem_classes=["form-status"],
             )
-            urls_text = gr.Textbox(
-                label="URLs (one per line, optional)",
-                lines=3,
-                placeholder="https://en.wikipedia.org/wiki/...",
-            )
-            upload_files = gr.File(
-                label="Upload PDF or DOCX",
-                file_count="multiple",
-                file_types=[".pdf", ".docx"],
-            )
-            url_choices = gr.CheckboxGroup(label="Suggested URLs to ingest", choices=[])
-            with gr.Row():
-                discover_btn = gr.Button("Discover sources", variant="secondary")
-                auto_btn = gr.Button("Auto search & ingest", variant="secondary")
-            ingest_btn = gr.Button("Ingest selected", variant="primary", elem_classes=["primary-cta"])
-            ingest_status = gr.Markdown()
 
             with gr.Accordion("Indexed documents", open=False):
                 memory_md = gr.Markdown(value=memory_summary(""))
@@ -318,21 +371,42 @@ def build_research_mind_tab() -> None:
 
             advanced = build_advanced_panel()
 
-        with gr.Column(scale=1):
-            gr.HTML('<div class="panel-card"><h4>Ask your corpus</h4></div>')
-            with gr.Accordion("Limit to documents", open=False):
+        with gr.Column(scale=1, elem_classes=["rm-ask-col"]):
+            gr.HTML('<p class="form-section-label">Step 2 · Ask questions</p>')
+
+            chatbot = gr.Chatbot(
+                label="Answers",
+                height=320,
+                placeholder="Ask a question after ingesting sources — answers include citations.",
+            )
+
+            with gr.Column(elem_classes=["form-primary"]):
+                question = gr.Textbox(
+                    label="Your question",
+                    placeholder="What do these sources say about AI agents?",
+                    lines=2,
+                    max_lines=4,
+                    elem_classes=["form-ask-input"],
+                )
+
+            with gr.Accordion(
+                "Limit to specific documents",
+                open=False,
+                elem_classes=["form-optional-accordion"],
+            ):
                 doc_dd = gr.CheckboxGroup(
                     label="Documents (empty = all in session)",
                     choices=[],
                     value=[],
                 )
-            rag_hint = gr.Markdown(value=rag_scope_hint("", []))
-            chatbot = gr.Chatbot(label="Research chat", height=400)
-            question = gr.Textbox(
-                label="Question",
-                placeholder="What do these sources say about AI agents?",
+
+            rag_hint = gr.Markdown(
+                value=rag_scope_hint("", []),
+                elem_classes=["form-status"],
             )
-            ask_btn = gr.Button("Ask", variant="primary", elem_classes=["primary-cta"])
+
+            with gr.Row(elem_classes=["form-cta-row"]):
+                ask_btn = gr.Button("Ask", variant="primary", elem_classes=["primary-cta"])
 
     refresh_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
     refresh_memory_btn.click(fn=memory_summary, inputs=[session_dd], outputs=[memory_md])
@@ -356,6 +430,7 @@ def build_research_mind_tab() -> None:
         advanced.trace_box,
         memory_md,
         doc_dd,
+        urls_acc,
     ]
 
     discover_btn.click(

@@ -195,7 +195,8 @@ button.primary-cta:hover,
   accent-color: #6b7280 !important;
 }
 
-/* ── Lesson slides form ── */
+/* ── Shared form patterns (Lesson slides, ResearchMind, …) ── */
+.form-tab-heading,
 .lesson-tab-heading {
   margin: 0 0 0.25rem !important;
   font-size: 1.15rem !important;
@@ -203,27 +204,43 @@ button.primary-cta:hover,
   color: #111827 !important;
 }
 
+.form-primary,
 .lesson-form-primary {
   margin-bottom: 0.5rem !important;
 }
 
+.form-primary label > span,
 .lesson-form-primary label > span {
   font-size: 0.95rem !important;
   font-weight: 600 !important;
   color: #111827 !important;
 }
 
+.form-topic-input textarea,
+.form-topic-input input,
+.form-ask-input textarea,
+.form-ask-input input,
 .lesson-topic-input textarea,
 .lesson-topic-input input {
-  font-size: 1.25rem !important;
+  font-size: 1.2rem !important;
   line-height: 1.45 !important;
   padding: 0.85rem 1rem !important;
-  min-height: 3.25rem !important;
+  min-height: 3rem !important;
   border: 2px solid #d1d5db !important;
   border-radius: 10px !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
 }
 
+.form-ask-input textarea,
+.form-ask-input input {
+  font-size: 1.05rem !important;
+  min-height: 2.75rem !important;
+}
+
+.form-topic-input textarea:focus,
+.form-topic-input input:focus,
+.form-ask-input textarea:focus,
+.form-ask-input input:focus,
 .lesson-topic-input textarea:focus,
 .lesson-topic-input input:focus {
   border-color: #9ca3af !important;
@@ -231,24 +248,30 @@ button.primary-cta:hover,
   box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.15) !important;
 }
 
+.form-secondary,
 .lesson-form-secondary {
-  max-width: 28rem;
-  margin-bottom: 0.25rem !important;
+  max-width: 32rem;
+  margin-bottom: 0.5rem !important;
   opacity: 0.92;
 }
 
+.form-secondary label > span,
 .lesson-form-secondary label > span {
   font-size: 0.78rem !important;
   font-weight: 500 !important;
   color: #6b7280 !important;
 }
 
+.form-secondary .wrap,
+.form-secondary input,
+.form-secondary select,
 .lesson-form-secondary .wrap,
 .lesson-form-secondary input,
 .lesson-form-secondary select {
   font-size: 0.875rem !important;
 }
 
+.form-optional-accordion > button,
 .lesson-optional-accordion > button {
   font-size: 0.82rem !important;
   font-weight: 500 !important;
@@ -256,23 +279,68 @@ button.primary-cta:hover,
   padding: 0.5rem 0.75rem !important;
 }
 
+.form-optional-accordion label > span,
 .lesson-optional-accordion label > span {
   font-size: 0.78rem !important;
   color: #6b7280 !important;
 }
 
+.form-optional-accordion .wrap,
 .lesson-optional-accordion .wrap {
   font-size: 0.85rem !important;
 }
 
-.lesson-generate-row {
-  margin-top: 0.75rem !important;
-  margin-bottom: 0.5rem !important;
-}
-
+.form-status,
 .lesson-status {
   font-size: 0.85rem !important;
   color: #6b7280 !important;
+  margin: 0.35rem 0 !important;
+}
+
+.form-section-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin: 0 0 0.65rem;
+}
+
+.rm-workflow-columns {
+  gap: 1.25rem !important;
+  align-items: flex-start !important;
+}
+
+.rm-ingest-col,
+.rm-ask-col {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1rem 1.1rem !important;
+  background: #fafafa;
+}
+
+.rm-ask-col .chatbot {
+  min-height: 280px;
+}
+
+.rm-action-row {
+  margin-top: 0.5rem !important;
+  gap: 0.5rem !important;
+}
+
+.rm-action-row button {
+  flex: 1;
+}
+
+.form-cta-row {
+  margin-top: 0.65rem !important;
+  margin-bottom: 0.25rem !important;
+}
+
+/* Legacy lesson-only aliases */
+.lesson-generate-row {
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.5rem !important;
 }
 
 .settings-open-hint {
