@@ -4,7 +4,7 @@ overview: Win the Off Brand track by serving a custom Photosynthesis "AI Studio"
 todos:
   - id: server-scaffold
     content: "Create server.py: gradio.Server, static mount, mount build_demo() at /classic, update entrypoint"
-    status: pending
+    status: in_progress
   - id: api-wrappers
     content: Add api/studio.py + serializers wrapping research_mind, education_pptx, teacher_voice, echo_coach functions
     status: pending
