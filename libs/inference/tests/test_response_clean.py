@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from inference.response_clean import prepare_display_reply, strip_reasoning_output
+from inference.response_clean import (
+    prepare_display_reply,
+    strip_reasoning_output,
+    strip_thinking_blocks,
+)
 
 _RT_OPEN = "<" + "redacted_thinking" + ">"
 _RT_CLOSE = "</" + "redacted_thinking" + ">"
@@ -16,6 +20,11 @@ def test_strips_redacted_thinking_block():
 def test_strips_think_block():
     raw = f"{_THINK_OPEN}\nplanning...\n{_THINK_CLOSE}\n\nAgents use memory [1]."
     assert strip_reasoning_output(raw) == "Agents use memory [1]."
+
+
+def test_strip_thinking_blocks_preserves_json_payload():
+    raw = f"{_THINK_OPEN}\nplanning...\n{_THINK_CLOSE}\n\n{{\"title\": \"T\"}}"
+    assert strip_thinking_blocks(raw) == '{"title": "T"}'
 
 
 def test_strips_malformed_think_prefix_and_extracts_summary():
