@@ -14,8 +14,9 @@ from gradio_space.research_helpers import (
     refresh_sessions,
 )
 from gradio_space.ui.components import (
+    build_advanced_panel,
     build_recording_block,
-    tab_hero,
+    empty_state,
     wire_recording_handlers,
 )
 from gradio_space.voice_helpers import speak_last_assistant_reply
@@ -26,13 +27,26 @@ _TURN_MAX = min(15, _config.max_seconds)
 _MODE_CHOICES = [(label, key) for key, label in MODE_LABELS.items()]
 
 
+def _conversation_visibility(history: list | None) -> tuple[dict, dict]:
+    has_messages = bool(history)
+    return (
+        gr.update(visible=not has_messages),
+        gr.update(visible=has_messages),
+    )
+
+
+def _voiceout_update(path: str | None) -> dict:
+    return gr.update(value=path, visible=bool(path))
+
+
 def _empty_turn() -> tuple:
     return (
         [],
-        None,
-        "Record your question, then click **Send turn**.",
+        _voiceout_update(None),
+        "_Record a question, then click **Send turn**._",
         "",
         {},
+        *_conversation_visibility([]),
     )
 
 
@@ -52,7 +66,14 @@ def send_turn(
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
-        return [], None, load_error, "", {}
+        return (
+            history or [],
+            _voiceout_update(None),
+            load_error,
+            "",
+            {},
+            *_conversation_visibility(history),
+        )
 
     if not audio_path:
         return _empty_turn()
@@ -73,26 +94,32 @@ def send_turn(
             max_turn_seconds=_TURN_MAX,
         )
     except Exception as exc:  # noqa: BLE001
-        return [], None, f"TeacherVoice failed: {exc}", "", {}
+        return (
+            history or [],
+            _voiceout_update(None),
+            f"**TeacherVoice failed:** {exc}",
+            "",
+            {},
+            *_conversation_visibility(history),
+        )
 
     progress(1.0, desc="Done")
     status = (
-        f"Turn complete — user {result.user_chars} chars, "
-        f"teacher {result.assistant_chars} chars."
+        f"**Turn complete** — you spoke {result.user_chars} chars, "
+        f"teacher replied with {result.assistant_chars} chars."
     )
     if result.voiceout_warning:
-        status += f" VoiceOut: {result.voiceout_warning}"
+        status += f" VoiceOut note: {result.voiceout_warning}"
 
-    playback = result.voiceout_path
-    if playback:
-        playback = str(playback)
+    playback = str(result.voiceout_path) if result.voiceout_path else None
 
     return (
         result.history,
-        playback,
+        _voiceout_update(playback),
         status,
         f"Trace saved: `{result.trace_path}`",
         result.trace,
+        *_conversation_visibility(result.history),
     )
 
 
@@ -116,12 +143,32 @@ def speak_quick_reply(history: list, language: str) -> tuple[str | None, str, st
     return playback, status, _format_speak_status(status)
 
 
-def _topic_visible(mode: str) -> dict:
-    return gr.update(visible=mode in ("explain", "lesson"))
+def _update_rag_hint(rag_on: bool, sid: str, docs: list[str] | None) -> str:
+    if not rag_on:
+        return "_Using model knowledge only — enable ResearchMind sources below to cite your library._"
+    return rag_scope_hint(sid, docs)
 
 
-def _rag_visible(mode: str) -> dict:
-    return gr.update(visible=mode in RAG_MODES)
+def _on_mode_change(mode: str) -> tuple:
+    topic_mode = mode in ("explain", "lesson")
+    rag_mode = mode in RAG_MODES
+    if mode == "lesson":
+        topic_up = gr.update(
+            visible=topic_mode,
+            label="What lesson are we planning?",
+            placeholder="e.g. Photosynthesis for grade 6",
+        )
+    elif mode == "explain":
+        topic_up = gr.update(
+            visible=topic_mode,
+            label="What should the teacher explain?",
+            placeholder="e.g. How photosynthesis works",
+        )
+    else:
+        topic_up = gr.update(visible=False, value="")
+    rag_acc = gr.update(visible=rag_mode)
+    use_rag = gr.update(value=False) if not rag_mode else gr.update()
+    return topic_up, rag_acc, use_rag
 
 
 def build_teacher_voice_tab() -> None:
@@ -131,62 +178,91 @@ def build_teacher_voice_tab() -> None:
     default_asr = _config.asr_preset
     omni_note = omni_status_message()
 
-    tab_hero(
-        "Turn-based voice conversation with a local teacher — record, send, hear the reply.",
-        steps=["Mode", "Record", "Send", "Listen"],
-        active_step=0,
+    gr.Markdown("### TeacherVoice", elem_classes=["form-tab-heading"])
+    gr.HTML(
+        '<p class="tab-subtitle">'
+        "Pick a mode, record your question, and hear a spoken reply from your local teacher."
+        "</p>"
     )
     if omni_note:
-        gr.Markdown(omni_note)
+        gr.Markdown(omni_note, elem_classes=["form-status"])
+    gr.HTML(
+        '<p class="cross-link">Want charts and filler analysis? Use '
+        "<strong>EchoCoach</strong> for pitch feedback.</p>"
+    )
 
-    with gr.Row():
-        with gr.Column(scale=1):
+    with gr.Row(elem_classes=["tv-workflow-columns"]):
+        with gr.Column(scale=1, elem_classes=["tv-input-col"]):
+            gr.HTML('<p class="form-section-label">Step 1 · Choose mode & speak</p>')
+
             mode_dd = gr.Radio(
-                label="Mode",
+                label="How do you want to practice?",
                 choices=_MODE_CHOICES,
                 value="explain",
                 elem_classes=["mode-cards"],
             )
+
             topic_tb = gr.Textbox(
-                label="Topic (Explain / Lesson modes)",
-                placeholder="e.g. Photosynthesis for grade 6",
+                label="What should the teacher explain?",
+                placeholder="e.g. How photosynthesis works",
+                lines=2,
+                max_lines=3,
+                elem_classes=["form-topic-input"],
             )
 
-            use_rag = gr.Checkbox(
-                label="Use my ResearchMind sources",
-                value=False,
-            )
-            with gr.Row():
-                session_dd = gr.Dropdown(
-                    label="Session",
-                    choices=list_session_choices(),
-                    value="",
-                    scale=4,
+            with gr.Accordion(
+                "ResearchMind sources (optional)",
+                open=False,
+                visible=True,
+                elem_classes=["form-optional-accordion"],
+            ) as rag_acc:
+                use_rag = gr.Checkbox(
+                    label="Answer from my indexed sources (with citations)",
+                    value=False,
                 )
-                refresh_sessions_btn = gr.Button("↻", size="sm", scale=0, min_width=40)
-            doc_dd = gr.CheckboxGroup(
-                label="Documents (empty = all in session)",
-                choices=[],
-                value=[],
-            )
-            rag_hint = gr.Markdown(value="_RAG off — model knowledge only._")
+                with gr.Row(elem_classes=["form-secondary"]):
+                    session_dd = gr.Dropdown(
+                        label="Session",
+                        choices=list_session_choices(),
+                        value="",
+                        scale=4,
+                    )
+                    refresh_sessions_btn = gr.Button("↻", size="sm", scale=0, min_width=40)
+                doc_dd = gr.CheckboxGroup(
+                    label="Documents (empty = all in session)",
+                    choices=[],
+                    value=[],
+                )
+                rag_hint = gr.Markdown(
+                    value="_Using model knowledge only — enable ResearchMind sources above to cite your library._",
+                    elem_classes=["form-status"],
+                )
 
-            rec = build_recording_block(
-                max_seconds=_TURN_MAX,
-                default_seconds=_TURN_MAX,
-                lang_choices=lang_choices,
-                asr_choices=asr_choices,
-                default_lang=default_lang,
-                default_asr=default_asr,
-                audio_label="Your turn (mic or upload)",
-                advanced_open=True,
+            with gr.Column(elem_classes=["form-primary"]):
+                rec = build_recording_block(
+                    max_seconds=_TURN_MAX,
+                    default_seconds=_TURN_MAX,
+                    lang_choices=lang_choices,
+                    asr_choices=asr_choices,
+                    default_lang=default_lang,
+                    default_asr=default_asr,
+                    audio_label="Your turn (mic or upload, up to 15s)",
+                    compact=True,
+                )
+
+            status = gr.Markdown(
+                value="_Record or upload audio, then send._",
+                elem_classes=["form-status"],
             )
-            status = gr.Textbox(label="Status", interactive=False, lines=3)
             rec.status = status
 
-            with gr.Row():
-                send_btn = gr.Button("Send turn", variant="primary", elem_classes=["primary-cta"])
-                clear_btn = gr.Button("Clear", variant="secondary")
+            with gr.Row(elem_classes=["form-cta-row"]):
+                send_btn = gr.Button(
+                    "Send turn",
+                    variant="primary",
+                    elem_classes=["primary-cta"],
+                )
+            clear_btn = gr.Button("Clear conversation", variant="secondary", size="sm")
 
             wire_recording_handlers(
                 rec,
@@ -194,31 +270,53 @@ def build_teacher_voice_tab() -> None:
                 status_output=status,
             )
 
-        with gr.Column(scale=2):
-            chatbot = gr.Chatbot(label="Conversation", height=400)
-            voiceout = gr.Audio(
-                label="Teacher reply",
-                type="filepath",
-                autoplay=True,
+            with gr.Accordion(
+                "Replay teacher audio",
+                open=False,
+                elem_classes=["form-optional-accordion"],
+            ):
+                with gr.Row(elem_classes=["tv-replay-row"]):
+                    speak_full_btn = gr.Button("Speak full reply", variant="secondary", size="sm")
+                    speak_quick_btn = gr.Button("Speak first sentence", variant="secondary", size="sm")
+                speak_status = gr.Markdown(
+                    value="_VoiceOut auto-plays after each turn. Use replay if you missed it._",
+                    elem_classes=["form-status"],
+                )
+
+            advanced = build_advanced_panel(use_json=True)
+
+        with gr.Column(scale=2, elem_classes=["tv-results-col"]):
+            gr.HTML('<p class="form-section-label">Step 2 · Conversation</p>')
+
+            chat_empty = gr.HTML(
+                value=empty_state(
+                    "Your back-and-forth with the teacher will show here. "
+                    "Choose a mode on the left, record a question, and click **Send turn**."
+                )
             )
 
-    with gr.Accordion("Advanced & debug", open=False):
-        with gr.Row():
-            speak_full_btn = gr.Button("Speak last reply", variant="secondary")
-            speak_quick_btn = gr.Button("Speak first sentence", variant="secondary")
-        speak_status = gr.Markdown(
-            value="_VoiceOut auto-plays after each turn. Use Speak buttons to replay._"
-        )
-        trace_note = gr.Markdown()
-        trace_json = gr.JSON(label="Trace")
+            with gr.Column(visible=False) as chat_panel:
+                chatbot = gr.Chatbot(
+                    label="Conversation",
+                    height=360,
+                    placeholder="Ask anything — the teacher replies in text and spoken audio.",
+                )
+                voiceout = gr.Audio(
+                    label="Teacher reply (auto-plays)",
+                    type="filepath",
+                    autoplay=True,
+                    visible=False,
+                )
 
-    mode_dd.change(fn=_topic_visible, inputs=[mode_dd], outputs=[topic_tb])
-    mode_dd.change(fn=_rag_visible, inputs=[mode_dd], outputs=[use_rag])
-
-    def _update_rag_hint(rag_on: bool, sid: str, docs: list[str] | None) -> str:
-        if not rag_on:
-            return "_RAG off — model knowledge only._"
-        return rag_scope_hint(sid, docs)
+    mode_dd.change(
+        fn=_on_mode_change,
+        inputs=[mode_dd],
+        outputs=[topic_tb, rag_acc, use_rag],
+    ).then(
+        fn=_update_rag_hint,
+        inputs=[use_rag, session_dd, doc_dd],
+        outputs=[rag_hint],
+    )
 
     refresh_sessions_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
     session_dd.change(fn=refresh_doc_choices, inputs=[session_dd, doc_dd], outputs=[doc_dd])
@@ -228,6 +326,16 @@ def build_teacher_voice_tab() -> None:
             inputs=[use_rag, session_dd, doc_dd],
             outputs=[rag_hint],
         )
+
+    turn_outputs = [
+        chatbot,
+        voiceout,
+        status,
+        advanced.trace_summary,
+        advanced.trace_box,
+        chat_empty,
+        chat_panel,
+    ]
 
     send_btn.click(
         send_turn,
@@ -242,13 +350,10 @@ def build_teacher_voice_tab() -> None:
             session_dd,
             doc_dd,
         ],
-        outputs=[chatbot, voiceout, status, trace_note, trace_json],
+        outputs=turn_outputs,
     )
 
-    clear_btn.click(
-        clear_conversation,
-        outputs=[chatbot, voiceout, status, trace_note, trace_json],
-    )
+    clear_btn.click(clear_conversation, outputs=turn_outputs)
 
     speak_full_btn.click(
         speak_full_reply,

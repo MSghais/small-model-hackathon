@@ -192,8 +192,14 @@ def build_echo_coach_tab() -> None:
             )
 
             with gr.Column(visible=False) as results_panel:
-                transcript_html = gr.HTML(label="Transcript")
-                report_md = gr.Markdown(label="Coach report")
+                report_md = gr.Markdown(
+                    label="Coach summary",
+                    elem_classes=["ec-coach-report"],
+                )
+                transcript_html = gr.HTML(
+                    label="Transcript",
+                    elem_classes=["ec-transcript"],
+                )
                 with gr.Row(elem_classes=["ec-charts-row"]):
                     filler_chart = gr.Image(
                         label="Filler words",

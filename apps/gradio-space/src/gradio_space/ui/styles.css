@@ -149,6 +149,20 @@
 
 .mode-cards label {
   flex: 1;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  padding: 0.65rem 0.75rem !important;
+  border-radius: 8px !important;
+  border: 1px solid #e5e7eb !important;
+  text-align: center;
+}
+
+.mode-cards label.selected,
+.mode-cards input:checked + span,
+.mode-cards .selected {
+  border-color: #9ca3af !important;
+  background: #f3f4f6 !important;
+  font-weight: 600 !important;
 }
 
 .cross-link {
@@ -338,18 +352,61 @@ button.primary-cta:hover,
   margin-bottom: 0.25rem !important;
 }
 
-/* EchoCoach */
-.ec-workflow-columns {
+/* EchoCoach & TeacherVoice workflow columns */
+.ec-workflow-columns,
+.tv-workflow-columns {
   gap: 1.25rem !important;
   align-items: flex-start !important;
 }
 
 .ec-input-col,
-.ec-results-col {
+.ec-results-col,
+.tv-input-col,
+.tv-results-col {
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 1rem 1.1rem !important;
   background: #fafafa;
+}
+
+.tv-replay-row {
+  gap: 0.5rem !important;
+}
+
+.tv-replay-row button {
+  flex: 1;
+}
+
+.tv-results-col .chatbot {
+  min-height: 320px;
+}
+
+.ec-coach-report {
+  font-size: 0.95rem !important;
+  line-height: 1.55 !important;
+  color: #1f2937 !important;
+}
+
+.ec-coach-report h1,
+.ec-coach-report h2,
+.ec-coach-report h3 {
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  margin: 0.75rem 0 0.35rem !important;
+  color: #111827 !important;
+}
+
+.ec-transcript {
+  font-size: 0.92rem !important;
+  line-height: 1.6 !important;
+  color: #374151 !important;
+}
+
+.ec-transcript mark,
+.ec-transcript .filler {
+  background: #fef3c7;
+  padding: 0 2px;
+  border-radius: 2px;
 }
 
 .ec-audio-primary .wrap,
