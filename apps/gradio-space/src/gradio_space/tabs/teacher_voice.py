@@ -56,6 +56,8 @@ def _turn_result(result) -> tuple:
         f"**Turn complete** — you sent {len(result.user_text)} chars, "
         f"teacher replied with {len(result.assistant_text)} chars."
     )
+    if result.rag_status:
+        status += f"\n\n{result.rag_status}"
     if result.voiceout_warning:
         first_line = result.voiceout_warning.split("\n", 1)[0].strip()
         if len(first_line) > 120:

@@ -8,6 +8,7 @@ from researchmind.config import get_config
 from researchmind.extract import ExtractedDocument
 from researchmind.ingest import IngestPipeline
 from researchmind.retrieve import retrieve
+from researchmind.scope import rag_scope_warning, resolve_retrieve_scope
 from researchmind.scrape_pdf import extract_pdf
 from researchmind.scrape_web import fetch_and_extract
 from researchmind.search_urls import search_urls
@@ -53,8 +54,7 @@ def tool_research_answer(
 ) -> tuple[str, list[Citation], str]:
     cfg = get_config()
     store = get_store()
-    scope_session = session_id if session_id and not doc_ids else None
-    scope_docs = doc_ids if doc_ids else None
+    scope_session, scope_docs = resolve_retrieve_scope(session_id, doc_ids)
     chunks = retrieve(
         question,
         store,
@@ -63,12 +63,7 @@ def tool_research_answer(
         doc_ids=scope_docs,
     )
     if not chunks:
-        if doc_ids:
-            hint = "No chunks for the selected document(s). Try other sources or re-ingest."
-        elif session_id:
-            hint = "No indexed sources in this session yet. Ingest URLs or files first."
-        else:
-            hint = "No indexed sources yet. Ingest URLs or documents first."
+        hint = rag_scope_warning(session_id=session_id, doc_ids=doc_ids)
         return hint, [], ""
 
     context, citations = format_context_block(chunks)

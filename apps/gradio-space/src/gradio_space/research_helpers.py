@@ -198,18 +198,15 @@ def run_research_question(
     if not question.strip():
         return "Enter a question.", "", ""
 
-    sid = session_id
-    if not sid:
-        sid = IngestPipeline().store.create_session().id
-
     runner = AgentRunner()
     result = runner.run_researchmind_chat(
         question=question,
-        session_id=sid,
+        session_id=session_id or "",
         doc_ids=doc_ids or None,
         model_key=key,
         backend=get_backend(key),
     )
+    sid = session_id or result.session_id
     trace_json = json.dumps(
         {
             "trace_path": result.trace_path,

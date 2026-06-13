@@ -184,6 +184,55 @@ def test_fetch_rag_context_empty_store_warns(research_env):
     assert ctx.warning
 
 
+def test_retrieval_query_exported():
+    from researchmind.scope import retrieval_query as rm_query
+
+    assert rm_query("step 2?", topic="Photosynthesis") == "Photosynthesis: step 2?"
+
+
+def test_rag_turn_via_agent_mock(monkeypatch, tmp_path):
+    from agent.models import Citation, ResearchChatResult
+    from echocoach.teacher_voice import _rag_turn_via_agent
+    from agent.trace import TraceRecorder
+
+    result = ResearchChatResult(
+        answer="Plants use light [1].\n\n**References**\n[1] Bio",
+        citations=[
+            Citation(
+                index=1,
+                chunk_id="c1",
+                doc_title="Bio",
+                doc_uri="https://example.com",
+                excerpt="Plants use light.",
+            )
+        ],
+        references_markdown="**References**\n[1] Bio",
+        session_id="",
+        trace_path=str(tmp_path / "trace.json"),
+    )
+
+    class _RunnerStub:
+        def run_researchmind_chat(self, **kwargs):
+            return result
+
+    monkeypatch.setattr("echocoach.teacher_voice.AgentRunner", _RunnerStub)
+
+    trace = TraceRecorder(skill="teacher-voice", model="test", user_input={})
+    text, refs, status, display = _rag_turn_via_agent(
+        "How do plants eat?",
+        topic="Photosynthesis",
+        session_id="",
+        doc_ids=None,
+        model_key="test",
+        backend=_MockBackend(),
+        trace=trace,
+    )
+    assert "Plants use light" in text
+    assert refs
+    assert "1" in status
+    assert display
+
+
 @pytest.fixture
 def research_env(tmp_path, monkeypatch):
     from researchmind.config import ResearchMindConfig
