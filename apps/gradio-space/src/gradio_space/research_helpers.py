@@ -62,6 +62,24 @@ def load_trace_json(trace_path: str) -> str:
     return trace_path
 
 
+def trace_as_dict(value: str | dict | None) -> dict:
+    """Normalize trace payloads for gr.JSON (dict only, never invalid strings)."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    text = str(value).strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {"error": text[:2000]}
+        return parsed if isinstance(parsed, dict) else {"data": parsed}
+    return {"message": text[:2000]}
+
+
 def trace_summary_markdown(trace_path: str) -> str:
     raw = load_trace_json(trace_path)
     if not raw or not raw.strip().startswith("{"):

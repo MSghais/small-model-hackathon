@@ -9,9 +9,16 @@ from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_text_turn, run_
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
 from gradio_space.research_helpers import (
     list_session_choices,
+    memory_summary,
     rag_scope_hint,
     refresh_doc_choices,
     refresh_sessions,
+    trace_as_dict,
+)
+from gradio_space.tabs.research_mind import (
+    auto_search_ingest,
+    discover_sources,
+    ingest_selected,
 )
 from gradio_space.ui.components import (
     build_advanced_panel,
@@ -66,7 +73,7 @@ def _turn_result(result) -> tuple:
         _voiceout_update(playback),
         status,
         f"Trace saved: `{result.trace_path}`",
-        result.trace,
+        trace_as_dict(result.trace),
         *_conversation_visibility(result.history),
         "",
     )
@@ -205,8 +212,61 @@ def speak_quick_reply(history: list, language: str) -> tuple[str | None, str, st
 
 def _update_rag_hint(rag_on: bool, sid: str, docs: list[str] | None) -> str:
     if not rag_on:
-        return "_Using model knowledge only — enable ResearchMind sources below to cite your library._"
+        return (
+            "_Using model knowledge only. Use **Discover** or **Auto-ingest** below, "
+            "then check **Answer from my indexed sources**._"
+        )
     return rag_scope_hint(sid, docs)
+
+
+def _ingest_succeeded(status: str) -> bool:
+    text = (status or "").lower()
+    return not any(
+        marker in text
+        for marker in (
+            "error",
+            "enter a research topic",
+            "add urls",
+            "no verified urls found",
+        )
+    )
+
+
+def _enable_rag_after_ingest(
+    status: str,
+    session_id: str,
+    doc_ids: list[str] | None,
+) -> tuple[dict, str]:
+    if _ingest_succeeded(status):
+        return gr.update(value=True), _update_rag_hint(True, session_id, doc_ids)
+    return gr.update(), _update_rag_hint(False, session_id, doc_ids)
+
+
+def _discover_for_json(topic: str, session_id: str, progress: gr.Progress = gr.Progress()):
+    results = list(discover_sources(topic, session_id, progress))
+    results[4] = trace_as_dict(results[4])
+    return tuple(results)
+
+
+def _auto_ingest_for_json(topic: str, session_id: str, progress: gr.Progress = gr.Progress()):
+    results = list(auto_search_ingest(topic, session_id, progress))
+    results[4] = trace_as_dict(results[4])
+    return tuple(results)
+
+
+def _ingest_for_json(
+    topic: str,
+    urls_text: str,
+    selected_urls: list[str],
+    upload_files: list[str] | None,
+    session_id: str,
+    progress: gr.Progress = gr.Progress(),
+):
+    results = list(
+        ingest_selected(topic, urls_text, selected_urls, upload_files, session_id, progress)
+    )
+    results[2] = trace_as_dict(results[2])
+    return tuple(results)
 
 
 def _on_mode_change(mode: str) -> tuple:
@@ -215,8 +275,8 @@ def _on_mode_change(mode: str) -> tuple:
     if mode == "lesson":
         topic_up = gr.update(
             visible=topic_mode,
-            label="Lesson focus (optional)",
-            placeholder="e.g. Photosynthesis for grade 6 — keeps the teacher on topic",
+            label="Focus topic",
+            placeholder="e.g. Photosynthesis for grade 6 — for web search and lesson context",
         )
         message_up = gr.update(
             label="Your message",
@@ -225,8 +285,8 @@ def _on_mode_change(mode: str) -> tuple:
     elif mode == "explain":
         topic_up = gr.update(
             visible=topic_mode,
-            label="Focus topic (optional)",
-            placeholder="e.g. Photosynthesis — optional context for the whole chat",
+            label="Focus topic",
+            placeholder="e.g. Photosynthesis — for web search and lesson context",
         )
         message_up = gr.update(
             label="Your message",
@@ -275,29 +335,12 @@ def build_teacher_voice_tab() -> None:
             )
 
             topic_tb = gr.Textbox(
-                label="Focus topic (optional)",
-                placeholder="e.g. Photosynthesis — optional context for the whole chat",
+                label="Focus topic",
+                placeholder="e.g. Photosynthesis — used for web search and lesson context",
                 lines=1,
                 max_lines=2,
                 elem_classes=["form-secondary"],
             )
-
-            message_tb = gr.Textbox(
-                label="Your message",
-                placeholder="e.g. How does photosynthesis work?",
-                lines=3,
-                max_lines=6,
-                elem_classes=["form-ask-input"],
-            )
-
-            with gr.Row(elem_classes=["form-cta-row"]):
-                send_text_btn = gr.Button(
-                    "Send text turn",
-                    variant="primary",
-                    elem_classes=["primary-cta"],
-                )
-
-            gr.HTML('<p class="tv-or-divider">— or record your voice —</p>')
 
             with gr.Accordion(
                 "ResearchMind sources (optional)",
@@ -305,6 +348,54 @@ def build_teacher_voice_tab() -> None:
                 visible=True,
                 elem_classes=["form-optional-accordion"],
             ) as rag_acc:
+                gr.Markdown(
+                    "Set **Focus topic** above, then discover or ingest sources. "
+                    "Enable RAG to ground answers in your library.",
+                    elem_classes=["form-status"],
+                )
+
+                with gr.Row(elem_classes=["rm-action-row"]):
+                    discover_btn = gr.Button("Discover on web", variant="secondary", size="sm")
+                    auto_btn = gr.Button("Auto-ingest from web", variant="secondary", size="sm")
+
+                with gr.Accordion(
+                    "Suggested URLs from web search",
+                    open=True,
+                    visible=False,
+                ) as urls_acc:
+                    url_choices = gr.CheckboxGroup(
+                        label="Select sources to ingest",
+                        choices=[],
+                        value=[],
+                    )
+
+                with gr.Accordion(
+                    "Paste URLs or upload files",
+                    open=False,
+                    elem_classes=["form-optional-accordion"],
+                ):
+                    urls_text = gr.Textbox(
+                        label="URLs (one per line)",
+                        lines=3,
+                        placeholder="https://en.wikipedia.org/wiki/...",
+                    )
+                    upload_files = gr.File(
+                        label="Upload PDF or DOCX",
+                        file_count="multiple",
+                        file_types=[".pdf", ".docx"],
+                    )
+
+                ingest_btn = gr.Button(
+                    "Ingest selected sources",
+                    variant="secondary",
+                    size="sm",
+                )
+
+                ingest_status = gr.Markdown(
+                    value="_Set focus topic, then discover or auto-ingest sources._",
+                    elem_classes=["form-status"],
+                )
+
                 use_rag = gr.Checkbox(
                     label="Answer from my indexed sources (with citations)",
                     value=False,
@@ -323,9 +414,30 @@ def build_teacher_voice_tab() -> None:
                     value=[],
                 )
                 rag_hint = gr.Markdown(
-                    value="_Using model knowledge only — enable ResearchMind sources above to cite your library._",
+                    value=_update_rag_hint(False, "", []),
                     elem_classes=["form-status"],
                 )
+
+                with gr.Accordion("Indexed in this session", open=False):
+                    indexed_md = gr.Markdown(value=memory_summary(""))
+                    refresh_indexed_btn = gr.Button("Refresh", size="sm")
+
+            message_tb = gr.Textbox(
+                label="Your message",
+                placeholder="e.g. How does photosynthesis work?",
+                lines=3,
+                max_lines=6,
+                elem_classes=["form-ask-input"],
+            )
+
+            with gr.Row(elem_classes=["form-cta-row"]):
+                send_text_btn = gr.Button(
+                    "Send text turn",
+                    variant="primary",
+                    elem_classes=["primary-cta"],
+                )
+
+            gr.HTML('<p class="tv-or-divider">— or record your voice —</p>')
 
             with gr.Column(elem_classes=["form-primary"]):
                 rec = build_recording_block(
@@ -407,6 +519,8 @@ def build_teacher_voice_tab() -> None:
     )
 
     refresh_sessions_btn.click(fn=refresh_sessions, inputs=[session_dd], outputs=[session_dd])
+    refresh_indexed_btn.click(fn=memory_summary, inputs=[session_dd], outputs=[indexed_md])
+    session_dd.change(fn=memory_summary, inputs=[session_dd], outputs=[indexed_md])
     session_dd.change(fn=refresh_doc_choices, inputs=[session_dd, doc_dd], outputs=[doc_dd])
     for trigger in (use_rag, session_dd, doc_dd):
         trigger.change(
@@ -414,6 +528,54 @@ def build_teacher_voice_tab() -> None:
             inputs=[use_rag, session_dd, doc_dd],
             outputs=[rag_hint],
         )
+
+    discover_outputs = [
+        ingest_status,
+        url_choices,
+        session_dd,
+        advanced.trace_summary,
+        advanced.trace_box,
+        indexed_md,
+        doc_dd,
+        urls_acc,
+    ]
+
+    discover_btn.click(
+        fn=_discover_for_json,
+        inputs=[topic_tb, session_dd],
+        outputs=discover_outputs,
+    ).then(
+        fn=_update_rag_hint,
+        inputs=[use_rag, session_dd, doc_dd],
+        outputs=[rag_hint],
+    )
+
+    auto_btn.click(
+        fn=_auto_ingest_for_json,
+        inputs=[topic_tb, session_dd],
+        outputs=discover_outputs,
+    ).then(
+        fn=_enable_rag_after_ingest,
+        inputs=[ingest_status, session_dd, doc_dd],
+        outputs=[use_rag, rag_hint],
+    )
+
+    ingest_btn.click(
+        fn=_ingest_for_json,
+        inputs=[topic_tb, urls_text, url_choices, upload_files, session_dd],
+        outputs=[
+            ingest_status,
+            indexed_md,
+            advanced.trace_box,
+            advanced.trace_summary,
+            session_dd,
+            doc_dd,
+        ],
+    ).then(
+        fn=_enable_rag_after_ingest,
+        inputs=[ingest_status, session_dd, doc_dd],
+        outputs=[use_rag, rag_hint],
+    )
 
     turn_outputs = [
         chatbot,
