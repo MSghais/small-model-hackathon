@@ -6,9 +6,12 @@ import shutil
 import subprocess
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from echocoach.audio_io import TARGET_SAMPLE_RATE
 from echocoach.config import get_echo_coach_config, outputs_dir
+
+BackendName = Literal["sounddevice", "arecord"]
 
 
 class ServerRecordingError(RuntimeError):
@@ -17,14 +20,60 @@ class ServerRecordingError(RuntimeError):
 
 def _sounddevice_available() -> bool:
     try:
-        import sounddevice  # noqa: F401
-    except ImportError:
+        import sounddevice as sd  # noqa: PLC0415
+    except (ImportError, OSError):
+        return False
+    try:
+        sd.query_devices()
+    except Exception:
         return False
     return True
 
 
 def _arecord_available() -> bool:
-    return shutil.which("arecord") is not None
+    if shutil.which("arecord") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["arecord", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    output = f"{result.stdout}\n{result.stderr}".lower()
+    return "card" in output
+
+
+def select_recording_backend() -> BackendName | None:
+    """Pick the first backend that can actually capture on this machine."""
+    if _sounddevice_available():
+        return "sounddevice"
+    if _arecord_available():
+        return "arecord"
+    return None
+
+
+def recording_backend_status() -> str:
+    backend = select_recording_backend()
+    if backend == "sounddevice":
+        return "Server microphone: ready (sounddevice / PortAudio)."
+    if backend == "arecord":
+        return "Server microphone: ready (ALSA arecord)."
+    hints: list[str] = []
+    if shutil.which("arecord") is None:
+        hints.append("install ALSA utils (`arecord`)")
+    elif not _arecord_available():
+        hints.append("plug in or enable a microphone (arecord sees no capture devices)")
+    if not _sounddevice_available():
+        hints.append(
+            "optional: install PortAudio for sounddevice "
+            "(e.g. `sudo apt install libportaudio2` on Debian/Ubuntu)"
+        )
+    hint = "; ".join(hints) if hints else "no capture backend available"
+    return f"Server microphone: unavailable — {hint}. Use **Upload** or open the app in Chrome/Firefox at **http://localhost:7860** for browser mic."
 
 
 def record_server_wav(
@@ -38,20 +87,18 @@ def record_server_wav(
     if seconds <= 0:
         raise ServerRecordingError("Recording duration must be positive.")
 
+    backend = select_recording_backend()
+    if backend is None:
+        raise ServerRecordingError(recording_backend_status())
+
     out_dir = outputs_dir() / "recordings"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"server_{uuid.uuid4().hex[:8]}.wav"
 
-    if _sounddevice_available():
+    if backend == "sounddevice":
         _record_sounddevice(out_path, seconds, sample_rate)
-    elif _arecord_available():
-        _record_arecord(out_path, seconds, sample_rate)
     else:
-        raise ServerRecordingError(
-            "No server-side recorder found. Install sounddevice "
-            "(uv sync --package echocoach) or ensure ALSA arecord is on PATH. "
-            "You can still upload a .wav file in the browser."
-        )
+        _record_arecord(out_path, seconds, sample_rate)
 
     if not out_path.is_file() or out_path.stat().st_size == 0:
         raise ServerRecordingError("Recording finished but produced an empty file.")

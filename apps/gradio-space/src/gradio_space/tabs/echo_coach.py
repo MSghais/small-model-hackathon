@@ -1,14 +1,28 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import gradio as gr
 
 from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
-from echocoach.recording import ServerRecordingError, record_server_wav
+from echocoach.recording import (
+    ServerRecordingError,
+    record_server_wav,
+    recording_backend_status,
+)
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from inference.factory import get_backend
 
 _config = get_echo_coach_config()
+_SAMPLE_AUDIO = (
+    Path(__file__).resolve().parents[5]
+    / "libs"
+    / "echocoach"
+    / "tests"
+    / "fixtures"
+    / "silence_2s.wav"
+)
 
 
 def _error_outputs(message: str) -> tuple:
@@ -24,17 +38,29 @@ def _error_outputs(message: str) -> tuple:
     )
 
 
-def record_server_pitch() -> tuple[str | None, str]:
+def record_server_pitch_start(seconds: int) -> str:
+    return f"Recording {seconds}s — speak now (using this computer's microphone)..."
+
+
+def record_server_pitch(seconds: int) -> tuple[str | None, str]:
     """Capture from this machine's mic and feed the same audio input as upload."""
     try:
-        path = record_server_wav()
+        path = record_server_wav(max_seconds=int(seconds))
     except ServerRecordingError as exc:
         return None, str(exc)
     except Exception as exc:  # noqa: BLE001 — surface unexpected recorder errors
         return None, f"Recording failed: {exc}"
 
-    seconds = _config.max_seconds
-    return str(path), f"Recorded {seconds}s from server microphone. Click **Analyze pitch**."
+    return (
+        str(path),
+        f"Recorded {int(seconds)}s from server microphone. Click **Analyze pitch**.",
+    )
+
+
+def load_sample_pitch() -> tuple[str | None, str]:
+    if not _SAMPLE_AUDIO.is_file():
+        return None, f"Sample clip missing at `{_SAMPLE_AUDIO}`. Run `uv run python libs/echocoach/tests/make_fixture.py`."
+    return str(_SAMPLE_AUDIO), "Loaded 2s sample clip. Click **Analyze pitch** to test the pipeline."
 
 
 def analyze_pitch(
@@ -83,6 +109,7 @@ def build_echo_coach_tab() -> None:
     asr_choices = _config.asr_choices()
     default_lang = lang_choices[0][1] if lang_choices else "en"
     default_asr = _config.asr_preset
+    mic_status = recording_backend_status()
 
     gr.Markdown(
         f"""
@@ -93,22 +120,31 @@ Record up to **{_config.max_seconds} seconds**, then get local feedback: transcr
 - **Coach:** text LLM preset (`ACTIVE_MODEL` / `ECHOCOACH_COACH_MODEL`)
 - **TTS:** Piper VoiceOut (optional; install `echocoach[piper]`)
 
-**Microphone not working in the browser?** The in-browser **Record** button needs mic permission and a secure context
-(open the app at **http://localhost:7860**, not `0.0.0.0` or a LAN IP). If you see *No microphone found*, use
-**Record from this computer** below (captures on the machine running Gradio) or **upload** a `.wav` / `.mp3` file.
+**Browser mic:** open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview, not `0.0.0.0`) and allow microphone access.
+If the mic icon still fails, use **Record from this computer** or **Upload** a `.wav` / `.mp3`.
 """
     )
 
     with gr.Row():
         with gr.Column(scale=1):
+            record_status_md = gr.Markdown(mic_status)
             with gr.Accordion("Record from this computer (recommended)", open=True):
                 gr.Markdown(
-                    "Uses the microphone on the machine running the app — no browser permission needed."
+                    "Captures on the machine running Gradio. Status updates immediately; recording takes a few seconds."
                 )
-                record_server_btn = gr.Button(
-                    f"Record from this computer ({_config.max_seconds}s)",
-                    variant="secondary",
+                record_seconds = gr.Slider(
+                    label="Recording length (seconds)",
+                    minimum=3,
+                    maximum=_config.max_seconds,
+                    value=min(10, _config.max_seconds),
+                    step=1,
                 )
+                with gr.Row():
+                    record_server_btn = gr.Button(
+                        "Record from this computer",
+                        variant="secondary",
+                    )
+                    sample_btn = gr.Button("Load sample clip", variant="secondary")
             audio_in = gr.Audio(
                 label="Your pitch (browser mic or upload)",
                 sources=["upload", "microphone"],
@@ -130,7 +166,7 @@ Record up to **{_config.max_seconds} seconds**, then get local feedback: transcr
                 value=False,
             )
             analyze_btn = gr.Button("Analyze pitch", variant="primary")
-            status = gr.Textbox(label="Status", interactive=False)
+            status = gr.Textbox(label="Status", interactive=False, lines=2)
             coach_status = gr.Markdown(model_status(get_active_model_key()))
 
         with gr.Column(scale=2):
@@ -143,8 +179,22 @@ Record up to **{_config.max_seconds} seconds**, then get local feedback: transcr
             trace_note = gr.Markdown()
             trace_json = gr.JSON(label="Trace")
 
-    record_server_btn.click(
+    record_event = record_server_btn.click(
+        record_server_pitch_start,
+        inputs=[record_seconds],
+        outputs=[status],
+    ).then(
         record_server_pitch,
+        inputs=[record_seconds],
+        outputs=[audio_in, status],
+    )
+    record_event.then(
+        lambda: recording_backend_status(),
+        outputs=[record_status_md],
+    )
+
+    sample_btn.click(
+        load_sample_pitch,
         outputs=[audio_in, status],
     )
 
@@ -172,4 +222,6 @@ def echo_coach_allowed_paths() -> list[str]:
     from echocoach.config import outputs_dir
 
     paths.append(str(outputs_dir()))
+    if _SAMPLE_AUDIO.is_file():
+        paths.append(str(_SAMPLE_AUDIO.parent))
     return paths

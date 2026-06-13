@@ -56,9 +56,15 @@ Part of the [Build Small Hackathon](https://huggingface.co/build-small-hackathon
 def main() -> None:
     preload_active_model()
     demo = build_demo()
+    port = int(os.environ.get("PORT", "7860"))
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
+    print(
+        f"\n  Local UI (browser mic works here): http://127.0.0.1:{port}\n"
+        f"  Bound address: {server_name}:{port}\n"
+    )
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=int(os.environ.get("PORT", "7860")),
+        server_name=server_name,
+        server_port=port,
         allowed_paths=[
             *gradio_allowed_paths(),
             *researchmind_allowed_paths(),

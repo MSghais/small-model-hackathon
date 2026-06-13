@@ -4,13 +4,29 @@ from pathlib import Path
 
 import pytest
 
-from echocoach.recording import ServerRecordingError, record_server_wav
+from echocoach.recording import (
+    ServerRecordingError,
+    record_server_wav,
+    select_recording_backend,
+)
+
+
+def test_select_recording_backend_prefers_sounddevice(monkeypatch):
+    monkeypatch.setattr("echocoach.recording._sounddevice_available", lambda: True)
+    monkeypatch.setattr("echocoach.recording._arecord_available", lambda: True)
+    assert select_recording_backend() == "sounddevice"
+
+
+def test_select_recording_backend_falls_back_to_arecord(monkeypatch):
+    monkeypatch.setattr("echocoach.recording._sounddevice_available", lambda: False)
+    monkeypatch.setattr("echocoach.recording._arecord_available", lambda: True)
+    assert select_recording_backend() == "arecord"
 
 
 def test_record_server_wav_uses_arecord_when_sounddevice_missing(tmp_path, monkeypatch):
-    out_file = tmp_path / "server_abcd1234.wav"
     monkeypatch.setattr("echocoach.recording._sounddevice_available", lambda: False)
     monkeypatch.setattr("echocoach.recording._arecord_available", lambda: True)
+    monkeypatch.setattr("echocoach.recording.select_recording_backend", lambda: "arecord")
     monkeypatch.setattr(
         "echocoach.recording.outputs_dir",
         lambda: tmp_path,
@@ -29,16 +45,18 @@ def test_record_server_wav_uses_arecord_when_sounddevice_missing(tmp_path, monke
 
 
 def test_record_server_wav_raises_when_no_backend(monkeypatch):
-    monkeypatch.setattr("echocoach.recording._sounddevice_available", lambda: False)
-    monkeypatch.setattr("echocoach.recording._arecord_available", lambda: False)
+    monkeypatch.setattr("echocoach.recording.select_recording_backend", lambda: None)
+    monkeypatch.setattr(
+        "echocoach.recording.recording_backend_status",
+        lambda: "Server microphone: unavailable",
+    )
 
-    with pytest.raises(ServerRecordingError, match="No server-side recorder"):
+    with pytest.raises(ServerRecordingError, match="unavailable"):
         record_server_wav(max_seconds=5)
 
 
 def test_record_server_wav_empty_file_raises(tmp_path, monkeypatch):
-    monkeypatch.setattr("echocoach.recording._sounddevice_available", lambda: False)
-    monkeypatch.setattr("echocoach.recording._arecord_available", lambda: True)
+    monkeypatch.setattr("echocoach.recording.select_recording_backend", lambda: "arecord")
     monkeypatch.setattr("echocoach.recording.outputs_dir", lambda: tmp_path)
 
     def empty_arecord(path: Path, seconds: int, sample_rate: int) -> None:
