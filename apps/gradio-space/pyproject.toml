@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "agent",
-    "echocoach",
+    "echocoach[whisper]",
     "gradio>=5.0.0",
     "inference",
 ]

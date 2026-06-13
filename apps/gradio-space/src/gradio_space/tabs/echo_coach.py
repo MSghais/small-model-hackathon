@@ -8,8 +8,11 @@ from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
 from echocoach.recording import (
     ServerRecordingError,
-    record_server_wav,
     recording_backend_status,
+    recording_elapsed_seconds,
+    recording_level_warning,
+    start_server_recording,
+    stop_server_recording,
 )
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from inference.factory import get_backend
@@ -38,28 +41,62 @@ def _error_outputs(message: str) -> tuple:
     )
 
 
-def record_server_pitch_start(seconds: int) -> str:
-    return f"Recording {seconds}s — speak now (using this computer's microphone)..."
-
-
-def record_server_pitch(seconds: int) -> tuple[str | None, str]:
-    """Capture from this machine's mic and feed the same audio input as upload."""
+def ui_start_recording(max_seconds: int) -> tuple[str, dict, dict]:
     try:
-        path = record_server_wav(max_seconds=int(seconds))
+        start_server_recording(int(max_seconds))
     except ServerRecordingError as exc:
-        return None, str(exc)
-    except Exception as exc:  # noqa: BLE001 — surface unexpected recorder errors
-        return None, f"Recording failed: {exc}"
+        return (
+            str(exc),
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+        )
+    return (
+        (
+            f"Recording… speak now, then click **Stop recording** "
+            f"(auto-stops after {int(max_seconds)}s)."
+        ),
+        gr.update(interactive=False),
+        gr.update(interactive=True),
+    )
 
+
+def ui_stop_recording() -> tuple[str | None, str, dict, dict]:
+    try:
+        elapsed = recording_elapsed_seconds()
+        path = stop_server_recording()
+        warning = recording_level_warning(path)
+    except ServerRecordingError as exc:
+        return (
+            None,
+            str(exc),
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+        )
+    except Exception as exc:  # noqa: BLE001 — surface unexpected recorder errors
+        return (
+            None,
+            f"Recording failed: {exc}",
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+        )
+
+    status = f"Recording saved ({elapsed:.1f}s). Click **Analyze pitch**."
+    if warning:
+        status += f" Warning: {warning}"
     return (
         str(path),
-        f"Recorded {int(seconds)}s from server microphone. Click **Analyze pitch**.",
+        status,
+        gr.update(interactive=True),
+        gr.update(interactive=False),
     )
 
 
 def load_sample_pitch() -> tuple[str | None, str]:
     if not _SAMPLE_AUDIO.is_file():
-        return None, f"Sample clip missing at `{_SAMPLE_AUDIO}`. Run `uv run python libs/echocoach/tests/make_fixture.py`."
+        return (
+            None,
+            f"Sample clip missing at `{_SAMPLE_AUDIO}`. Run `uv run python libs/echocoach/tests/make_fixture.py`.",
+        )
     return str(_SAMPLE_AUDIO), "Loaded 2s sample clip. Click **Analyze pitch** to test the pipeline."
 
 
@@ -120,8 +157,8 @@ Record up to **{_config.max_seconds} seconds**, then get local feedback: transcr
 - **Coach:** text LLM preset (`ACTIVE_MODEL` / `ECHOCOACH_COACH_MODEL`)
 - **TTS:** Piper VoiceOut (optional; install `echocoach[piper]`)
 
-**Browser mic:** open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview, not `0.0.0.0`) and allow microphone access.
-If the mic icon still fails, use **Record from this computer** or **Upload** a `.wav` / `.mp3`.
+**Browser mic:** open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview) and allow microphone access.
+If the mic icon fails, use **Start / Stop recording** below or **Upload** a `.wav` / `.mp3`.
 """
     )
 
@@ -130,21 +167,20 @@ If the mic icon still fails, use **Record from this computer** or **Upload** a `
             record_status_md = gr.Markdown(mic_status)
             with gr.Accordion("Record from this computer (recommended)", open=True):
                 gr.Markdown(
-                    "Captures on the machine running Gradio. Status updates immediately; recording takes a few seconds."
+                    "Click **Start recording**, speak your pitch, then **Stop recording** when done. "
+                    "The slider sets the maximum length (auto-stop safety cap)."
                 )
                 record_seconds = gr.Slider(
-                    label="Recording length (seconds)",
+                    label="Max recording length (seconds)",
                     minimum=3,
                     maximum=_config.max_seconds,
-                    value=min(10, _config.max_seconds),
+                    value=min(30, _config.max_seconds),
                     step=1,
                 )
                 with gr.Row():
-                    record_server_btn = gr.Button(
-                        "Record from this computer",
-                        variant="secondary",
-                    )
-                    sample_btn = gr.Button("Load sample clip", variant="secondary")
+                    record_start_btn = gr.Button("Start recording", variant="secondary")
+                    record_stop_btn = gr.Button("Stop recording", variant="stop", interactive=False)
+                sample_btn = gr.Button("Load sample clip", variant="secondary")
             audio_in = gr.Audio(
                 label="Your pitch (browser mic or upload)",
                 sources=["upload", "microphone"],
@@ -166,7 +202,7 @@ If the mic icon still fails, use **Record from this computer** or **Upload** a `
                 value=False,
             )
             analyze_btn = gr.Button("Analyze pitch", variant="primary")
-            status = gr.Textbox(label="Status", interactive=False, lines=2)
+            status = gr.Textbox(label="Status", interactive=False, lines=3)
             coach_status = gr.Markdown(model_status(get_active_model_key()))
 
         with gr.Column(scale=2):
@@ -179,16 +215,15 @@ If the mic icon still fails, use **Record from this computer** or **Upload** a `
             trace_note = gr.Markdown()
             trace_json = gr.JSON(label="Trace")
 
-    record_event = record_server_btn.click(
-        record_server_pitch_start,
+    record_start_btn.click(
+        ui_start_recording,
         inputs=[record_seconds],
-        outputs=[status],
-    ).then(
-        record_server_pitch,
-        inputs=[record_seconds],
-        outputs=[audio_in, status],
+        outputs=[status, record_start_btn, record_stop_btn],
     )
-    record_event.then(
+    record_stop_btn.click(
+        ui_stop_recording,
+        outputs=[audio_in, status, record_start_btn, record_stop_btn],
+    ).then(
         lambda: recording_backend_status(),
         outputs=[record_status_md],
     )
