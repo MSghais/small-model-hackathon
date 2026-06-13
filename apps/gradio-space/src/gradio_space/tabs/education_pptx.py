@@ -11,7 +11,7 @@ from gradio_space.research_helpers import (
     refresh_doc_choices,
     refresh_sessions,
 )
-from gradio_space.ui.components import build_advanced_panel, tab_hero
+from gradio_space.ui.components import build_advanced_panel
 from inference.factory import get_backend
 from researchmind.config import get_config
 
@@ -204,34 +204,38 @@ def generate_lesson_slides(
 
 
 def build_education_pptx_tab() -> None:
-    tab_hero(
-        "Draft lesson slides locally — add web or RAG sources optionally.",
-        steps=["Lesson details", "Sources", "Generate", "Preview"],
-        active_step=0,
+    gr.Markdown("### Create lesson slides", elem_classes=["lesson-tab-heading"])
+    gr.HTML(
+        '<p class="tab-subtitle">Enter your topic below, adjust grade and length if needed, then generate.</p>'
     )
 
-    with gr.Row():
+    with gr.Column(elem_classes=["lesson-form-primary"]):
         topic = gr.Textbox(
-            label="Lesson topic",
-            placeholder="e.g. Photosynthesis, Fractions, The water cycle",
-            scale=3,
+            label="What are you teaching?",
+            placeholder="e.g. Photosynthesis, Fractions, The water cycle, AI agents…",
+            lines=2,
+            max_lines=3,
+            elem_classes=["lesson-topic-input"],
         )
+
+    with gr.Row(elem_classes=["lesson-form-secondary"]):
         grade = gr.Dropdown(
-            label="Grade level",
+            label="Grade",
             choices=["K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "Adult"],
             value="6",
             scale=1,
+            min_width=100,
         )
         slide_count = gr.Slider(
             minimum=3,
             maximum=8,
             step=1,
             value=5,
-            label="Content slides",
-            scale=1,
+            label="Slides",
+            scale=2,
         )
 
-    with gr.Accordion("Add research sources (optional)", open=False):
+    with gr.Accordion("Research sources (optional)", open=False, elem_classes=["lesson-optional-accordion"]):
         source_mode = gr.Radio(
             label="Source mode",
             choices=[m[0] for m in SOURCE_MODES],
@@ -276,8 +280,15 @@ def build_education_pptx_tab() -> None:
             visible=False,
         )
 
-    generate_btn = gr.Button("Generate lesson slides", variant="primary", elem_classes=["primary-cta"])
-    source_status = gr.Markdown(value="_No sources gathered yet._")
+    with gr.Row(elem_classes=["lesson-generate-row"]):
+        generate_btn = gr.Button(
+            "Generate lesson slides",
+            variant="primary",
+            elem_classes=["primary-cta"],
+            scale=1,
+        )
+
+    source_status = gr.Markdown(value="_Ready to generate._", elem_classes=["lesson-status"])
 
     with gr.Tabs():
         with gr.Tab("Slide preview"):
