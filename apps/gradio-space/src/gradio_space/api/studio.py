@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Literal
@@ -33,6 +34,37 @@ class _NoopProgress:
 
     def tqdm(self, iterable: Any, **kwargs: Any) -> Any:
         return iterable
+
+
+def _elapsed_seconds_from_log(processing_log: str) -> float | None:
+    match = re.search(r"\*\*Elapsed:\*\* ([\d.]+)s", processing_log or "")
+    if not match:
+        return None
+    return float(match.group(1))
+
+
+def _progress_from_trace(trace_json: str) -> dict[str, Any]:
+    import json
+
+    try:
+        trace = json.loads(trace_json)
+    except json.JSONDecodeError:
+        return {"steps": []}
+    steps = []
+    for step in trace.get("steps", []):
+        if step.get("type") != "step":
+            continue
+        duration_ms = step.get("duration_ms")
+        steps.append(
+            {
+                "name": step.get("name"),
+                "label": step.get("label"),
+                "detail": step.get("detail", ""),
+                "duration_s": round(duration_ms / 1000, 1) if duration_ms is not None else None,
+                "status": "done",
+            }
+        )
+    return {"steps": steps}
 
 
 def _doc_meta(doc: Any) -> str:
@@ -143,7 +175,7 @@ def api_generate_slides(
     source_label = "RAG (indexed sources)" if use_rag and sid else "None (model only)"
     workflow_label = "Two-step (discover & confirm)"
 
-    outline_md, preview_html, gallery, pptx, docx, html_export, _trace_sum, _trace, status = (
+    outline_md, preview_html, gallery, pptx, docx, html_export, processing_log, trace_sum, trace_json, status = (
         generate_lesson_slides(
             topic,
             grade,
@@ -156,11 +188,12 @@ def api_generate_slides(
             sid if use_rag else "",
             None,
             _NoopProgress(),
+            skip_preview_images=True,
         )
     )
 
     if preview_html and "form-error" in preview_html:
-        return err(status or "Generation failed.", status=status)
+        return err(status or "Generation failed.", status=status, progress_log=processing_log)
 
     downloads = {
         "pptx": pptx,
@@ -176,6 +209,11 @@ def api_generate_slides(
         gallery=gallery or [],
         downloads=downloads,
         status=status,
+        progress_log=processing_log,
+        trace_summary=trace_sum,
+        trace_json=trace_json,
+        elapsed_seconds=_elapsed_seconds_from_log(processing_log),
+        progress=_progress_from_trace(trace_json),
     )
 
 

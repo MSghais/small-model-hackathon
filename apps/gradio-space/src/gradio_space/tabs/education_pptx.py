@@ -2,6 +2,7 @@ from pathlib import Path
 
 import gradio as gr
 
+from agent.progress import SlideGenerationProgress
 from agent.runner import AgentRunner
 from agent.tools.pptx import get_outputs_dir
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
@@ -61,7 +62,22 @@ def _empty_outputs(message: str) -> tuple:
         message,
         message,
         message,
+        message,
     )
+
+
+def _format_processing_log(
+    progress: SlideGenerationProgress,
+    *,
+    trace_summary: str = "",
+    source_status: str = "",
+) -> str:
+    parts = [progress.format_log(include_eta=False)]
+    if source_status:
+        parts.append(f"\n**Sources:** {source_status}")
+    if trace_summary:
+        parts.append(f"\n{trace_summary}")
+    return "\n".join(parts)
 
 
 def update_source_visibility(source_mode_label: str, search_workflow_label: str):
@@ -146,8 +162,14 @@ def generate_lesson_slides(
     session_id: str,
     doc_ids: list[str] | None,
     progress: gr.Progress = gr.Progress(),
-) -> tuple[str, str, list[str], str | None, str | None, str | None, str, str, str]:
-    progress(0, desc="Loading model…")
+    *,
+    skip_preview_images: bool = False,
+) -> tuple[str, str, list[str], str | None, str | None, str | None, str, str, str, str]:
+    slide_progress = SlideGenerationProgress(
+        on_update=lambda fraction, desc: progress(fraction, desc=desc),
+    )
+    slide_progress.begin("load_model", "Load language model")
+
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
     if load_error:
@@ -163,7 +185,6 @@ def generate_lesson_slides(
     files = [Path(p) for p in (upload_files or [])]
 
     try:
-        progress(0.1, desc="Generating lesson slides…")
         runner = AgentRunner()
         result = runner.run_education_pptx(
             topic=topic,
@@ -177,12 +198,28 @@ def generate_lesson_slides(
             files=files,
             session_id=session_id or None,
             doc_ids=doc_ids or [],
+            progress=slide_progress,
+            skip_preview_images=skip_preview_images,
         )
     except Exception as exc:  # noqa: BLE001
         message = f"Agent error: {exc}"
-        return _empty_outputs(message)
+        slide_progress.finish()
+        log = slide_progress.format_log(include_eta=False)
+        return (
+            message,
+            _error_html(message),
+            [],
+            None,
+            None,
+            None,
+            log,
+            message,
+            message,
+            message,
+        )
 
     progress(1.0, desc="Done")
+    slide_progress.finish()
     gallery = [str(Path(p).resolve()) for p in result.preview_images]
     trace_summary = (
         f"Run `{result.trace.run_id}` · skill `{result.trace.skill}` · "
@@ -190,6 +227,11 @@ def generate_lesson_slides(
         f"Trace saved: `{result.trace_path}`"
     )
     source_status = result.source_summary or "_No external sources used (model only)._"
+    processing_log = _format_processing_log(
+        slide_progress,
+        trace_summary=trace_summary,
+        source_status=source_status,
+    )
     return (
         result.markdown_preview,
         result.html_preview,
@@ -197,6 +239,7 @@ def generate_lesson_slides(
         str(Path(result.pptx_path).resolve()),
         str(Path(result.docx_path).resolve()),
         str(Path(result.html_export_path).resolve()),
+        processing_log,
         trace_summary,
         result.trace.to_json(),
         source_status,
@@ -291,6 +334,10 @@ def build_education_pptx_tab() -> None:
         )
 
     source_status = gr.Markdown(value="_Ready to generate._", elem_classes=["lesson-status"])
+    processing_log = gr.Markdown(
+        value="_Generation steps and timings appear here after you run._",
+        elem_classes=["lesson-processing-log"],
+    )
 
     with gr.Tabs():
         with gr.Tab("Slide preview"):
@@ -387,6 +434,7 @@ then choose **Open with → Google Docs**. You can also upload the `.html` file 
             pptx_file,
             docx_file,
             html_file,
+            processing_log,
             advanced.trace_summary,
             advanced.trace_box,
             source_status,

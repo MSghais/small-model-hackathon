@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 from typing import Any, Literal
 
 from inference.base import InferenceBackend
@@ -100,9 +101,9 @@ class AgentRunner:
 
         if progress is not None:
             progress.begin("load_model", "Load language model")
-        load_started = __import__("time").monotonic()
+        load_started = monotonic()
         backend.load()
-        load_ms = int((__import__("time").monotonic() - load_started) * 1000)
+        load_ms = int((monotonic() - load_started) * 1000)
         trace.log_step("load_model", "Load language model", duration_ms=load_ms)
 
         if progress is not None:
@@ -111,11 +112,11 @@ class AgentRunner:
                 "Gather lesson sources",
                 detail=req.source_mode,
             )
-        source_started = __import__("time").monotonic()
+        source_started = monotonic()
         source_context, source_summary, active_session = self._gather_lesson_source_context(
             req, backend, model_key, trace
         )
-        source_ms = int((__import__("time").monotonic() - source_started) * 1000)
+        source_ms = int((monotonic() - source_started) * 1000)
         trace.log_step(
             "gather_sources",
             "Gather lesson sources",
@@ -131,11 +132,11 @@ class AgentRunner:
                 "Generate slide outline",
                 detail=f"{req.slide_count} slides · grade {req.grade}",
             )
-        outline_started = __import__("time").monotonic()
+        outline_started = monotonic()
         outline = self._generate_outline(
             skill, req, backend, trace, source_context=source_context, progress=progress
         )
-        outline_ms = int((__import__("time").monotonic() - outline_started) * 1000)
+        outline_ms = int((monotonic() - outline_started) * 1000)
         trace.log_step(
             "generate_outline",
             "Generate slide outline",
@@ -145,7 +146,7 @@ class AgentRunner:
 
         if progress is not None:
             progress.begin("create_exports", "Build PPTX, DOCX, and HTML exports")
-        export_started = __import__("time").monotonic()
+        export_started = monotonic()
         tool = self._tools.get("create_pptx")
         pptx_path = tool.handler(outline, run_id=trace.run_id)
         trace.log_tool(
@@ -167,7 +168,7 @@ class AgentRunner:
             {"title": outline.title},
             str(html_export_path),
         )
-        export_ms = int((__import__("time").monotonic() - export_started) * 1000)
+        export_ms = int((monotonic() - export_started) * 1000)
         trace.log_step(
             "create_exports",
             "Build PPTX, DOCX, and HTML exports",
@@ -195,9 +196,9 @@ class AgentRunner:
                     "Render slide thumbnails",
                     detail=f"{len(outline.slides) + 1} images",
                 )
-            preview_started = __import__("time").monotonic()
+            preview_started = monotonic()
             preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
-            preview_ms = int((__import__("time").monotonic() - preview_started) * 1000)
+            preview_ms = int((monotonic() - preview_started) * 1000)
             trace.log_step(
                 "render_previews",
                 "Render slide thumbnails",
@@ -346,7 +347,7 @@ class AgentRunner:
                     "Repair outline JSON",
                     detail=str(first_error)[:80],
                 )
-            repair_started = __import__("time").monotonic()
+            repair_started = monotonic()
             repair_messages = messages + [
                 {"role": "assistant", "content": raw},
                 {
@@ -362,7 +363,7 @@ class AgentRunner:
             repaired = backend.chat(repair_messages, max_tokens=2048, temperature=0.1)
             trace.log_llm(repair_prompt, repaired)
             repaired_outline = self._parse_outline(repaired, req.slide_count, trace)
-            repair_ms = int((__import__("time").monotonic() - repair_started) * 1000)
+            repair_ms = int((monotonic() - repair_started) * 1000)
             trace.log_step(
                 "repair_outline",
                 "Repair outline JSON",
