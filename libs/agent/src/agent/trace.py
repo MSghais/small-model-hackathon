@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 
@@ -22,6 +23,29 @@ class TraceRecorder:
     steps: list[dict[str, Any]] = field(default_factory=list)
     artifact: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    _started_at: float = field(default_factory=monotonic, repr=False)
+
+    def log_step(
+        self,
+        name: str,
+        label: str,
+        *,
+        duration_ms: int | None = None,
+        detail: str = "",
+        **details: Any,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "type": "step",
+            "name": name,
+            "label": label,
+            "elapsed_ms": int((monotonic() - self._started_at) * 1000),
+        }
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
+        if detail:
+            payload["detail"] = detail
+        payload.update(details)
+        self.steps.append(payload)
 
     def log_llm(self, prompt: str, output: str) -> None:
         self.steps.append(

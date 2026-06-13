@@ -23,6 +23,7 @@ from agent.models import (
     SlideSpec,
 )
 from agent.preview import outline_to_html, render_slide_images
+from agent.progress import SlideGenerationProgress
 from agent.prompts import (
     education_outline_repair,
     education_outline_system,
@@ -75,6 +76,8 @@ class AgentRunner:
         files: list[Path] | None = None,
         session_id: str | None = None,
         doc_ids: list[str] | None = None,
+        progress: SlideGenerationProgress | None = None,
+        skip_preview_images: bool = False,
     ) -> AgentResult:
         skill = self._skills.get(EDUCATION_PPTX_SKILL)
         req = EducationPptxInput(
@@ -95,16 +98,54 @@ class AgentRunner:
             user_input=req.model_dump(mode="json"),
         )
 
+        if progress is not None:
+            progress.begin("load_model", "Load language model")
+        load_started = __import__("time").monotonic()
         backend.load()
+        load_ms = int((__import__("time").monotonic() - load_started) * 1000)
+        trace.log_step("load_model", "Load language model", duration_ms=load_ms)
+
+        if progress is not None:
+            progress.begin(
+                "gather_sources",
+                "Gather lesson sources",
+                detail=req.source_mode,
+            )
+        source_started = __import__("time").monotonic()
         source_context, source_summary, active_session = self._gather_lesson_source_context(
             req, backend, model_key, trace
+        )
+        source_ms = int((__import__("time").monotonic() - source_started) * 1000)
+        trace.log_step(
+            "gather_sources",
+            "Gather lesson sources",
+            duration_ms=source_ms,
+            source_mode=req.source_mode,
         )
         if active_session:
             req = req.model_copy(update={"session_id": active_session})
 
+        if progress is not None:
+            progress.begin(
+                "generate_outline",
+                "Generate slide outline",
+                detail=f"{req.slide_count} slides · grade {req.grade}",
+            )
+        outline_started = __import__("time").monotonic()
         outline = self._generate_outline(
-            skill, req, backend, trace, source_context=source_context
+            skill, req, backend, trace, source_context=source_context, progress=progress
         )
+        outline_ms = int((__import__("time").monotonic() - outline_started) * 1000)
+        trace.log_step(
+            "generate_outline",
+            "Generate slide outline",
+            duration_ms=outline_ms,
+            slide_count=len(outline.slides),
+        )
+
+        if progress is not None:
+            progress.begin("create_exports", "Build PPTX, DOCX, and HTML exports")
+        export_started = __import__("time").monotonic()
         tool = self._tools.get("create_pptx")
         pptx_path = tool.handler(outline, run_id=trace.run_id)
         trace.log_tool(
@@ -126,13 +167,47 @@ class AgentRunner:
             {"title": outline.title},
             str(html_export_path),
         )
+        export_ms = int((__import__("time").monotonic() - export_started) * 1000)
+        trace.log_step(
+            "create_exports",
+            "Build PPTX, DOCX, and HTML exports",
+            duration_ms=export_ms,
+        )
 
         trace.set_artifact(pptx_path)
 
         slides_dicts = [s.model_dump() for s in outline.slides]
         markdown = outline_to_markdown(outline.title, slides_dicts)
         html_preview = outline_to_html(outline)
-        preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
+
+        if skip_preview_images:
+            preview_images: list[str] = []
+            trace.log_step(
+                "render_previews",
+                "Render slide thumbnails",
+                duration_ms=0,
+                detail="skipped (HTML preview only)",
+            )
+        else:
+            if progress is not None:
+                progress.begin(
+                    "render_previews",
+                    "Render slide thumbnails",
+                    detail=f"{len(outline.slides) + 1} images",
+                )
+            preview_started = __import__("time").monotonic()
+            preview_images = [str(p) for p in render_slide_images(outline, trace.run_id)]
+            preview_ms = int((__import__("time").monotonic() - preview_started) * 1000)
+            trace.log_step(
+                "render_previews",
+                "Render slide thumbnails",
+                duration_ms=preview_ms,
+                image_count=len(preview_images),
+            )
+
+        if progress is not None:
+            progress.finish()
+
         trace_path = trace.save()
 
         return AgentResult(
@@ -250,6 +325,7 @@ class AgentRunner:
         trace: TraceRecorder,
         *,
         source_context: str = "",
+        progress: SlideGenerationProgress | None = None,
     ) -> SlideOutline:
         system = education_outline_system(skill.body)
         user = education_outline_user(req, source_context=source_context)
@@ -264,6 +340,13 @@ class AgentRunner:
         try:
             return self._parse_outline(raw, req.slide_count, trace)
         except (json.JSONDecodeError, ValueError) as first_error:
+            if progress is not None:
+                progress.begin(
+                    "repair_outline",
+                    "Repair outline JSON",
+                    detail=str(first_error)[:80],
+                )
+            repair_started = __import__("time").monotonic()
             repair_messages = messages + [
                 {"role": "assistant", "content": raw},
                 {
@@ -278,7 +361,15 @@ class AgentRunner:
             )
             repaired = backend.chat(repair_messages, max_tokens=2048, temperature=0.1)
             trace.log_llm(repair_prompt, repaired)
-            return self._parse_outline(repaired, req.slide_count, trace)
+            repaired_outline = self._parse_outline(repaired, req.slide_count, trace)
+            repair_ms = int((__import__("time").monotonic() - repair_started) * 1000)
+            trace.log_step(
+                "repair_outline",
+                "Repair outline JSON",
+                duration_ms=repair_ms,
+                error=str(first_error),
+            )
+            return repaired_outline
 
     def _parse_outline(
         self,
