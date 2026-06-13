@@ -105,8 +105,8 @@ def send_turn(
 
     progress(1.0, desc="Done")
     status = (
-        f"**Turn complete** — you spoke {result.user_chars} chars, "
-        f"teacher replied with {result.assistant_chars} chars."
+        f"**Turn complete** — you spoke {len(result.user_text)} chars, "
+        f"teacher replied with {len(result.assistant_text)} chars."
     )
     if result.voiceout_warning:
         status += f" VoiceOut note: {result.voiceout_warning}"
