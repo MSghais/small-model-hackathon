@@ -76,7 +76,15 @@ Web discover/auto search requires network access. MemRAG data is stored under `R
 
 ### EchoCoach — voice practice
 
-The **EchoCoach** tab records up to 30 seconds (mic locally, or upload on HF Space), then runs a local pipeline:
+The **EchoCoach** tab records up to 30 seconds, then runs a local pipeline:
+
+**Getting audio in**
+
+- **Record from this computer** — captures on the machine running Gradio (recommended when the browser shows *No microphone found*).
+- **Browser Record** — needs mic permission and a secure context; open **http://localhost:7860** (not `0.0.0.0` or a LAN IP).
+- **Upload** — drop a `.wav` or `.mp3` file (works everywhere, including HF Space).
+
+Pipeline steps:
 
 1. **ASR** — Cohere Transcribe 2B (14 languages) or Whisper.cpp tiny/base
 2. **Analysis** — filler highlights, pace score, matplotlib charts

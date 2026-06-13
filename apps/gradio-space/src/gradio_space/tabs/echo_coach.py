@@ -4,6 +4,7 @@ import gradio as gr
 
 from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
+from echocoach.recording import ServerRecordingError, record_server_wav
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
 from inference.factory import get_backend
 
@@ -21,6 +22,19 @@ def _error_outputs(message: str) -> tuple:
         message,
         {},
     )
+
+
+def record_server_pitch() -> tuple[str | None, str]:
+    """Capture from this machine's mic and feed the same audio input as upload."""
+    try:
+        path = record_server_wav()
+    except ServerRecordingError as exc:
+        return None, str(exc)
+    except Exception as exc:  # noqa: BLE001 — surface unexpected recorder errors
+        return None, f"Recording failed: {exc}"
+
+    seconds = _config.max_seconds
+    return str(path), f"Recorded {seconds}s from server microphone. Click **Analyze pitch**."
 
 
 def analyze_pitch(
@@ -71,22 +85,35 @@ def build_echo_coach_tab() -> None:
     default_asr = _config.asr_preset
 
     gr.Markdown(
-        """
-Record up to **30 seconds**, then get local feedback: transcript with **filler highlights**,
+        f"""
+Record up to **{_config.max_seconds} seconds**, then get local feedback: transcript with **filler highlights**,
 **pace score**, coach **rewrite**, and **VoiceOut** audio — all on-device.
 
 - **ASR:** configurable (`voice_models.yaml`) — Cohere Transcribe 2B or Whisper.cpp
 - **Coach:** text LLM preset (`ACTIVE_MODEL` / `ECHOCOACH_COACH_MODEL`)
 - **TTS:** Piper VoiceOut (optional; install `echocoach[piper]`)
+
+**Microphone not working in the browser?** The in-browser **Record** button needs mic permission and a secure context
+(open the app at **http://localhost:7860**, not `0.0.0.0` or a LAN IP). If you see *No microphone found*, use
+**Record from this computer** below (captures on the machine running Gradio) or **upload** a `.wav` / `.mp3` file.
 """
     )
 
     with gr.Row():
         with gr.Column(scale=1):
+            with gr.Accordion("Record from this computer (recommended)", open=True):
+                gr.Markdown(
+                    "Uses the microphone on the machine running the app — no browser permission needed."
+                )
+                record_server_btn = gr.Button(
+                    f"Record from this computer ({_config.max_seconds}s)",
+                    variant="secondary",
+                )
             audio_in = gr.Audio(
-                label="Your pitch (mic or upload)",
-                sources=["microphone", "upload"],
+                label="Your pitch (browser mic or upload)",
+                sources=["upload", "microphone"],
                 type="filepath",
+                format="wav",
             )
             language = gr.Dropdown(
                 label="Language",
@@ -115,6 +142,11 @@ Record up to **30 seconds**, then get local feedback: transcript with **filler h
             voiceout = gr.Audio(label="VoiceOut", type="filepath")
             trace_note = gr.Markdown()
             trace_json = gr.JSON(label="Trace")
+
+    record_server_btn.click(
+        record_server_pitch,
+        outputs=[audio_in, status],
+    )
 
     analyze_btn.click(
         analyze_pitch,
