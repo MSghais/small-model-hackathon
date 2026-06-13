@@ -89,7 +89,7 @@ def discover_sources(
         return (
             summary,
             gr.update(choices=choices, value=choices, visible=bool(choices)),
-            discover.session_id,
+            refresh_sessions(discover.session_id),
             trace_summary_markdown(discover.trace_path),
             trace_json,
             memory_summary(discover.session_id),
@@ -159,7 +159,7 @@ def auto_search_ingest(
         return (
             format_ingest_status(result),
             gr.update(choices=[], value=[], visible=False),
-            result.session_id,
+            refresh_sessions(result.session_id),
             trace_summary_markdown(result.trace_path),
             trace_json,
             memory_summary(result.session_id),

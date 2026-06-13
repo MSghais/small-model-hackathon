@@ -25,6 +25,10 @@ def list_session_choices() -> list[tuple[str, str]]:
 def refresh_sessions(current: str):
     choices = list_session_choices()
     values = [c[1] for c in choices]
+    if current and current not in values:
+        # New session may be selected before choices refresh (e.g. after discover).
+        choices.append((f"Session ({current})", current))
+        values.append(current)
     value = current if current in values else ""
     return gr.update(choices=choices, value=value)
 
