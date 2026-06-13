@@ -133,7 +133,7 @@ class RecordingWidgets:
     language: gr.Dropdown | None = None
     asr_preset: gr.Dropdown | None = None
 
-    status: gr.Textbox | None = None
+    status: gr.Textbox | gr.Markdown | None = None
 
 
 def build_recording_block(
@@ -148,44 +148,79 @@ def build_recording_block(
     include_sample: bool = False,
     server_mic_open: bool = False,
     advanced_open: bool = False,
+    compact: bool = False,
+    audio_elem_classes: list[str] | None = None,
 ) -> RecordingWidgets:
     mic_status = recording_backend_status()
-    record_status_md = gr.Markdown(mic_status)
+    slider_value = default_seconds or min(30, max_seconds)
+    sample_btn: gr.Button | None = None
 
-    with gr.Accordion("Recording help", open=False):
-        gr.Markdown(
-            "Open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview) "
-            "and allow microphone access. Use **Upload** if the browser mic fails."
+    if compact:
+        record_status_md = gr.Markdown(mic_status, elem_classes=["form-status", "ec-mic-hint"])
+        audio_classes = ["ec-audio-primary", *(audio_elem_classes or [])]
+        audio_in = gr.Audio(
+            label=audio_label,
+            sources=["upload", "microphone"],
+            type="filepath",
+            format="wav",
+            elem_classes=audio_classes,
         )
-
-    audio_in = gr.Audio(
-        label=audio_label,
-        sources=["upload", "microphone"],
-        type="filepath",
-        format="wav",
-    )
-
-    with gr.Accordion("Server microphone (Linux)", open=server_mic_open):
-        record_seconds = gr.Slider(
-            label="Max length (seconds)",
-            minimum=3,
-            maximum=max_seconds,
-            value=default_seconds or min(30, max_seconds),
-            step=1,
+        with gr.Row(elem_classes=["ec-record-row"]):
+            record_start_btn = gr.Button("Start recording", variant="secondary", size="sm")
+            record_stop_btn = gr.Button("Stop recording", variant="stop", size="sm", interactive=False)
+            if include_sample:
+                sample_btn = gr.Button("Try sample clip", variant="secondary", size="sm")
+        with gr.Accordion(
+            "Recording options",
+            open=False,
+            elem_classes=["form-optional-accordion"],
+        ):
+            gr.Markdown(
+                "Open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview) "
+                "and allow microphone access. On Linux you can also use **Start recording** "
+                "for server-side capture. Use **Upload** if the browser mic fails."
+            )
+            record_seconds = gr.Slider(
+                label="Max length (seconds)",
+                minimum=3,
+                maximum=max_seconds,
+                value=slider_value,
+                step=1,
+            )
+            language = gr.Dropdown(label="Language", choices=lang_choices, value=default_lang)
+            asr_preset = gr.Dropdown(label="ASR preset", choices=asr_choices, value=default_asr)
+    else:
+        record_status_md = gr.Markdown(mic_status)
+        with gr.Accordion("Recording help", open=False):
+            gr.Markdown(
+                "Open **http://localhost:7860** in Chrome or Firefox (not Cursor's preview) "
+                "and allow microphone access. Use **Upload** if the browser mic fails."
+            )
+        audio_in = gr.Audio(
+            label=audio_label,
+            sources=["upload", "microphone"],
+            type="filepath",
+            format="wav",
+            elem_classes=audio_elem_classes or None,
         )
-        with gr.Row():
-            record_start_btn = gr.Button("Start recording", variant="secondary")
-            record_stop_btn = gr.Button("Stop recording", variant="stop", interactive=False)
-
-    sample_btn = None
-    if include_sample:
-        sample_btn = gr.Button("Load sample clip", variant="secondary")
-
-    language = None
-    asr_preset = None
-    with gr.Accordion("Voice settings", open=advanced_open):
-        language = gr.Dropdown(label="Language", choices=lang_choices, value=default_lang)
-        asr_preset = gr.Dropdown(label="ASR preset", choices=asr_choices, value=default_asr)
+        with gr.Accordion("Server microphone (Linux)", open=server_mic_open):
+            record_seconds = gr.Slider(
+                label="Max length (seconds)",
+                minimum=3,
+                maximum=max_seconds,
+                value=slider_value,
+                step=1,
+            )
+            with gr.Row():
+                record_start_btn = gr.Button("Start recording", variant="secondary")
+                record_stop_btn = gr.Button("Stop recording", variant="stop", interactive=False)
+        if include_sample:
+            sample_btn = gr.Button("Load sample clip", variant="secondary")
+        language = None
+        asr_preset = None
+        with gr.Accordion("Voice settings", open=advanced_open):
+            language = gr.Dropdown(label="Language", choices=lang_choices, value=default_lang)
+            asr_preset = gr.Dropdown(label="ASR preset", choices=asr_choices, value=default_asr)
 
     return RecordingWidgets(
         record_status_md=record_status_md,
@@ -253,7 +288,7 @@ def wire_recording_handlers(
     rec: RecordingWidgets,
     *,
     stop_next_action: str,
-    status_output: gr.Textbox | None = None,
+    status_output: gr.Textbox | gr.Markdown | None = None,
     sample_loader: Callable[[], tuple] | None = None,
 ) -> None:
     status_out = status_output or rec.status
