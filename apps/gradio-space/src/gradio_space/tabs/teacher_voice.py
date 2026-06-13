@@ -24,7 +24,6 @@ from gradio_space.ui.components import (
     build_advanced_panel,
     build_recording_block,
     DOC_CHOICE_LIST_CLASSES,
-    empty_state,
     wire_recording_handlers,
 )
 from gradio_space.voice_helpers import speak_last_assistant_reply
@@ -33,14 +32,6 @@ from inference.factory import get_backend
 _config = get_echo_coach_config()
 _TURN_MAX = min(15, _config.max_seconds)
 _MODE_CHOICES = [(label, key) for key, label in MODE_LABELS.items()]
-
-
-def _conversation_visibility(history: list | None) -> tuple[dict, dict]:
-    has_messages = bool(history)
-    return (
-        gr.update(visible=not has_messages),
-        gr.update(visible=has_messages),
-    )
 
 
 def _voiceout_update(path: str | None) -> dict:
@@ -54,7 +45,6 @@ def _empty_turn() -> tuple:
         "_Type a message or record audio, then send._",
         "",
         {},
-        *_conversation_visibility([]),
         "",
     )
 
@@ -65,7 +55,10 @@ def _turn_result(result) -> tuple:
         f"teacher replied with {len(result.assistant_text)} chars."
     )
     if result.voiceout_warning:
-        status += f" VoiceOut note: {result.voiceout_warning}"
+        first_line = result.voiceout_warning.split("\n", 1)[0].strip()
+        if len(first_line) > 120:
+            first_line = first_line[:117] + "…"
+        status += f" VoiceOut note: {first_line} _(details in Advanced)_"
 
     playback = str(result.voiceout_path) if result.voiceout_path else None
 
@@ -75,7 +68,6 @@ def _turn_result(result) -> tuple:
         status,
         f"Trace saved: `{result.trace_path}`",
         trace_as_dict(result.trace),
-        *_conversation_visibility(result.history),
         "",
     )
 
@@ -87,7 +79,6 @@ def _turn_error(history: list | None, message: str) -> tuple:
         f"**TeacherVoice failed:** {message}",
         "",
         {},
-        *_conversation_visibility(history),
         gr.update(),
     )
 
@@ -117,7 +108,6 @@ def send_turn(
             "_Record or upload audio, then click **Send voice turn**._",
             "",
             {},
-            *_conversation_visibility(history),
             gr.update(),
         )
 
@@ -167,7 +157,6 @@ def send_text_turn(
             "_Type your question above, then click **Send text turn**._",
             "",
             {},
-            *_conversation_visibility(history),
             gr.update(),
         )
 
@@ -491,25 +480,20 @@ def build_teacher_voice_tab() -> None:
         with gr.Column(scale=2, elem_classes=["tv-results-col"]):
             gr.HTML('<p class="form-section-label">Step 2 · Conversation</p>')
 
-            chat_empty = gr.HTML(
-                value=empty_state(
+            chatbot = gr.Chatbot(
+                label="Conversation",
+                height=360,
+                placeholder=(
                     "Your back-and-forth with the teacher will show here. "
                     "Type a message or record audio on the left, then send a turn."
-                )
+                ),
             )
-
-            with gr.Column(visible=False) as chat_panel:
-                chatbot = gr.Chatbot(
-                    label="Conversation",
-                    height=360,
-                    placeholder="Ask anything — the teacher replies in text and spoken audio.",
-                )
-                voiceout = gr.Audio(
-                    label="Teacher reply (auto-plays)",
-                    type="filepath",
-                    autoplay=True,
-                    visible=False,
-                )
+            voiceout = gr.Audio(
+                label="Teacher reply (auto-plays)",
+                type="filepath",
+                autoplay=True,
+                visible=False,
+            )
 
     mode_dd.change(
         fn=_on_mode_change,
@@ -586,8 +570,6 @@ def build_teacher_voice_tab() -> None:
         status,
         advanced.trace_summary,
         advanced.trace_box,
-        chat_empty,
-        chat_panel,
         message_tb,
     ]
 
