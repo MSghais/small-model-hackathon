@@ -78,16 +78,16 @@ def language_instruction(language: str) -> str:
 
 
 def resolve_aya_preset(language: str, variant: str = "auto") -> str:
-    """Return a models.yaml preset key for the Tiny Aya coach."""
+    """Return a models.yaml preset key for the Tiny Aya coach.
+
+    Regional Water/Fire/Earth presets remain in models.yaml for future use but
+    default to Global so Spaces only load one gated model.
+    """
+    _ = language  # language kept for API compatibility; Global handles 70+ langs
     if variant and variant not in ("auto", ""):
+        if variant in ("tiny-aya-water", "tiny-aya-fire", "tiny-aya-earth"):
+            return "tiny-aya-global"
         return variant
-    code = (language or "en").strip().lower().split("-")[0]
-    if code in _AYA_FIRE_LANGS:
-        return "tiny-aya-fire"
-    if code in _AYA_EARTH_LANGS:
-        return "tiny-aya-earth"
-    if code in _AYA_WATER_LANGS:
-        return "tiny-aya-water"
     return "tiny-aya-global"
 
 

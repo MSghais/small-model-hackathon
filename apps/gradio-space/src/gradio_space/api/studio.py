@@ -179,10 +179,14 @@ def _coach_model_key(
     coach_variant: str = "auto",
 ) -> str:
     if coach_model and coach_model.strip():
-        return coach_model.strip()
-    if coach_variant and coach_variant not in ("auto", ""):
-        return coach_variant.strip()
-    return resolve_aya_preset(language, coach_variant)
+        key = coach_model.strip()
+    elif coach_variant and coach_variant not in ("auto", ""):
+        key = coach_variant.strip()
+    else:
+        key = resolve_aya_preset(language, coach_variant)
+    if key in ("tiny-aya-water", "tiny-aya-fire", "tiny-aya-earth", "auto"):
+        key = "tiny-aya-global"
+    return key
 
 
 def _ensure_coach_loaded(
@@ -887,11 +891,7 @@ def api_voice_presets() -> dict[str, Any]:
         languages=[{"label": label, "value": value} for label, value in _echo_config.language_choices()],
         asr_presets=[{"label": label, "value": value} for label, value in _echo_config.asr_choices()],
         coach_variants=[
-            {"label": "Auto (regional Tiny Aya)", "value": "auto"},
-            {"label": "Tiny Aya Global", "value": "tiny-aya-global"},
-            {"label": "Tiny Aya Water", "value": "tiny-aya-water"},
-            {"label": "Tiny Aya Fire", "value": "tiny-aya-fire"},
-            {"label": "Tiny Aya Earth", "value": "tiny-aya-earth"},
+            {"label": "Tiny Aya Global (70+ languages)", "value": "tiny-aya-global"},
         ],
         default_language=_echo_config.language_choices()[0][1] if _echo_config.language_choices() else "en",
         default_asr=_echo_config.asr_preset,

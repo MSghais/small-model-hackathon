@@ -7,7 +7,7 @@ import pytest
 import soundfile as sf
 
 from inference.response_clean import reply_ends_complete_sentence
-from echocoach.prompts import PITCH_SYSTEM, system_prompt_for_mode
+from echocoach.prompts import PITCH_SYSTEM, resolve_aya_preset, system_prompt_for_mode
 from echocoach.teacher_voice import (
     RagContext,
     append_chat_turn,
@@ -129,6 +129,12 @@ def test_build_teacher_messages_includes_topic_and_rag():
     assert "[1] Plants need light." in messages[-1]["content"]
     assert "How do plants eat?" in messages[-1]["content"]
     assert "Reply now in 2-4 complete spoken sentences only" in messages[-1]["content"]
+
+
+def test_resolve_aya_preset_uses_global_only():
+    assert resolve_aya_preset("fr", "auto") == "tiny-aya-global"
+    assert resolve_aya_preset("hi", "auto") == "tiny-aya-global"
+    assert resolve_aya_preset("en", "tiny-aya-water") == "tiny-aya-global"
 
 
 def test_build_teacher_messages_includes_language_instruction():

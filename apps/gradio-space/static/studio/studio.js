@@ -240,7 +240,7 @@ function lessonsLanguage() {
 }
 
 function lessonsCoachVariant() {
-  return $("#lessons-coach-variant")?.value || "auto";
+  return $("#lessons-coach-variant")?.value || "tiny-aya-global";
 }
 
 function lessonsAutoSpeak() {
@@ -1039,12 +1039,6 @@ async function initLanguageLessons() {
       .join("");
     langSelect.innerHTML = `${opts}<option value="other">Other (text only)</option>`;
     langSelect.value = data.default_language || "en";
-  }
-  const variantSelect = $("#lessons-coach-variant");
-  if (variantSelect && data.coach_variants?.length) {
-    variantSelect.innerHTML = data.coach_variants
-      .map((o) => `<option value="${o.value}">${o.label}</option>`)
-      .join("");
   }
   syncLessonsLanguageUi();
 }

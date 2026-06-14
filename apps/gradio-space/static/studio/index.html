@@ -313,16 +313,8 @@
               <input id="lessons-other-lang" type="text" class="input" placeholder="e.g. hi, sw" maxlength="8" />
             </label>
             <p id="lessons-voiceout-note" class="status-text"></p>
-            <label class="field">
-              <span>Coach model</span>
-              <select id="lessons-coach-variant" class="input">
-                <option value="auto">Auto (regional Tiny Aya)</option>
-                <option value="tiny-aya-global">Tiny Aya Global</option>
-                <option value="tiny-aya-water">Tiny Aya Water</option>
-                <option value="tiny-aya-fire">Tiny Aya Fire</option>
-                <option value="tiny-aya-earth">Tiny Aya Earth</option>
-              </select>
-            </label>
+            <p class="status-text lessons-coach-model">Coach: Tiny Aya Global (70+ languages)</p>
+            <input type="hidden" id="lessons-coach-variant" value="tiny-aya-global" />
           </div>
           <div class="card lessons-rag-card">
             <p class="card-title">RAG scope</p>
