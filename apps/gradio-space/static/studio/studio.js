@@ -1,6 +1,30 @@
 import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client@1.14.0/+esm";
 
 const $ = (sel) => document.querySelector(sel);
+const THEME_KEY = "studio-theme";
+
+function getPreferredTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, theme);
+  const icon = $("#theme-icon");
+  if (icon) icon.textContent = theme === "dark" ? "light_mode" : "dark_mode";
+  const checkbox = $("#theme-toggle");
+  if (checkbox) checkbox.checked = theme === "dark";
+}
+
+function toggleTheme() {
+  const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  applyTheme(current === "dark" ? "light" : "dark");
+}
+
+applyTheme(getPreferredTheme());
+
 const SLIDE_PIPELINE_STEPS = [
   "Load language model",
   "Gather lesson sources",
@@ -1265,6 +1289,8 @@ function bindUi() {
   $("#btn-open-settings")?.addEventListener("click", openSettingsDrawer);
   $("#btn-close-settings")?.addEventListener("click", closeSettingsDrawer);
   $("#settings-backdrop")?.addEventListener("click", closeSettingsDrawer);
+  $("#theme-toggle")?.addEventListener("change", toggleTheme);
+  $("#theme-toggle-btn")?.addEventListener("click", toggleTheme);
   $("#btn-reload-model")?.addEventListener("click", () => reloadModelFromSettings().catch(() => {}));
 
   $("#btn-open-research-view")?.addEventListener("click", openResearchView);
