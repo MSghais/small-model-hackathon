@@ -67,9 +67,3 @@ models:
     backend: transformers
     model_id: ./models/finetuned/minicpm5-1b-lora-merged
     trust_remote_code: true
-
-  jepa-ensemble-lesson:
-    label: JEPA ensemble (LLM + emb + JEPA) lesson pretrain
-    backend: transformers
-    model_id: ./models/ensemble/jepa-lesson-pretrain
-    trust_remote_code: true

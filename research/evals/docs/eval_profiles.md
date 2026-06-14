@@ -114,28 +114,6 @@ uv run python research/finetune.py --preset minicpm5-1b --mode lora \
 
 ---
 
-## Ensemble models
-
-For `slm-lm-eval` on ensemble checkpoints:
-
-- **`generate_until` tasks** (e.g. `gsm8k`) use the full ensemble stack.
-- **`loglikelihood` tasks** (e.g. `arc_easy`, `hellaswag`) score the underlying LLM head only.
-
-To prove the JEPA selector helps, run **`jepa_harness`** — not ARC/HellaSwag alone.
-
-```bash
-uv run --package slm-evals slm-lm-eval \
-  --profile reasoning \
-  --model ./models/ensemble/custom-jepa-pretrain \
-  --experiment-name ensemble__reasoning
-
-uv run --package ensemble python -m ensemble.eval.jepa_harness \
-  --checkpoint ./models/ensemble/custom-jepa-pretrain \
-  --data research/data/benchmark-qa.jsonl
-```
-
----
-
 ## Results layout
 
 **slm-lm-eval** → `results/lm_eval/<experiment-name>/`

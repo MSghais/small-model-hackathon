@@ -197,12 +197,6 @@ uv run --package slm-evals slm-lm-eval \
   --model openbmb/MiniCPM5-1B \
   --adapter ./models/finetuned/minicpm5-1b-lora \
   --experiment-name minicpm5-1b-lora__manual
-
-# Ensemble checkpoint (manifest.json auto-detected)
-uv run --package slm-evals slm-lm-eval \
-  --config research/evals/configs/lm_eval_smoke.yaml \
-  --model ./models/ensemble/jepa-lesson-pretrain \
-  --experiment-name ensemble-jepa__lm-eval
 ```
 
 ### Compare baseline vs candidate
@@ -259,8 +253,8 @@ slm-lm-eval [OPTIONS]
 --list-tasks-all        Full lm-eval task list
 --profile NAME          Shorthand for --config (reasoning, code, smoke, …)
 --config PATH           YAML config (tasks, seed, limit, …)
---preset KEY            models.yaml preset (base, LoRA, merged, ensemble)
---model PATH            HF Hub id, merged dir, or ensemble checkpoint
+--preset KEY            models.yaml preset (base, LoRA, merged)
+--model PATH            HF Hub id or merged checkpoint dir
 --adapter PATH          LoRA adapter (alternative to preset adapter_path)
 --tasks NAMES           Override task list
 --num-fewshot N
@@ -284,12 +278,6 @@ Each run writes to `<output_dir>/<experiment_name>/`:
 | `summary.md` | Task → metric table |
 | `run_meta.json` | Preset, base model, adapter, tasks, seed |
 | `comparison.md` | Delta table (when `--compare-to` set) |
-
-### Ensemble backend notes
-
-- **`ensemble-lm`** loads JEPA checkpoints via `manifest.json`.
-- **`generate_until`** tasks (e.g. `gsm8k`) use the full ensemble stack (`generate_text`).
-- **`loglikelihood`** tasks (e.g. `arc_easy`, `hellaswag`) score the underlying HF LLM head (adapter 0), not the JEPA selector. Use [`jepa_harness`](../ensemble/README.md) to measure selector value on domain QA.
 
 ### PEFT / LoRA
 

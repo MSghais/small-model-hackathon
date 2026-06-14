@@ -380,7 +380,6 @@ def main() -> int:
         "lm_eval_model": spec.lm_eval_model,
         "base_model": spec.base_model,
         "adapter_path": spec.adapter_path,
-        "checkpoint_path": spec.checkpoint_path,
         "tasks": cfg["tasks"],
         "num_fewshot": cfg.get("num_fewshot"),
         "limit": cfg.get("limit"),

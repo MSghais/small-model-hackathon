@@ -61,7 +61,7 @@ libs/agent/          # Skill agent runner, tools, trace recorder
 libs/researchmind/   # Scraper, chunk/embed, MemRAG SQLite store, retrieval
 libs/inference/      # Transformers + llama.cpp backends
 skills/              # SKILL.md + references/ + scripts/ per task
-research/            # Fine-tune, ensemble experiments, agentic evals (optional)
+research/            # Fine-tune and agentic evals (optional)
 ```
 
 ### ResearchMind (offline after ingest)

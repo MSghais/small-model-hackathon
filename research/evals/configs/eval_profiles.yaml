@@ -124,24 +124,6 @@ suites:
       - gaia
       - swe_bench
 
-  jepa_selector:
-    tool: jepa_harness
-    claim: JEPA / draft selector quality
-    description: >-
-      Domain QA on benchmark-qa.jsonl; compares first vs random vs JEPA vs oracle
-      draft selection. Use for ensemble checkpoints, not base LLM alone.
-    command: >-
-      uv run --package ensemble python -m ensemble.eval.jepa_harness
-      --checkpoint ./models/ensemble/<name> --data research/data/benchmark-qa.jsonl
-
-  world_model:
-    tool: world_harness
-    claim: World model / energy-based planning
-    description: Energy-ranked draft selection on domain QA (world-model track).
-    command: >-
-      uv run --package ensemble python -m ensemble.eval.world_harness
-      --checkpoint ./models/ensemble/<name> --data research/data/benchmark-qa.jsonl
-
 external:
   embeddings_mteb:
     tool: mteb

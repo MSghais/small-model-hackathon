@@ -1,24 +1,23 @@
 # Research usage
 
-How to run fine-tuning, ensemble experiments, and agentic benchmarks under `research/`. All commands assume the **repo root** as the working directory unless noted.
+How to run fine-tuning and agentic benchmarks under `research/`. All commands assume the **repo root** as the working directory unless noted.
 
 The Lesson Agent app lives in `apps/gradio-space/` — see root [USAGE.md](../USAGE.md). Research code is optional and isolated here.
 
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) and Python 3.12
-- GPU recommended for real-model runs (CPU works for smoke tests and `tiny` backends)
+- GPU recommended for real-model runs (CPU works for smoke tests)
 - Hugging Face Hub access for model downloads and some benchmark datasets
 
 ## Install dependency groups
 
 ```bash
 # All research tooling
-uv sync --group finetune --group ensemble --group evals --group lm-eval
+uv sync --group finetune --group evals --group lm-eval
 
 # Or one at a time
 uv sync --group finetune
-uv sync --group ensemble
 uv sync --group evals
 uv sync --group lm-eval
 ```
@@ -26,7 +25,6 @@ uv sync --group lm-eval
 | Group | Package / script | What it adds |
 | ----- | ---------------- | ------------ |
 | `finetune` | `research/finetune.py` | `peft`, `datasets`, `bitsandbytes` (QLoRA) |
-| `ensemble` | `ensemble` workspace member | JEPA / world-model ensemble + harnesses |
 | `evals` | `slm-evals` workspace member | `slm-benchmark` CLI |
 | `lm-eval` | `slm-evals[lm-eval]` | `slm-lm-eval` CLI (GSM8K, ARC, HellaSwag, …) |
 
@@ -94,83 +92,7 @@ Training writes to `<out>/` (default `./models/finetuned/<preset>-<mode>/`):
 
 ---
 
-## 2. Ensemble experiments (`research/ensemble/`)
-
-JEPA and world-model ensemble prototypes: small LLM + embedding memory + latent predictors + energy-based draft selection. **Not connected to the Gradio app.**
-
-Install: `uv sync --group ensemble`
-
-### Tier 1 — CPU smoke (no Hub download)
-
-```bash
-uv run --package ensemble python -m ensemble.jepa_ensemble tiny
-uv run --package ensemble python -m ensemble.world_ensemble tiny
-bash research/ensemble/scripts/smoke.sh
-```
-
-### Tier 2 — Real small model
-
-```bash
-uv run --package ensemble python -m ensemble.jepa_ensemble Qwen/Qwen2.5-0.5B-Instruct
-uv run --package ensemble python -m ensemble.world_ensemble Qwen/Qwen2.5-0.5B-Instruct
-```
-
-### Pretrain + save (LLM + emb + JEPA)
-
-```bash
-# Default LLM: ENSEMBLE_LLM → LLM_PATH → BASE → MODEL_ID → ACTIVE_MODEL (models.yaml)
-uv run --package ensemble ensemble-pretrain --steps 200
-
-# Or override
-uv run --package ensemble ensemble-pretrain \
-  --llm Qwen/Qwen2.5-0.5B-Instruct \
-  --steps 200
-
-# Benchmark saved ensemble with slm-evals (compare to base HF model)
-uv run --package slm-evals slm-benchmark \
-  --model ./models/ensemble/jepa-lesson-pretrain \
-  --model-type ensemble \
-  --benchmarks bfcl tau_bench --max-samples 20
-```
-
-Checkpoint files: `manifest.json`, `aux.pt`, `llm/` (PEFT adapters), optional `store.pt`.
-
-### Tier 3 — Benchmark harnesses
-
-Uses `research/data/benchmark-qa.jsonl` (questions) and `benchmark-kb.jsonl` (retrieval snippets).
-
-```bash
-# JEPA track — toy
-uv run --package ensemble python -m ensemble.eval.jepa_harness \
-  --llm tiny --toy --limit 20 --n_drafts 8
-
-# JEPA track — education QA
-uv run --package ensemble python -m ensemble.eval.jepa_harness \
-  --llm Qwen/Qwen2.5-0.5B-Instruct \
-  --qa research/data/benchmark-qa.jsonl \
-  --kb research/data/benchmark-kb.jsonl \
-  --limit 50 --n_drafts 8
-
-# World-model track
-uv run --package ensemble python -m ensemble.eval.world_harness \
-  --llm tiny --toy --limit 20 --n_drafts 8
-```
-
-More detail: [ensemble/README.md](ensemble/README.md), [docs/overview.md](docs/overview.md).
-
-### Legacy shims
-
-Top-level files re-export the package for old scripts:
-
-- `research/llm_emb_jepa_ensemble_pluggable.py` → `ensemble.jepa_ensemble`
-- `research/world_model_ensemble.py` → `ensemble.world_ensemble`
-- `research/eval_harness.py` → `ensemble.eval.jepa_harness`
-
-Prefer `uv run --package ensemble python -m ensemble.<module>`.
-
----
-
-## 3. Agentic benchmarks (`research/evals/`)
+## 2. Agentic benchmarks (`research/evals/`)
 
 Evaluate local HuggingFace checkpoints on BFCL, τ-bench, GAIA, and SWE-bench Verified.
 
@@ -192,9 +114,9 @@ Full reference: [evals/USAGE.md](evals/USAGE.md).
 
 ---
 
-## 4. Academic benchmarks (`slm-lm-eval`)
+## 3. Academic benchmarks (`slm-lm-eval`)
 
-Standard lm-evaluation-harness tasks (ARC, HellaSwag, GSM8K, …) for base presets, LoRA adapters, merged checkpoints, and ensemble manifests.
+Standard lm-evaluation-harness tasks (ARC, HellaSwag, GSM8K, …) for base presets, LoRA adapters, and merged checkpoints.
 
 Install: `uv sync --group lm-eval`
 
@@ -222,12 +144,6 @@ uv run --package slm-evals slm-lm-eval \
   --preset minicpm5-1b-lesson-lora \
   --experiment-name minicpm5-1b-lora__v1 \
   --compare-to results/lm_eval/minicpm5-1b__baseline/results.json
-
-# Ensemble checkpoint
-uv run --package slm-evals slm-lm-eval \
-  --config research/evals/configs/lm_eval_smoke.yaml \
-  --model ./models/ensemble/jepa-lesson-pretrain \
-  --experiment-name ensemble-jepa__lm-eval
 ```
 
 Post-training hook:
@@ -248,8 +164,8 @@ Full reference: [evals/USAGE.md](evals/USAGE.md#lm-evaluation-harness-slm-lm-eva
 | File | Used by | Format |
 | ---- | ------- | ------ |
 | `education-lesson-chat.jsonl` | `finetune.py` default | Chat messages for lesson agent |
-| `benchmark-qa.jsonl` | Ensemble harnesses | `question`, `answer`, `domain` |
-| `benchmark-kb.jsonl` | Ensemble harnesses | Retrieval snippets for memory routing |
+| `benchmark-qa.jsonl` | Optional domain QA evals | `question`, `answer`, `domain` |
+| `benchmark-kb.jsonl` | Optional retrieval snippets | KB entries for domain QA |
 
 ---
 
@@ -283,18 +199,12 @@ Full reference: [evals/USAGE.md](evals/USAGE.md#lm-evaluation-harness-slm-lm-eva
      --compare-to results/lm_eval/minicpm5-1b__baseline/results.json
    ```
 
-5. **Optional** — probe ensemble ideas on the same QA/KB files:
-   ```bash
-   bash research/ensemble/scripts/smoke.sh
-   ```
-
 ### Verification checklist
 
 - Use the **same** lm-eval YAML (`tasks`, `num_fewshot`, `limit`, `seed`) for baseline and candidate runs.
 - Compare lm-eval `results.json` files with `--compare-to`; do not compare `training_results.json` `result_score` to lm-eval accuracy.
 - For LoRA checkpoints, prefer `--preset minicpm5-1b-lesson-lora` (base + adapter) over passing the adapter dir alone to `--model`.
 - Report mean ± std only after multiple training seeds; single-seed deltas are indicative, not conclusive.
-- Ensemble `loglikelihood` tasks score the underlying LLM head; generative tasks (`gsm8k`) use the full JEPA+RAG stack.
 
 ---
 
@@ -302,7 +212,6 @@ Full reference: [evals/USAGE.md](evals/USAGE.md#lm-evaluation-harness-slm-lm-eva
 
 | Symptom | Fix |
 | ------- | --- |
-| `No module named 'ensemble'` | `uv sync --group ensemble` |
 | `slm-benchmark: command not found` | `uv sync --group evals` |
 | `slm-lm-eval: command not found` | `uv sync --group lm-eval` |
 | CUDA OOM during finetune | Use `--mode qlora` or reduce batch size in script args |
