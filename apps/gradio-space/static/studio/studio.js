@@ -40,11 +40,11 @@ const state = {
   selectedUrls: [],
   slideDiscoveredUrls: [],
   slideSelectedUrls: [],
-  voiceDiscoveredUrls: [],
-  voiceSelectedUrls: [],
+  lessonsDiscoveredUrls: [],
+  lessonsSelectedUrls: [],
   researchChatHistory: [],
   debugChatHistory: [],
-  voiceMode: "lesson",
+  lessonsMode: "lesson",
   history: [],
   downloads: null,
   client: null,
@@ -55,9 +55,8 @@ const state = {
   recordingTarget: null,
   browserRecorder: null,
   browserRecordChunks: [],
-  pendingVoiceAudioPath: null,
-  pendingCoachAudioPath: null,
-  lastPitchAnalysis: null,
+  pendingLessonsAudioPath: null,
+  holdMicActive: false,
   useBrowserMic: true,
 };
 
@@ -223,16 +222,37 @@ function renderResearchUrlChoices(urls, selected) {
   if (getIngestWorkflow() === "select") panel?.classList.remove("hidden");
 }
 
-function voiceEffectiveTopic() {
-  if (state.voiceMode === "pitch") return effectiveTopic("");
-  return effectiveTopic($("#voice-topic")?.value || "");
+function lessonsEffectiveTopic() {
+  return effectiveTopic($("#lessons-topic")?.value || "");
 }
 
-function voiceUseRag() {
-  return $("#use-rag").checked && state.voiceMode !== "pitch";
+function lessonsUseRag() {
+  return Boolean($("#lessons-use-rag")?.checked);
 }
 
-function voiceMessageText(content) {
+function lessonsLanguage() {
+  const select = $("#lessons-language");
+  if (!select) return "en";
+  if (select.value === "other") {
+    return ($("#lessons-other-lang")?.value.trim() || "en").toLowerCase();
+  }
+  return select.value || "en";
+}
+
+function lessonsCoachVariant() {
+  return $("#lessons-coach-variant")?.value || "auto";
+}
+
+function lessonsAutoSpeak() {
+  return Boolean($("#lessons-auto-speak")?.checked);
+}
+
+function lessonsHasVoiceOut(language) {
+  const code = (language || "en").split("-")[0];
+  return (state.voicePresets?.voice_languages || []).includes(code);
+}
+
+function chatMessageText(content) {
   if (content == null) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -253,8 +273,14 @@ function ingestSucceeded(status) {
   );
 }
 
-function applyVoiceIngestResult(data) {
-  $("#voice-ingest-status").textContent = stripMd(data.status || "Ingest complete.");
+function chatMessageAudio(content) {
+  if (!Array.isArray(content)) return null;
+  const filePart = content.find((part) => part && typeof part === "object" && part.path);
+  return filePart?.path || null;
+}
+
+function applyLessonsIngestResult(data) {
+  $("#lessons-ingest-status").textContent = stripMd(data.status || "Ingest complete.");
   state.workspaceSessionId = data.session_id || state.workspaceSessionId;
   $("#workspace-session").value = state.workspaceSessionId;
   if (data.documents_html) {
@@ -264,20 +290,21 @@ function applyVoiceIngestResult(data) {
   updateResearchRagBadge();
   updateResearchDocCount((data.documents || []).length);
   if (ingestSucceeded(data.status)) {
-    $("#use-rag").checked = true;
+    const rag = $("#lessons-use-rag");
+    if (rag) rag.checked = true;
   }
 }
 
-async function discoverVoiceSources() {
-  const topic = voiceEffectiveTopic();
+async function discoverLessonsSources() {
+  const topic = lessonsEffectiveTopic();
   if (!topic) {
-    showError("Set a focus or workspace topic before discovering sources.");
+    showError("Set a lesson or workspace topic before discovering sources.");
     return;
   }
-  await withRegionLoading($(".voice-rail-controls"), "Discovering sources…", async () => {
+  await withRegionLoading($(".lessons-rail-controls"), "Discovering sources…", async () => {
     const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
-    $("#voice-ingest-status").textContent = stripMd(data.status || "Discovery complete.");
-    renderVoiceUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+    $("#lessons-ingest-status").textContent = stripMd(data.status || "Discovery complete.");
+    renderLessonsUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
     if (data.session_id) {
       state.workspaceSessionId = data.session_id;
       $("#workspace-session").value = data.session_id;
@@ -286,32 +313,32 @@ async function discoverVoiceSources() {
   });
 }
 
-async function autoVoiceIngest() {
-  const topic = voiceEffectiveTopic();
+async function autoLessonsIngest() {
+  const topic = lessonsEffectiveTopic();
   if (!topic) {
-    showError("Set a focus or workspace topic before auto-ingest.");
+    showError("Set a lesson or workspace topic before auto-ingest.");
     return;
   }
-  await withRegionLoading($(".voice-rail-controls"), "Auto-ingesting sources…", async () => {
+  await withRegionLoading($(".lessons-rail-controls"), "Auto-ingesting sources…", async () => {
     const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
-    applyVoiceIngestResult(data);
-    state.voiceDiscoveredUrls = [];
-    state.voiceSelectedUrls = [];
-    renderVoiceUrlChoices([], []);
+    applyLessonsIngestResult(data);
+    state.lessonsDiscoveredUrls = [];
+    state.lessonsSelectedUrls = [];
+    renderLessonsUrlChoices([], []);
     await refreshWorkspaceSessions(state.workspaceSessionId);
   });
 }
 
-async function ingestVoiceSources() {
-  const topic = voiceEffectiveTopic();
-  const pasted = $("#voice-urls-text")?.value.trim() || "";
-  const selected = getSelectedDiscoveredUrls("#voice-url-choices-list");
-  const files = $("#voice-ingest-file")?.files;
+async function ingestLessonsSources() {
+  const topic = lessonsEffectiveTopic();
+  const pasted = $("#lessons-urls-text")?.value.trim() || "";
+  const selected = getSelectedDiscoveredUrls("#lessons-url-choices-list");
+  const files = $("#lessons-ingest-file")?.files;
   if (!pasted && !selected.length && !files?.length) {
     showError("Add URLs, select suggested sources, or upload a file — then ingest.");
     return;
   }
-  await withRegionLoading($(".voice-rail-controls"), "Ingesting sources…", async () => {
+  await withRegionLoading($(".lessons-rail-controls"), "Ingesting sources…", async () => {
     const paths = [];
     if (files?.length) {
       for (const file of files) {
@@ -325,35 +352,40 @@ async function ingestVoiceSources() {
       selected,
       paths,
     ]);
-    applyVoiceIngestResult(data);
-    if (pasted) $("#voice-urls-text").value = "";
-    if (files?.length) $("#voice-ingest-file").value = "";
+    applyLessonsIngestResult(data);
+    if (pasted) $("#lessons-urls-text").value = "";
+    if (files?.length) $("#lessons-ingest-file").value = "";
     await refreshWorkspaceSessions(state.workspaceSessionId);
   });
 }
 
-function syncVoiceModeUi() {
-  const ragMode = state.voiceMode === "explain" || state.voiceMode === "lesson";
-  const practiceMode = state.voiceMode === "pitch";
-  $("#voice-topic-wrap")?.classList.toggle("hidden", !ragMode);
-  $("#voice-rag-sources")?.classList.toggle("hidden", !ragMode);
-  $(".voice-rag-card")?.classList.toggle("hidden", practiceMode);
-  $("#voice-pitch-analysis")?.classList.toggle("hidden", !practiceMode);
+function syncLessonsModeUi() {
   const placeholders = {
     explain: "e.g. How does finetuning differ from pretraining?",
     lesson: "What is the difference between pretraining and finetuning a small model?",
-    pitch: "e.g. Here is my opening line — how can I improve it?",
   };
-  const messageEl = $("#voice-message");
-  if (messageEl) messageEl.placeholder = placeholders[state.voiceMode] || placeholders.lesson;
+  const messageEl = $("#lessons-message");
+  if (messageEl) messageEl.placeholder = placeholders[state.lessonsMode] || placeholders.lesson;
 }
 
-function renderVoiceChat() {
-  const container = $("#voice-chat-messages");
+function syncLessonsLanguageUi() {
+  const isOther = $("#lessons-language")?.value === "other";
+  $("#lessons-other-lang-wrap")?.classList.toggle("hidden", !isOther);
+  const lang = lessonsLanguage();
+  const note = state.voicePresets?.voiceout_note || "";
+  const voiceHint = lessonsHasVoiceOut(lang)
+    ? note
+    : "VoiceOut not available for this language — text replies only.";
+  const noteEl = $("#lessons-voiceout-note");
+  if (noteEl) noteEl.textContent = voiceHint;
+}
+
+function renderLessonsChat() {
+  const container = $("#lessons-chat-messages");
   if (!container) return;
   if (!state.history.length) {
     container.innerHTML =
-      '<p class="research-chat-empty">Type a message or record audio, then send.</p>';
+      '<p class="research-chat-empty">Choose a language, then type, speak, or upload audio to start your lesson.</p>';
     return;
   }
   const parts = [];
@@ -361,9 +393,13 @@ function renderVoiceChat() {
     if (item && typeof item === "object" && item.role) {
       const role = item.role === "user" ? "user" : "assistant";
       const label = role === "user" ? "You" : "Teacher";
-      let body = renderMarkdownLite(voiceMessageText(item.content));
+      let body = renderMarkdownLite(chatMessageText(item.content));
+      const audioPath = chatMessageAudio(item.content) || item.voiceout_path || null;
+      if (audioPath) {
+        body += `<audio class="chat-audio-inline" controls autoplay src="${fileUrl(audioPath)}"></audio>`;
+      }
       if (role === "assistant" && item.rag_references) {
-        body += `<div class="voice-rag-refs">${renderMarkdownLite(item.rag_references)}</div>`;
+        body += `<div class="lessons-rag-refs">${renderMarkdownLite(item.rag_references)}</div>`;
       }
       parts.push(
         `<div class="research-chat-bubble research-chat-${role}"><div class="research-chat-role">${label}</div><div class="research-chat-body">${body}</div></div>`
@@ -380,16 +416,48 @@ function renderVoiceChat() {
   container.scrollTop = container.scrollHeight;
 }
 
-function renderVoiceUrlChoices(urls, selected) {
-  state.voiceDiscoveredUrls = urls || [];
-  state.voiceSelectedUrls = selected?.length ? selected : [...state.voiceDiscoveredUrls];
+function renderLessonsUrlChoices(urls, selected) {
+  state.lessonsDiscoveredUrls = urls || [];
+  state.lessonsSelectedUrls = selected?.length ? selected : [...state.lessonsDiscoveredUrls];
   renderUrlChoices(
     urls,
     selected,
-    "#voice-url-choices-list",
-    "#voice-url-choices-panel",
-    { discovered: state.voiceDiscoveredUrls, selected: state.voiceSelectedUrls }
+    "#lessons-url-choices-list",
+    "#lessons-url-choices-panel",
+    { discovered: state.lessonsDiscoveredUrls, selected: state.lessonsSelectedUrls }
   );
+}
+
+function applyVoiceIngestResult(data) {
+  applyLessonsIngestResult(data);
+}
+
+async function discoverVoiceSources() {
+  return discoverLessonsSources();
+}
+
+async function autoVoiceIngest() {
+  return autoLessonsIngest();
+}
+
+async function ingestVoiceSources() {
+  return ingestLessonsSources();
+}
+
+function syncVoiceModeUi() {
+  syncLessonsModeUi();
+}
+
+function renderVoiceChat() {
+  renderLessonsChat();
+}
+
+function renderVoiceUrlChoices(urls, selected) {
+  renderLessonsUrlChoices(urls, selected);
+}
+
+function voiceMessageText(content) {
+  return chatMessageText(content);
 }
 
 function renderSlideUrlChoices(urls, selected) {
@@ -961,23 +1029,28 @@ async function refreshDocuments() {
   }
 }
 
-async function initVoicePresets() {
+async function initLanguageLessons() {
   const data = await callApi("voice_presets", []);
   state.voicePresets = data;
-  const langSelect = $("#coach-language");
-  const asrSelect = $("#coach-asr");
+  const langSelect = $("#lessons-language");
   if (langSelect) {
-    langSelect.innerHTML = (data.languages || [])
+    const opts = (data.languages || [])
       .map((o) => `<option value="${o.value}">${o.label}</option>`)
       .join("");
+    langSelect.innerHTML = `${opts}<option value="other">Other (text only)</option>`;
     langSelect.value = data.default_language || "en";
   }
-  if (asrSelect) {
-    asrSelect.innerHTML = (data.asr_presets || [])
+  const variantSelect = $("#lessons-coach-variant");
+  if (variantSelect && data.coach_variants?.length) {
+    variantSelect.innerHTML = data.coach_variants
       .map((o) => `<option value="${o.value}">${o.label}</option>`)
       .join("");
-    asrSelect.value = data.default_asr || "";
   }
+  syncLessonsLanguageUi();
+}
+
+async function initVoicePresets() {
+  return initLanguageLessons();
 }
 
 async function initSettings() {
@@ -1033,10 +1106,10 @@ async function initWorkspace() {
   updateResearchRagBadge();
   await refreshWorkspaceSessions();
   await refreshDocuments();
-  await initVoicePresets();
+  await initLanguageLessons();
   await initSettings();
-  syncVoiceModeUi();
-  renderVoiceChat();
+  syncLessonsModeUi();
+  renderLessonsChat();
   await refreshDebugDocuments();
   const recStatus = await callApi("recording_status", []);
   state.useBrowserMic = !recStatus.backend || /unavailable|no capture/i.test(recStatus.message || "");
@@ -1055,7 +1128,7 @@ async function generateSlides() {
   const topic = effectiveTopic($("#lesson-topic").value);
   const grade = $("#lesson-grade").value;
   const slideCount = Number($("#slide-count").value);
-  const useRag = $("#use-rag").checked;
+  const useRag = Boolean($("#lessons-use-rag")?.checked);
   const docIds = effectiveDocIds([]);
   const sourceMode = $("#slide-source-mode")?.value || "";
   const searchWorkflow = $("#slide-search-workflow")?.value || "two_step";
@@ -1155,63 +1228,41 @@ async function generateSlides() {
   );
 }
 
-function renderVoiceReply(data, { keepAudio = false } = {}) {
+function renderLessonsReply(data) {
   state.history = data.history ?? state.history;
-  if (data.rag_references && state.history.length) {
+  if (state.history.length) {
     const last = state.history[state.history.length - 1];
     if (last && typeof last === "object" && last.role === "assistant") {
-      last.rag_references = data.rag_references;
+      if (data.rag_references) last.rag_references = data.rag_references;
+      if (data.voiceout_path && lessonsAutoSpeak()) last.voiceout_path = data.voiceout_path;
     }
   }
-  renderVoiceChat();
+  renderLessonsChat();
   if (data.status) {
-    $("#voice-turn-status").textContent = stripMd(data.status);
-  }
-  const out = $("#voice-audio-out");
-  if (data.voiceout_path) {
-    out.innerHTML = `<audio controls src="${fileUrl(data.voiceout_path)}"></audio>`;
-  } else if (!keepAudio) {
-    out.innerHTML = "";
+    const statusEl = $("#lessons-turn-status");
+    if (statusEl) statusEl.textContent = stripMd(data.status);
   }
 }
 
-async function sendVoiceTurn() {
-  const message = $("#voice-message").value.trim();
-  if (!message) {
-    showError("Enter a message first.");
-    return;
-  }
-  const topic = voiceEffectiveTopic();
-  const useRag = voiceUseRag();
-  const docIds = effectiveDocIds([]);
-  const language = state.voicePresets?.default_language || "en";
-  await withRegionLoading($(".voice-main-card"), "Teacher is thinking…", async () => {
-    const data = await callApi("teacher_voice_turn", [
-      message,
-      state.voiceMode,
-      topic,
-      state.workspaceSessionId,
-      useRag,
-      state.history,
-      docIds,
-      language,
-      null,
-    ]);
-    $("#voice-message").value = "";
-    renderVoiceReply(data);
-  });
+function renderVoiceReply(data, options) {
+  renderLessonsReply(data, options);
 }
 
-async function sendVoiceAudioTurn(audioPath) {
-  const topic = voiceEffectiveTopic();
-  const useRag = voiceUseRag();
+async function sendLanguageLessonTurn({ message = "", audioPath = "" } = {}) {
+  const topic = lessonsEffectiveTopic();
+  const useRag = lessonsUseRag();
   const docIds = effectiveDocIds([]);
-  const language = state.voicePresets?.default_language || "en";
+  const language = lessonsLanguage();
   const asr = state.voicePresets?.default_asr || null;
-  await withRegionLoading($(".voice-main-card"), "Processing voice…", async () => {
-    const data = await callApi("teacher_voice_audio_turn", [
-      audioPath,
-      state.voiceMode,
+  const autoVoiceout = lessonsAutoSpeak() && lessonsHasVoiceOut(language);
+  const coachVariant = lessonsCoachVariant();
+  const loadingLabel = message || audioPath ? (message ? "Teacher is thinking…" : "Processing audio…") : "Sending…";
+
+  await withRegionLoading($(".lessons-main-card"), loadingLabel, async () => {
+    const data = await callApi("language_lesson_turn", [
+      message,
+      audioPath || "",
+      state.lessonsMode,
       topic,
       state.workspaceSessionId,
       useRag,
@@ -1219,81 +1270,100 @@ async function sendVoiceAudioTurn(audioPath) {
       docIds,
       language,
       asr,
+      autoVoiceout,
+      "",
+      coachVariant,
     ]);
-    if (data.user_text) $("#voice-message").value = data.user_text;
-    renderVoiceReply(data);
+    if (data.user_text) {
+      $("#lessons-message").value = data.user_text;
+    } else if (message) {
+      $("#lessons-message").value = "";
+    }
+    renderLessonsReply(data);
   });
 }
 
-async function speakVoiceReply(firstSentenceOnly) {
-  const language = state.voicePresets?.default_language || "en";
-  const data = await callApi("teacher_voice_speak", [state.history, language, firstSentenceOnly]);
-  $("#voice-turn-status").textContent = stripMd(data.status || "VoiceOut ready.");
-  if (data.voiceout_path) {
-    $("#voice-audio-out").innerHTML = `<audio controls src="${fileUrl(data.voiceout_path)}"></audio>`;
+async function sendLessonsTurn() {
+  const message = $("#lessons-message")?.value.trim() || "";
+  let audioPath = state.pendingLessonsAudioPath;
+  const file = $("#lessons-audio-upload")?.files?.[0];
+  if (file) audioPath = await uploadFile(file);
+  if (message) {
+    await sendLanguageLessonTurn({ message });
+    state.pendingLessonsAudioPath = null;
+    return;
   }
+  if (audioPath) {
+    await sendLanguageLessonTurn({ audioPath });
+    state.pendingLessonsAudioPath = null;
+    if ($("#lessons-audio-upload")) $("#lessons-audio-upload").value = "";
+    return;
+  }
+  showError("Type a message, hold the mic, or upload audio.");
+}
+
+async function sendVoiceTurn() {
+  return sendLessonsTurn();
+}
+
+async function sendVoiceAudioTurn(audioPath) {
+  return sendLanguageLessonTurn({ audioPath });
+}
+
+async function clearLessonsConversation() {
+  const data = await callApi("teacher_voice_clear", []);
+  state.history = [];
+  renderLessonsChat();
+  if ($("#lessons-message")) $("#lessons-message").value = "";
+  const statusEl = $("#lessons-turn-status");
+  if (statusEl) statusEl.textContent = stripMd(data.status || "Conversation cleared.");
 }
 
 async function clearVoiceConversation() {
-  const data = await callApi("teacher_voice_clear", []);
-  state.history = [];
-  renderVoiceChat();
-  $("#voice-message").value = "";
-  $("#voice-turn-status").textContent = stripMd(data.status || "Conversation cleared.");
-  $("#voice-audio-out").innerHTML = "";
+  return clearLessonsConversation();
 }
 
-async function loadSamplePitch() {
-  const data = await callApi("load_sample_pitch", []);
-  state.pendingCoachAudioPath = data.audio_path;
-  $("#coach-record-status").textContent = stripMd(data.status || "Sample clip loaded.");
+async function startLessonsHoldMic(e) {
+  if (state.holdMicActive) return;
+  state.holdMicActive = true;
+  e?.preventDefault();
+  const holdBtn = $("#btn-lessons-hold-mic");
+  holdBtn?.classList.add("recording");
+  await startRecording(
+    "lessons",
+    $("#lessons-record-status"),
+    $("#btn-lessons-record-start"),
+    $("#btn-lessons-record-stop")
+  );
 }
 
-async function analyzePitchWithPath(audioPath) {
-  const language = $("#coach-language")?.value || "en";
-  const asr = $("#coach-asr")?.value || null;
-  const speakRewrite = $("#coach-speak-rewrite")?.checked || false;
-  await withRegionLoading($("#voice-pitch-analysis"), "Analyzing pitch…", async () => {
-    const data = await callApi("analyze_pitch", [audioPath, language, asr, speakRewrite]);
-    state.lastPitchAnalysis = data;
-    const panel = $("#coach-panel");
-    panel.innerHTML = data.coach_panel_html || "";
-    const discussBtn = document.createElement("button");
-    discussBtn.type = "button";
-    discussBtn.className = "btn btn-secondary voice-discuss-btn";
-    discussBtn.textContent = "Discuss in chat";
-    discussBtn.addEventListener("click", () => discussPitchInChat().catch(() => {}));
-    if (data.transcript_html || data.report_md || data.tip) {
-      panel.appendChild(discussBtn);
-    }
-  });
+async function stopLessonsHoldMic(e) {
+  if (!state.holdMicActive) return;
+  state.holdMicActive = false;
+  e?.preventDefault();
+  $("#btn-lessons-hold-mic")?.classList.remove("recording");
+  const path = await stopRecording(
+    $("#lessons-record-status"),
+    $("#btn-lessons-record-start"),
+    $("#btn-lessons-record-stop")
+  );
+  if (path) await sendLanguageLessonTurn({ audioPath: path });
 }
 
-function discussPitchInChat() {
-  const data = state.lastPitchAnalysis;
-  if (!data) return;
-  const parts = [];
-  if (data.tip) parts.push(`Coach tip: ${stripMd(data.tip)}`);
-  if (data.report_md) parts.push(stripMd(data.report_md).slice(0, 800));
-  const prompt =
-    parts.length > 0
-      ? `Here is my pitch analysis. Help me improve based on this feedback:\n\n${parts.join("\n\n")}`
-      : "I just ran pitch analysis — what should I work on next?";
-  $("#voice-message").value = prompt;
-  $("#voice-message").focus();
-  const chat = $("#voice-chat-messages");
-  if (chat) chat.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-async function analyzePitch() {
-  let path = state.pendingCoachAudioPath;
-  const file = $("#coach-audio").files?.[0];
+async function sendLessonsFromRecording() {
+  let path = state.pendingLessonsAudioPath;
+  const file = $("#lessons-audio-upload")?.files?.[0];
   if (file) path = await uploadFile(file);
   if (!path) {
-    showError("Record or upload audio to analyze.");
+    showError("Record or upload audio first.");
     return;
   }
-  await analyzePitchWithPath(path);
+  await sendLanguageLessonTurn({ audioPath: path });
+  state.pendingLessonsAudioPath = null;
+}
+
+async function sendVoiceFromRecording() {
+  return sendLessonsFromRecording();
 }
 
 async function startBrowserRecording(statusEl) {
@@ -1367,21 +1437,9 @@ async function stopRecording(statusEl, startBtn, stopBtn) {
     path = data.path;
     if (statusEl) statusEl.textContent = stripMd(data.status || "Recording saved.");
   }
-  if (state.recordingTarget === "voice") state.pendingVoiceAudioPath = path;
-  if (state.recordingTarget === "coach") state.pendingCoachAudioPath = path;
+  if (state.recordingTarget === "lessons") state.pendingLessonsAudioPath = path;
   state.recordingTarget = null;
   return path;
-}
-
-async function sendVoiceFromRecording() {
-  let path = state.pendingVoiceAudioPath;
-  const file = $("#voice-audio-upload").files?.[0];
-  if (file) path = await uploadFile(file);
-  if (!path) {
-    showError("Record or upload audio first.");
-    return;
-  }
-  await sendVoiceAudioTurn(path);
 }
 
 function bindUi() {
@@ -1450,18 +1508,52 @@ function bindUi() {
   });
 
   $("#btn-generate").addEventListener("click", () => generateSlides().catch(() => {}));
-  $("#btn-voice-send").addEventListener("click", () => sendVoiceTurn().catch(() => {}));
-  $("#btn-voice-audio-send").addEventListener("click", () => sendVoiceFromRecording().catch(() => {}));
-  $("#btn-voice-discover")?.addEventListener("click", () => discoverVoiceSources().catch(() => {}));
-  $("#btn-voice-auto-ingest")?.addEventListener("click", () => autoVoiceIngest().catch(() => {}));
-  $("#btn-voice-ingest")?.addEventListener("click", () => ingestVoiceSources().catch(() => {}));
-  $("#voice-ingest-file")?.addEventListener("change", (e) => ingestVoiceSources().catch(() => {}));
-  $("#btn-voice-speak-full")?.addEventListener("click", () => speakVoiceReply(false).catch(() => {}));
-  $("#btn-voice-speak-quick")?.addEventListener("click", () => speakVoiceReply(true).catch(() => {}));
-  $("#btn-voice-clear")?.addEventListener("click", () => clearVoiceConversation().catch(() => {}));
-  $("#btn-coach-sample")?.addEventListener("click", () => loadSamplePitch().catch(() => {}));
-  $("#btn-analyze").addEventListener("click", () => analyzePitch().catch(() => {}));
+
+  $("#btn-lessons-send")?.addEventListener("click", () => sendLessonsTurn().catch(() => {}));
+  $("#lessons-message")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendLessonsTurn().catch(() => {});
+    }
+  });
+  $("#btn-lessons-discover")?.addEventListener("click", () => discoverLessonsSources().catch(() => {}));
+  $("#btn-lessons-auto-ingest")?.addEventListener("click", () => autoLessonsIngest().catch(() => {}));
+  $("#btn-lessons-ingest")?.addEventListener("click", () => ingestLessonsSources().catch(() => {}));
+  $("#lessons-ingest-file")?.addEventListener("change", () => ingestLessonsSources().catch(() => {}));
+  $("#btn-lessons-clear")?.addEventListener("click", () => clearLessonsConversation().catch(() => {}));
+  $("#lessons-language")?.addEventListener("change", syncLessonsLanguageUi);
+  $("#lessons-other-lang")?.addEventListener("input", syncLessonsLanguageUi);
+  $("#lessons-audio-upload")?.addEventListener("change", () => sendLessonsTurn().catch(() => {}));
+
+  const holdMic = $("#btn-lessons-hold-mic");
+  if (holdMic) {
+    holdMic.addEventListener("mousedown", (e) => startLessonsHoldMic(e).catch(() => {}));
+    holdMic.addEventListener("mouseup", (e) => stopLessonsHoldMic(e).catch(() => {}));
+    holdMic.addEventListener("mouseleave", (e) => {
+      if (state.holdMicActive) stopLessonsHoldMic(e).catch(() => {});
+    });
+    holdMic.addEventListener("touchstart", (e) => startLessonsHoldMic(e).catch(() => {}), { passive: false });
+    holdMic.addEventListener("touchend", (e) => stopLessonsHoldMic(e).catch(() => {}));
+  }
+
+  $("#btn-lessons-record-start")?.addEventListener("click", () =>
+    startRecording(
+      "lessons",
+      $("#lessons-record-status"),
+      $("#btn-lessons-record-start"),
+      $("#btn-lessons-record-stop")
+    ).catch(() => {})
+  );
+  $("#btn-lessons-record-stop")?.addEventListener("click", () =>
+    stopRecording(
+      $("#lessons-record-status"),
+      $("#btn-lessons-record-start"),
+      $("#btn-lessons-record-stop")
+    ).catch(() => {})
+  );
+
   $("#btn-debug-send").addEventListener("click", () => sendDebugMessage().catch(() => {}));
+
   $("#debug-session")?.addEventListener("change", () => refreshDebugDocuments().catch(() => {}));
   $("#debug-refresh-sessions")?.addEventListener("click", () => {
     refreshDebugSessions().catch(() => {});
@@ -1474,19 +1566,6 @@ function bindUi() {
       sendDebugMessage().catch(() => {});
     }
   });
-
-  $("#btn-voice-record-start")?.addEventListener("click", () =>
-    startRecording("voice", $("#voice-record-status"), $("#btn-voice-record-start"), $("#btn-voice-record-stop")).catch(() => {})
-  );
-  $("#btn-voice-record-stop")?.addEventListener("click", () =>
-    stopRecording($("#voice-record-status"), $("#btn-voice-record-start"), $("#btn-voice-record-stop")).catch(() => {})
-  );
-  $("#btn-coach-record-start")?.addEventListener("click", () =>
-    startRecording("coach", $("#coach-record-status"), $("#btn-coach-record-start"), $("#btn-coach-record-stop")).catch(() => {})
-  );
-  $("#btn-coach-record-stop")?.addEventListener("click", () =>
-    stopRecording($("#coach-record-status"), $("#btn-coach-record-start"), $("#btn-coach-record-stop")).catch(() => {})
-  );
 
   $("#btn-export").addEventListener("click", () => {
     const p = state.downloads?.pptx;
@@ -1506,16 +1585,16 @@ function bindUi() {
     refreshDocuments().catch(() => {});
   });
 
-  document.querySelectorAll(".mode-card").forEach((btn) => {
+  document.querySelectorAll("#lessons-modes .mode-card").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".mode-card").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#lessons-modes .mode-card").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      state.voiceMode = btn.dataset.mode;
-      syncVoiceModeUi();
+      state.lessonsMode = btn.dataset.mode;
+      syncLessonsModeUi();
     });
   });
 
-  syncVoiceModeUi();
+  syncLessonsModeUi();
 }
 
 bindUi();

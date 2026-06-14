@@ -131,8 +131,20 @@ def test_build_teacher_messages_includes_topic_and_rag():
     assert "Reply now in 2-4 complete spoken sentences only" in messages[-1]["content"]
 
 
+def test_build_teacher_messages_includes_language_instruction():
+    messages = build_teacher_messages(
+        mode="lesson",
+        history=[],
+        user_text="Explique le fine-tuning.",
+        topic="ML",
+        language="fr",
+    )
+    assert "Target language: French" in messages[0]["content"]
+    assert "Reply ONLY in French" in messages[0]["content"]
+
+
 def test_pitch_mode_system_prompt():
-    assert "Deep pitch analysis" in system_prompt_for_mode("pitch")
+    assert "public-speaking coach" in system_prompt_for_mode("pitch")
     assert PITCH_SYSTEM == system_prompt_for_mode("pitch")
 
 

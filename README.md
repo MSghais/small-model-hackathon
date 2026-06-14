@@ -38,10 +38,10 @@ Open [http://localhost:7860](http://localhost:7860).
 
 ### Studio UI (Off Brand track)
 
-The default landing page is a **custom AI Studio workspace** at `/` — not default Gradio chrome. It uses **Gradio 6 Server mode** (`gradio.Server`): Material 3 layout, sidebar + three-column workspace (Research → Slides → Voice/Coach), and `@server.api` endpoints wired to the same Python backends as Classic.
+The default landing page is a **custom AI Studio workspace** at `/` — not default Gradio chrome. It uses **Gradio 6 Server mode** (`gradio.Server`): Material 3 layout, sidebar + workspace (Research → Slides → Language lessons), and `@server.api` endpoints wired to the same Python backends as Classic.
 
-- **`/`** — Studio UI (ingest sources, generate slides, TeacherVoice, EchoCoach)
-- **`/classic`** — full Gradio Blocks app (all tabs, settings, Chat debug)
+- **`/`** — Studio UI (ingest sources, generate slides, **Language lessons** multilingual coach)
+- **`/classic`** — full Gradio Blocks app (TeacherVoice, EchoCoach pitch analysis, settings, Chat debug)
 
 See [apps/gradio-space/README.md](apps/gradio-space/README.md) for API names and a 2-minute judge demo script.
 

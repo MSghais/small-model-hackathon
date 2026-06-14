@@ -10,19 +10,19 @@ todos:
     status: completed
   - id: language-lessons-page
     content: "New Studio nav tab Language lessons: language selector, unified composer (text + mic + upload), chat with inline audio, auto VoiceOut via realtime TTS"
-    status: in_progress
+    status: completed
   - id: language-lessons-api
     content: Extend teacher_voice_* API with auto_voiceout flag; reuse existing turn pipeline; optional speak-on-reply default for Language lessons view
     status: completed
   - id: cohere-space-defaults
     content: "Document and set Space secrets: ECHOCOACH_ASR_PRESET=cohere-transcribe, ECHOCOACH_COACH_MODEL=tiny-aya-global, ECHOCOACH_REALTIME_TTS_PRESET=vibevoice-realtime-0.5b"
-    status: pending
+    status: completed
   - id: echocoach-i18n-polish
     content: Move Deep pitch analysis to collapsed Advanced or Classic-only; gate English-only filler metrics; fix el Piper voice mapping
-    status: pending
+    status: completed
   - id: demo-docs
     content: "Update README judge script: single Language lessons tab demo (14-lang voice + 70-lang text); Cohere Labs partner narrative"
-    status: pending
+    status: completed
 isProject: false
 ---
 

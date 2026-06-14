@@ -1578,3 +1578,72 @@ body {
   max-height: 320px;
 }
 
+.lessons-rail-card .field + .field {
+  margin-top: 0.65rem;
+}
+
+.lessons-input-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.lessons-hold-mic.is-recording {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.lessons-upload-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.lessons-auto-speak {
+  margin: 0;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.lessons-send-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  margin-top: 0.65rem;
+}
+
+.lessons-chat-messages .chat-audio-inline {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.lessons-classic-link {
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+.lessons-classic-link a {
+  color: var(--primary);
+}
+
+.lessons-message-user::before {
+  content: "You · ";
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.lessons-message-assistant::before {
+  content: "Teacher · ";
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.btn-compact {
+  padding-inline: 0.65rem;
+  font-size: 0.82rem;
+}
+
