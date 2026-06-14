@@ -4,7 +4,7 @@ overview: "Add Gradio SDK deployment files on main alongside the existing Docker
 todos:
   - id: root-gradio-files
     content: Add root app.py, requirements.txt, packages.txt with editable workspace installs and Debian deps
-    status: pending
+    status: in_progress
   - id: readme-gradio-sdk
     content: "Fix README YAML frontmatter and switch to sdk: gradio (sdk_version 6.16.0, app_file: app.py)"
     status: pending
