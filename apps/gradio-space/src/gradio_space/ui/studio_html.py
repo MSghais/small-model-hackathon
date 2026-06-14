@@ -127,7 +127,7 @@ def render_echo_coach_panel(
     if pace_score is None and not tip and not report_md and not transcript_html:
         return """
 <div class="studio-coach-panel studio-coach-idle">
-  <p class="studio-coach-hint">Record a pitch in the Coach view, then click <strong>Analyze pitch</strong> for metrics.</p>
+  <p class="studio-coach-hint">Record a pitch below, then click <strong>Analyze pitch</strong> for metrics.</p>
 </div>"""
 
     score = pace_score if pace_score is not None else "—"

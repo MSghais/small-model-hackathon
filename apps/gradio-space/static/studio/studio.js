@@ -57,6 +57,7 @@ const state = {
   browserRecordChunks: [],
   pendingVoiceAudioPath: null,
   pendingCoachAudioPath: null,
+  lastPitchAnalysis: null,
   useBrowserMic: true,
 };
 
@@ -333,8 +334,11 @@ async function ingestVoiceSources() {
 
 function syncVoiceModeUi() {
   const ragMode = state.voiceMode === "explain" || state.voiceMode === "lesson";
+  const practiceMode = state.voiceMode === "pitch";
   $("#voice-topic-wrap")?.classList.toggle("hidden", !ragMode);
   $("#voice-rag-sources")?.classList.toggle("hidden", !ragMode);
+  $(".voice-rag-card")?.classList.toggle("hidden", practiceMode);
+  $("#voice-pitch-analysis")?.classList.toggle("hidden", !practiceMode);
   const placeholders = {
     explain: "e.g. How does finetuning differ from pretraining?",
     lesson: "What is the difference between pretraining and finetuning a small model?",
@@ -1249,10 +1253,36 @@ async function analyzePitchWithPath(audioPath) {
   const language = $("#coach-language")?.value || "en";
   const asr = $("#coach-asr")?.value || null;
   const speakRewrite = $("#coach-speak-rewrite")?.checked || false;
-  await withRegionLoading($(".coach-panel-wrap"), "Analyzing pitch…", async () => {
+  await withRegionLoading($("#voice-pitch-analysis"), "Analyzing pitch…", async () => {
     const data = await callApi("analyze_pitch", [audioPath, language, asr, speakRewrite]);
-    $("#coach-panel").innerHTML = data.coach_panel_html || "";
+    state.lastPitchAnalysis = data;
+    const panel = $("#coach-panel");
+    panel.innerHTML = data.coach_panel_html || "";
+    const discussBtn = document.createElement("button");
+    discussBtn.type = "button";
+    discussBtn.className = "btn btn-secondary voice-discuss-btn";
+    discussBtn.textContent = "Discuss in chat";
+    discussBtn.addEventListener("click", () => discussPitchInChat().catch(() => {}));
+    if (data.transcript_html || data.report_md || data.tip) {
+      panel.appendChild(discussBtn);
+    }
   });
+}
+
+function discussPitchInChat() {
+  const data = state.lastPitchAnalysis;
+  if (!data) return;
+  const parts = [];
+  if (data.tip) parts.push(`Coach tip: ${stripMd(data.tip)}`);
+  if (data.report_md) parts.push(stripMd(data.report_md).slice(0, 800));
+  const prompt =
+    parts.length > 0
+      ? `Here is my pitch analysis. Help me improve based on this feedback:\n\n${parts.join("\n\n")}`
+      : "I just ran pitch analysis — what should I work on next?";
+  $("#voice-message").value = prompt;
+  $("#voice-message").focus();
+  const chat = $("#voice-chat-messages");
+  if (chat) chat.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 async function analyzePitch() {
@@ -1484,6 +1514,8 @@ function bindUi() {
       syncVoiceModeUi();
     });
   });
+
+  syncVoiceModeUi();
 }
 
 bindUi();

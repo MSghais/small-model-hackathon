@@ -132,7 +132,7 @@ def test_build_teacher_messages_includes_topic_and_rag():
 
 
 def test_pitch_mode_system_prompt():
-    assert "EchoCoach" in system_prompt_for_mode("pitch")
+    assert "Deep pitch analysis" in system_prompt_for_mode("pitch")
     assert PITCH_SYSTEM == system_prompt_for_mode("pitch")
 
 
