@@ -1,6 +1,6 @@
 ---
 
-## title: Lesson Agent
+title: Lesson Agent
 emoji: 📚
 colorFrom: blue
 colorTo: green
