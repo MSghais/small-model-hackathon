@@ -1,9 +1,5 @@
-# Workspace packages (HF clones full repo)
--e ./libs/inference
--e ./libs/researchmind
--e ./libs/agent
--e ./libs/echocoach[piper,whisper]
--e ./apps/gradio-space
+# Monorepo workspace packages are loaded via PYTHONPATH in app.py (HF installs
+# requirements before copying the repo, so -e ./libs/* editable installs fail).
 
 # Pinned runtime deps (do not pin gradio, spaces, or huggingface_hub — HF preinstalls them)
 accelerate==1.13.0
