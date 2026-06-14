@@ -67,3 +67,27 @@ models:
     backend: transformers
     model_id: ./models/finetuned/minicpm5-1b-lora-merged
     trust_remote_code: true
+
+  tiny-aya-global:
+    label: Tiny Aya Global 3.3B (multilingual coach)
+    backend: transformers
+    model_id: CohereLabs/tiny-aya-global
+    trust_remote_code: true
+
+  tiny-aya-water:
+    label: Tiny Aya Water 3.3B (European / Asia-Pacific)
+    backend: transformers
+    model_id: CohereLabs/tiny-aya-water
+    trust_remote_code: true
+
+  tiny-aya-fire:
+    label: Tiny Aya Fire 3.3B (South Asian)
+    backend: transformers
+    model_id: CohereLabs/tiny-aya-fire
+    trust_remote_code: true
+
+  tiny-aya-earth:
+    label: Tiny Aya Earth 3.3B (West Asian / African)
+    backend: transformers
+    model_id: CohereLabs/tiny-aya-earth
+    trust_remote_code: true

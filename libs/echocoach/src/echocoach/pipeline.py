@@ -64,9 +64,14 @@ def run_echo_coach(
     transcript = asr.transcribe(str(clipped_path), language=language)
     trace.log_note("asr_complete", preset=asr_key, chars=len(transcript))
 
-    fillers = analyze_fillers(transcript)
+    fillers = analyze_fillers(transcript) if language == "en" else FillerAnalysis(counts={}, spans=[], total=0)
     pace = analyze_pace(transcript, duration)
-    transcript_html = highlight_fillers_html(transcript, fillers)
+    if language == "en":
+        transcript_html = highlight_fillers_html(transcript, fillers)
+    else:
+        import html
+
+        transcript_html = html.escape(transcript).replace("\n", "<br>")
 
     filler_chart, pace_chart = build_charts(
         transcript,

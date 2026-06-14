@@ -34,7 +34,7 @@
     <nav class="sidebar-nav">
       <button type="button" class="nav-item" data-view="research"><span class="material-symbols-outlined">search</span>Research</button>
       <button type="button" class="nav-item active" data-view="slides"><span class="material-symbols-outlined">present_to_all</span>Slides</button>
-      <button type="button" class="nav-item" data-view="voice"><span class="material-symbols-outlined">mic</span>Voice</button>
+      <button type="button" class="nav-item" data-view="language-lessons"><span class="material-symbols-outlined">translate</span>Language lessons</button>
       <button type="button" class="nav-item" data-view="debug"><span class="material-symbols-outlined">bug_report</span>Debug</button>
       <button type="button" id="btn-open-settings" class="nav-item"><span class="material-symbols-outlined">settings</span>Settings</button>
       <a href="/classic" class="nav-item nav-link"><span class="material-symbols-outlined">open_in_new</span>Classic UI</a>
@@ -300,125 +300,112 @@
     </section>
 
     <section class="col col-studio">
-      <div class="voice-layout view-voice-only">
-        <aside class="voice-rail">
-          <div class="card voice-rag-card">
-            <p class="card-title">RAG Scope</p>
+      <div class="lessons-layout view-lessons-only">
+        <aside class="lessons-rail">
+          <div class="card lessons-rail-card">
+            <p class="card-title">Target language</p>
+            <label class="field">
+              <span>Lesson language</span>
+              <select id="lessons-language" class="input"></select>
+            </label>
+            <label class="field lessons-other-lang hidden" id="lessons-other-lang-wrap">
+              <span>Text-only language code</span>
+              <input id="lessons-other-lang" type="text" class="input" placeholder="e.g. hi, sw" maxlength="8" />
+            </label>
+            <p id="lessons-voiceout-note" class="status-text"></p>
+            <label class="field">
+              <span>Coach model</span>
+              <select id="lessons-coach-variant" class="input">
+                <option value="auto">Auto (regional Tiny Aya)</option>
+                <option value="tiny-aya-global">Tiny Aya Global</option>
+                <option value="tiny-aya-water">Tiny Aya Water</option>
+                <option value="tiny-aya-fire">Tiny Aya Fire</option>
+                <option value="tiny-aya-earth">Tiny Aya Earth</option>
+              </select>
+            </label>
+          </div>
+          <div class="card lessons-rag-card">
+            <p class="card-title">RAG scope</p>
             <label class="toggle-row">
               <span>Answer from my indexed sources</span>
-              <input id="use-rag" type="checkbox" checked />
+              <input id="lessons-use-rag" type="checkbox" checked />
             </label>
-            <p class="status-text">Ground teacher replies in your workspace documents when enabled.</p>
+            <p class="status-text">Ground lesson replies in your workspace documents when enabled.</p>
           </div>
-          <div class="card voice-rail-controls">
+          <div class="card lessons-rail-controls">
             <p class="card-title">Mode</p>
-            <div class="mode-cards voice-mode-cards" id="voice-modes">
+            <div class="mode-cards lessons-mode-cards" id="lessons-modes">
               <button type="button" class="mode-card" data-mode="explain">Explain</button>
-              <button type="button" class="mode-card active" data-mode="lesson">Lesson</button>
-              <button type="button" class="mode-card" data-mode="pitch">Practice</button>
+              <button type="button" class="mode-card active" data-mode="lesson">Lesson coach</button>
             </div>
-            <label class="field voice-topic-wrap" id="voice-topic-wrap">
-              <span>Focus topic</span>
-              <input id="voice-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
+            <label class="field lessons-topic-wrap">
+              <span>Lesson topic</span>
+              <input id="lessons-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
             </label>
-            <details class="voice-rag-sources" id="voice-rag-sources">
+            <details class="lessons-rag-sources" id="lessons-rag-sources">
               <summary>Add sources (optional)</summary>
               <p class="status-text">Discover or ingest sources to ground answers in your library.</p>
               <div class="ingest-action-row">
-                <button type="button" id="btn-voice-discover" class="btn btn-secondary">Discover on web</button>
-                <button type="button" id="btn-voice-auto-ingest" class="btn btn-secondary">Auto-ingest</button>
+                <button type="button" id="btn-lessons-discover" class="btn btn-secondary">Discover on web</button>
+                <button type="button" id="btn-lessons-auto-ingest" class="btn btn-secondary">Auto-ingest</button>
               </div>
-              <div id="voice-url-choices-panel" class="url-choices-panel hidden">
-                <div id="voice-url-choices-list" class="url-choices-list"></div>
+              <div id="lessons-url-choices-panel" class="url-choices-panel hidden">
+                <div id="lessons-url-choices-list" class="url-choices-list"></div>
               </div>
               <label class="field">
                 <span>Paste URLs (one per line)</span>
-                <textarea id="voice-urls-text" class="input" rows="2" placeholder="https://…"></textarea>
+                <textarea id="lessons-urls-text" class="input" rows="2" placeholder="https://…"></textarea>
               </label>
               <label class="upload-zone upload-zone-compact">
-                <input id="voice-ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
+                <input id="lessons-ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
                 <span class="material-symbols-outlined">upload_file</span>
                 <span>Upload PDF or Doc</span>
               </label>
-              <button type="button" id="btn-voice-ingest" class="btn btn-secondary btn-block">Ingest sources</button>
-              <p id="voice-ingest-status" class="status-text"></p>
+              <button type="button" id="btn-lessons-ingest" class="btn btn-secondary btn-block">Ingest sources</button>
+              <p id="lessons-ingest-status" class="status-text"></p>
             </details>
           </div>
         </aside>
-        <div class="voice-main">
-          <div class="card voice-main-card">
-            <div class="voice-card-head">
-              <h2 class="section-label">Teacher Voice</h2>
-              <p class="voice-card-desc">Talk with the teacher using text or voice — grounded in your sources when RAG is on.</p>
+        <div class="lessons-main">
+          <div class="card lessons-main-card">
+            <div class="lessons-card-head">
+              <h2 class="section-label">Language lessons</h2>
+              <p class="lessons-card-desc">Learn in your language — type, hold the mic, or upload audio. Replies can speak back automatically.</p>
             </div>
-            <div id="voice-chat-messages" class="research-chat-messages voice-chat-messages">
-              <p class="research-chat-empty">Type a message or record audio, then send.</p>
+            <div id="lessons-chat-messages" class="research-chat-messages lessons-chat-messages">
+              <p class="research-chat-empty">Choose a language, then type, speak, or upload audio to start your lesson.</p>
             </div>
-            <div class="voice-compose" id="voice-panel">
+            <div class="lessons-compose" id="lessons-panel">
               <label class="field">
-                <span>Ask the teacher</span>
-                <textarea id="voice-message" class="input" rows="2" placeholder="What is the difference between pretraining and finetuning a small model?"></textarea>
+                <span>Your message</span>
+                <textarea id="lessons-message" class="input" rows="2" placeholder="What is the difference between pretraining and finetuning a small model?"></textarea>
               </label>
-              <div class="voice-input-toolbar">
-                <div class="recording-row voice-recording-row">
-                  <button type="button" id="btn-voice-record-start" class="btn btn-secondary">Start mic</button>
-                  <button type="button" id="btn-voice-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
-                  <input id="voice-audio-upload" type="file" accept="audio/*" class="input input-compact" />
-                </div>
-                <p id="voice-record-status" class="status-text voice-record-status"></p>
+              <div class="lessons-input-toolbar">
+                <button type="button" id="btn-lessons-hold-mic" class="btn btn-secondary lessons-hold-mic">Hold to speak</button>
+                <button type="button" id="btn-lessons-record-start" class="btn btn-secondary btn-compact">Start mic</button>
+                <button type="button" id="btn-lessons-record-stop" class="btn btn-secondary btn-compact" disabled>Stop mic</button>
+                <label class="lessons-upload-btn btn btn-secondary">
+                  <span class="material-symbols-outlined">upload_file</span>
+                  Upload audio
+                  <input id="lessons-audio-upload" type="file" accept="audio/*" hidden />
+                </label>
               </div>
-              <div class="voice-send-row">
-                <button type="button" id="btn-voice-send" class="btn btn-secondary">Send text</button>
-                <button type="button" id="btn-voice-audio-send" class="btn btn-primary">Send voice turn</button>
+              <p id="lessons-record-status" class="status-text lessons-record-status"></p>
+              <div class="lessons-send-row">
+                <button type="button" id="btn-lessons-send" class="btn btn-primary">Send</button>
+                <label class="toggle-row lessons-auto-speak">
+                  <span>Auto-speak replies</span>
+                  <input id="lessons-auto-speak" type="checkbox" checked />
+                </label>
+                <button type="button" id="btn-lessons-clear" class="btn btn-ghost">Clear</button>
               </div>
-              <p id="voice-turn-status" class="status-text"></p>
-              <div class="voice-replay-row">
-                <button type="button" id="btn-voice-speak-full" class="btn btn-secondary">Speak full reply</button>
-                <button type="button" id="btn-voice-speak-quick" class="btn btn-secondary">Speak first sentence</button>
-                <button type="button" id="btn-voice-clear" class="btn btn-ghost">Clear conversation</button>
-              </div>
-              <div id="voice-audio-out" class="voice-audio-out"></div>
+              <p id="lessons-turn-status" class="status-text"></p>
             </div>
           </div>
-          <details class="card voice-pitch-analysis hidden" id="voice-pitch-analysis" open>
-            <summary class="voice-pitch-summary">
-              <span class="section-label">Deep pitch analysis</span>
-              <span class="voice-pitch-summary-hint">Pace, fillers, charts, and spoken rewrite</span>
-            </summary>
-            <div class="coach-panel-wrap">
-              <p class="coach-card-desc">Record or upload a short monologue (up to 30s), then analyze for metrics and feedback.</p>
-              <div class="coach-capture-row">
-                <div class="coach-capture-controls">
-                  <div class="recording-row coach-recording-row">
-                    <button type="button" id="btn-coach-record-start" class="btn btn-secondary">Start mic</button>
-                    <button type="button" id="btn-coach-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
-                    <button type="button" id="btn-coach-sample" class="btn btn-ghost">Load sample</button>
-                  </div>
-                  <p id="coach-record-status" class="status-text coach-record-status"></p>
-                </div>
-                <label class="field coach-upload-field">
-                  <span>Upload pitch (WAV)</span>
-                  <input id="coach-audio" type="file" accept="audio/*" />
-                </label>
-              </div>
-              <div class="controls-grid coach-presets">
-                <label class="field">
-                  <span>Language</span>
-                  <select id="coach-language" class="input"></select>
-                </label>
-                <label class="field">
-                  <span>ASR preset</span>
-                  <select id="coach-asr" class="input"></select>
-                </label>
-              </div>
-              <label class="toggle-row coach-voiceout-toggle">
-                <span>Speak full rewrite (VoiceOut)</span>
-                <input id="coach-speak-rewrite" type="checkbox" />
-              </label>
-              <button type="button" id="btn-analyze" class="btn btn-primary btn-block coach-analyze-btn">Analyze pitch</button>
-              <div id="coach-panel" class="coach-results-panel"></div>
-            </div>
-          </details>
+          <p class="lessons-classic-link status-text">
+            Pitch metrics and monologue analysis live in
+            <a href="/classic">Classic UI → EchoCoach</a>.
+          </p>
         </div>
       </div>
     </section>

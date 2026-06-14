@@ -10,7 +10,7 @@ import gradio as gr
 
 from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
-from echocoach.prompts import TeacherVoiceMode
+from echocoach.prompts import TeacherVoiceMode, resolve_aya_preset
 from echocoach.recording import (
     ServerRecordingError,
     recording_backend_status,
@@ -170,6 +170,34 @@ def _voice_stack_summary() -> str:
         f"Max recording: {_echo_config.max_seconds}s",
     ]
     return "\n".join(lines)
+
+
+def _coach_model_key(
+    coach_model: str | None = None,
+    *,
+    language: str = "en",
+    coach_variant: str = "auto",
+) -> str:
+    if coach_model and coach_model.strip():
+        return coach_model.strip()
+    if coach_variant and coach_variant not in ("auto", ""):
+        return coach_variant.strip()
+    return resolve_aya_preset(language, coach_variant)
+
+
+def _ensure_coach_loaded(
+    coach_model: str | None = None,
+    *,
+    language: str = "en",
+    coach_variant: str = "auto",
+) -> tuple[str, str | None]:
+    key = _coach_model_key(coach_model, language=language, coach_variant=coach_variant)
+    load_error = ensure_model_loaded(key)
+    return key, load_error
+
+
+def _voice_language_codes() -> list[str]:
+    return [code for _, code in _echo_config.language_choices()]
 
 
 def _paths_summary() -> str:
@@ -549,9 +577,15 @@ def api_teacher_voice_turn(
     doc_ids: list[str] | None = None,
     language: str = "en",
     asr_preset: str | None = None,
+    auto_voiceout: bool = True,
+    coach_model: str = "",
+    coach_variant: str = "auto",
 ) -> dict[str, Any]:
-    model_key = get_active_model_key()
-    load_error = ensure_model_loaded(model_key)
+    model_key, load_error = _ensure_coach_loaded(
+        coach_model or None,
+        language=language,
+        coach_variant=coach_variant,
+    )
     if load_error:
         return err(load_error)
 
@@ -567,9 +601,11 @@ def api_teacher_voice_turn(
             language=language,
             topic=topic.strip() or None,
             backend=get_backend(model_key),
+            coach_model=model_key,
             use_rag=use_rag and mode in RAG_MODES,
             session_id=session_id or None,
             doc_ids=doc_ids or None,
+            auto_voiceout=auto_voiceout,
         )
     except Exception as exc:  # noqa: BLE001
         return err(str(exc))
@@ -579,7 +615,9 @@ def api_teacher_voice_turn(
         assistant=result.assistant_text,
         status=result.rag_status or "Turn complete.",
         voiceout_path=result.voiceout_path,
+        voiceout_warning=result.voiceout_warning,
         rag_references=result.rag_references,
+        coach_model=model_key,
     )
 
 def api_teacher_voice_audio_turn(
@@ -592,9 +630,15 @@ def api_teacher_voice_audio_turn(
     doc_ids: list[str] | None = None,
     language: str = "en",
     asr_preset: str | None = None,
+    auto_voiceout: bool = True,
+    coach_model: str = "",
+    coach_variant: str = "auto",
 ) -> dict[str, Any]:
-    model_key = get_active_model_key()
-    load_error = ensure_model_loaded(model_key)
+    model_key, load_error = _ensure_coach_loaded(
+        coach_model or None,
+        language=language,
+        coach_variant=coach_variant,
+    )
     if load_error:
         return err(load_error)
 
@@ -613,10 +657,12 @@ def api_teacher_voice_audio_turn(
             asr_preset=preset,
             topic=topic.strip() or None,
             backend=get_backend(model_key),
+            coach_model=model_key,
             use_rag=use_rag and mode in RAG_MODES,
             session_id=session_id or None,
             doc_ids=doc_ids or None,
             max_turn_seconds=max_turn,
+            auto_voiceout=auto_voiceout,
         )
     except Exception as exc:  # noqa: BLE001
         return err(str(exc))
@@ -626,8 +672,57 @@ def api_teacher_voice_audio_turn(
         assistant=result.assistant_text,
         status=result.rag_status or "Turn complete.",
         voiceout_path=result.voiceout_path,
+        voiceout_warning=result.voiceout_warning,
         user_text=result.user_text,
         rag_references=result.rag_references,
+        coach_model=model_key,
+    )
+
+
+def api_language_lesson_turn(
+    message: str = "",
+    audio_path: str = "",
+    mode: TeacherVoiceMode = "lesson",
+    topic: str = "",
+    session_id: str = "",
+    use_rag: bool = True,
+    history: list | None = None,
+    doc_ids: list[str] | None = None,
+    language: str = "en",
+    asr_preset: str | None = None,
+    auto_voiceout: bool = True,
+    coach_model: str = "",
+    coach_variant: str = "auto",
+) -> dict[str, Any]:
+    """Unified Language lessons turn — routes to text or audio pipeline."""
+    if audio_path and audio_path.strip():
+        return api_teacher_voice_audio_turn(
+            audio_path.strip(),
+            mode=mode,
+            topic=topic,
+            session_id=session_id,
+            use_rag=use_rag,
+            history=history,
+            doc_ids=doc_ids,
+            language=language,
+            asr_preset=asr_preset,
+            auto_voiceout=auto_voiceout,
+            coach_model=coach_model,
+            coach_variant=coach_variant,
+        )
+    return api_teacher_voice_turn(
+        message,
+        mode=mode,
+        topic=topic,
+        session_id=session_id,
+        use_rag=use_rag,
+        history=history,
+        doc_ids=doc_ids,
+        language=language,
+        asr_preset=asr_preset,
+        auto_voiceout=auto_voiceout,
+        coach_model=coach_model,
+        coach_variant=coach_variant,
     )
 
 
@@ -672,8 +767,7 @@ def api_analyze_pitch(
     asr_preset: str | None = None,
     speak_rewrite: bool = False,
 ) -> dict[str, Any]:
-    model_key = get_active_model_key()
-    load_error = ensure_model_loaded(model_key)
+    model_key, load_error = _ensure_coach_loaded(None, language=language)
     if load_error:
         return err(load_error)
 
@@ -686,6 +780,7 @@ def api_analyze_pitch(
             audio_path,
             language=language,
             asr_preset=preset,
+            coach_model=model_key,
             backend=get_backend(model_key),
             speak_rewrite=speak_rewrite,
         )
@@ -786,12 +881,27 @@ def api_recording_stop() -> dict[str, Any]:
 
 
 def api_voice_presets() -> dict[str, Any]:
+    tts = _echo_config.get_tts()
+    voice_langs = _voice_language_codes()
     return ok(
         languages=[{"label": label, "value": value} for label, value in _echo_config.language_choices()],
         asr_presets=[{"label": label, "value": value} for label, value in _echo_config.asr_choices()],
+        coach_variants=[
+            {"label": "Auto (regional Tiny Aya)", "value": "auto"},
+            {"label": "Tiny Aya Global", "value": "tiny-aya-global"},
+            {"label": "Tiny Aya Water", "value": "tiny-aya-water"},
+            {"label": "Tiny Aya Fire", "value": "tiny-aya-fire"},
+            {"label": "Tiny Aya Earth", "value": "tiny-aya-earth"},
+        ],
         default_language=_echo_config.language_choices()[0][1] if _echo_config.language_choices() else "en",
         default_asr=_echo_config.asr_preset,
+        default_coach=_echo_config.coach_model,
+        voice_languages=voice_langs,
         max_seconds=_echo_config.max_seconds,
+        voiceout_note=(
+            f"Voice in/out: {len(voice_langs)} languages via Piper · "
+            "Coach text: 70+ languages with Tiny Aya"
+        ),
     )
 
 
@@ -917,6 +1027,38 @@ def register_studio_apis(server: gr.Server) -> None:
             file_paths,
         )
 
+    @server.api(name="language_lesson_turn")
+    def _language_lesson_turn(
+        message: str = "",
+        audio_path: str = "",
+        mode: Literal["explain", "lesson"] = "lesson",
+        topic: str = "",
+        session_id: str = "",
+        use_rag: bool = True,
+        history: list | None = None,
+        doc_ids: list[str] | None = None,
+        language: str = "en",
+        asr_preset: str | None = None,
+        auto_voiceout: bool = True,
+        coach_model: str = "",
+        coach_variant: str = "auto",
+    ) -> dict[str, Any]:
+        return api_language_lesson_turn(
+            message,
+            audio_path,
+            mode,
+            topic,
+            session_id,
+            use_rag,
+            history,
+            doc_ids,
+            language,
+            asr_preset,
+            auto_voiceout,
+            coach_model,
+            coach_variant,
+        )
+
     @server.api(name="teacher_voice_turn")
     def _teacher_voice_turn(
         message: str,
@@ -928,6 +1070,9 @@ def register_studio_apis(server: gr.Server) -> None:
         doc_ids: list[str] | None = None,
         language: str = "en",
         asr_preset: str | None = None,
+        auto_voiceout: bool = True,
+        coach_model: str = "",
+        coach_variant: str = "auto",
     ) -> dict[str, Any]:
         return api_teacher_voice_turn(
             message,
@@ -939,6 +1084,9 @@ def register_studio_apis(server: gr.Server) -> None:
             doc_ids,
             language,
             asr_preset,
+            auto_voiceout,
+            coach_model,
+            coach_variant,
         )
 
     @server.api(name="teacher_voice_audio_turn")
@@ -952,6 +1100,9 @@ def register_studio_apis(server: gr.Server) -> None:
         doc_ids: list[str] | None = None,
         language: str = "en",
         asr_preset: str | None = None,
+        auto_voiceout: bool = True,
+        coach_model: str = "",
+        coach_variant: str = "auto",
     ) -> dict[str, Any]:
         return api_teacher_voice_audio_turn(
             audio_path,
@@ -963,6 +1114,9 @@ def register_studio_apis(server: gr.Server) -> None:
             doc_ids,
             language,
             asr_preset,
+            auto_voiceout,
+            coach_model,
+            coach_variant,
         )
 
     @server.api(name="teacher_voice_clear")

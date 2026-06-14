@@ -168,6 +168,7 @@ def _rag_turn_via_agent(
     model_key: str,
     backend: InferenceBackend,
     trace: TraceRecorder,
+    language: str = "en",
 ) -> tuple[str, str | None, str | None, str]:
     """Grounded answer via ResearchMind harness. Returns text, refs, status, display."""
     query = retrieval_query(user_text, topic=topic)
@@ -205,6 +206,7 @@ def _rag_turn_via_agent(
         mode=mode,
         backend=backend,
         trace=trace,
+        language=language,
     )
     rag_refs = result.references_markdown or None
     return assistant_text, rag_refs, rag_status, display_reply
@@ -237,13 +239,14 @@ def _compact_teacher_reply(
     mode: TeacherVoiceMode,
     backend: InferenceBackend,
     trace: TraceRecorder,
+    language: str = "en",
 ) -> str:
     seed = strip_reasoning_output(raw_reply).strip() or raw_reply.strip()[:1200]
     messages = [
         {
             "role": "system",
             "content": (
-                f"{system_prompt_for_mode(mode)}\n\n"
+                f"{system_prompt_for_mode(mode, language=language)}\n\n"
                 "Rewrite the draft below into ONLY 2-4 spoken sentences for voice playback. "
                 "Keep any [n] citations. No planning or labels."
             ),
@@ -263,6 +266,7 @@ def _finalize_voice_reply(
     mode: TeacherVoiceMode,
     backend: InferenceBackend,
     trace: TraceRecorder,
+    language: str = "en",
 ) -> tuple[str, str]:
     """Normalize model output into a complete spoken reply and chat display text."""
     assistant_text = strip_reasoning_output(raw_reply).strip()
@@ -278,6 +282,7 @@ def _finalize_voice_reply(
             mode=mode,
             backend=backend,
             trace=trace,
+            language=language,
         )
     if not reply_ends_complete_sentence(assistant_text):
         assistant_text = _compact_teacher_reply(
@@ -285,6 +290,7 @@ def _finalize_voice_reply(
             mode=mode,
             backend=backend,
             trace=trace,
+            language=language,
         )
     return assistant_text, assistant_text
 
@@ -296,8 +302,9 @@ def build_teacher_messages(
     user_text: str,
     topic: str | None = None,
     rag: RagContext | None = None,
+    language: str = "en",
 ) -> list[dict[str, str]]:
-    system = system_prompt_for_mode(mode)
+    system = system_prompt_for_mode(mode, language=language)
     topic_line = topic_context_block(topic, mode)
     if topic_line:
         system = f"{system}\n\n{topic_line}"
@@ -330,6 +337,7 @@ def _generate_teacher_reply(
     session_id: str,
     doc_ids: list[str] | None,
     tts_key: str,
+    auto_voiceout: bool = True,
 ) -> TeacherVoiceTurnResult:
     rag_refs: str | None = None
     rag_status: str | None = None
@@ -344,6 +352,7 @@ def _generate_teacher_reply(
             model_key=model_key,
             backend=backend,
             trace=trace,
+            language=language,
         )
     else:
         messages = build_teacher_messages(
@@ -351,6 +360,7 @@ def _generate_teacher_reply(
             history=history,
             user_text=user_text,
             topic=topic,
+            language=language,
         )
         raw_reply = backend.chat(messages, max_tokens=512, temperature=0.2)
         assistant_text, display_reply = _finalize_voice_reply(
@@ -358,20 +368,25 @@ def _generate_teacher_reply(
             mode=mode,
             backend=backend,
             trace=trace,
+            language=language,
         )
         trace.log_llm(messages[-1]["content"], raw_reply)
         if mode in RAG_MODES:
             rag_status = _rag_off_status(session_id, doc_ids)
 
-    voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
-        strip_references_for_tts(assistant_text),
-        language=language,
-        tts_preset=tts_key,
-        chunk_first=True,
-        out_subdir="teacher_voice",
-    )
-    if voiceout_path:
-        trace.set_artifact(voiceout_path)
+    voiceout_path: str | None = None
+    voiceout_first: str | None = None
+    voiceout_warning: str | None = None
+    if auto_voiceout:
+        voiceout_path, voiceout_first, voiceout_warning = synthesize_voice_reply(
+            strip_references_for_tts(assistant_text),
+            language=language,
+            tts_preset=tts_key,
+            chunk_first=True,
+            out_subdir="teacher_voice",
+        )
+        if voiceout_path:
+            trace.set_artifact(voiceout_path)
 
     new_history = append_chat_turn(
         history,
@@ -409,6 +424,7 @@ def run_teacher_voice_text_turn(
     use_rag: bool = False,
     session_id: str = "",
     doc_ids: list[str] | None = None,
+    auto_voiceout: bool = True,
 ) -> TeacherVoiceTurnResult:
     """Process a typed user message (skips ASR)."""
     user_text = user_text.strip()
@@ -451,6 +467,7 @@ def run_teacher_voice_text_turn(
         session_id=session_id,
         doc_ids=doc_ids,
         tts_key=tts_key,
+        auto_voiceout=auto_voiceout,
     )
 
 
@@ -469,6 +486,7 @@ def run_teacher_voice_turn(
     session_id: str = "",
     doc_ids: list[str] | None = None,
     max_turn_seconds: int | None = None,
+    auto_voiceout: bool = True,
 ) -> TeacherVoiceTurnResult:
     if not audio_path:
         raise ValueError("No audio recording provided.")
@@ -512,7 +530,7 @@ def run_teacher_voice_turn(
     from echocoach.omni import is_omni_profile, try_omni_turn
 
     if is_omni_profile():
-        system = system_prompt_for_mode(mode)
+        system = system_prompt_for_mode(mode, language=language)
         topic_line = topic_context_block(topic, mode)
         if topic_line:
             system = f"{system}\n\n{topic_line}"
@@ -559,4 +577,5 @@ def run_teacher_voice_turn(
         session_id=session_id,
         doc_ids=doc_ids,
         tts_key=tts_key,
+        auto_voiceout=auto_voiceout,
     )

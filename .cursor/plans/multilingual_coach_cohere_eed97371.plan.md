@@ -4,16 +4,16 @@ overview: Add a dedicated Studio tab — Language lessons — that unifies multi
 todos:
   - id: aya-presets
     content: Add tiny-aya-global/water/fire/earth to models.yaml; set voice_models.yaml coach_model default; verify TransformersBackend.chat()
-    status: pending
+    status: completed
   - id: locale-prompts
     content: Add language-lesson system prompt + language_instruction() for lesson/explain modes; wire language into build_teacher_messages() and RAG path
-    status: pending
+    status: completed
   - id: language-lessons-page
     content: "New Studio nav tab Language lessons: language selector, unified composer (text + mic + upload), chat with inline audio, auto VoiceOut via realtime TTS"
-    status: pending
+    status: in_progress
   - id: language-lessons-api
     content: Extend teacher_voice_* API with auto_voiceout flag; reuse existing turn pipeline; optional speak-on-reply default for Language lessons view
-    status: pending
+    status: completed
   - id: cohere-space-defaults
     content: "Document and set Space secrets: ECHOCOACH_ASR_PRESET=cohere-transcribe, ECHOCOACH_COACH_MODEL=tiny-aya-global, ECHOCOACH_REALTIME_TTS_PRESET=vibevoice-realtime-0.5b"
     status: pending

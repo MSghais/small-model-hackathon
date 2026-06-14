@@ -2,11 +2,11 @@
 # Override defaults via ECHOCOACH_ASR_PRESET / ECHOCOACH_TTS_PRESET in .env
 
 defaults:
-  asr_preset: whisper-cpp-tiny
+  asr_preset: cohere-transcribe
   tts_preset: piper-multilingual
   # Realtime streaming TTS for TeacherVoice VoiceOut (set ECHOCOACH_TTS_PRESET to match)
   realtime_tts_preset: vibevoice-realtime-0.5b
-  coach_model: minicpm5-1b
+  coach_model: tiny-aya-global
   max_seconds: 30
 
 languages:
@@ -75,7 +75,7 @@ tts:
       pt: pt_BR-faber-medium
       nl: nl_NL-mls-medium
       pl: pl_PL-darkman-medium
-      el: en_US-lessac-medium
+      el: el_GR-rapunzelina-low
       ar: ar_JO-kareem-medium
       ja: ja_JP-natsuki-medium
       zh: zh_CN-huayan-medium
