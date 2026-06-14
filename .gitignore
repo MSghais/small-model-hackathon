@@ -1,4 +1,5 @@
 .venv/
+.venv-gradio/
 __pycache__/
 *.py[cod]
 .env
