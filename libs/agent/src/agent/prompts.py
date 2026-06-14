@@ -12,19 +12,20 @@ Follow the skill workflow below and output ONLY valid JSON (no markdown fences).
 Skill workflow:
 {skill_body}
 
-JSON schema:
+Required JSON shape (replace every value with real lesson content for the requested topic):
 {{
-  "title": "string — presentation title",
+  "title": "Photosynthesis for Grade 6",
   "slides": [
     {{
-      "title": "string — slide heading",
-      "bullets": ["string", "..."],
-      "speaker_note": "string — one sentence for the teacher"
+      "title": "What is photosynthesis?",
+      "bullets": ["Plants make food using sunlight", "Happens in chloroplasts"],
+      "speaker_note": "Ask students what plants need to grow."
     }}
   ]
 }}
 
 Rules:
+- Fill in concrete titles and bullets about the user's topic — never copy the example text or type names.
 - Use exactly the requested number of content slides (title slide is added separately by the tool).
 - At most 3 bullets per slide; each bullet under 12 words.
 - speaker_note: one short sentence (under 20 words) or omit.
@@ -91,10 +92,46 @@ def education_outline_retry_user(req: EducationPptxInput, *, example_json: str) 
         f"Topic: {req.topic}\n"
         f"Grade level: {req.grade}\n"
         f"Number of content slides: {req.slide_count}\n\n"
-        "Your previous response was empty or invalid. "
-        "Return ONLY valid JSON matching this structure (replace placeholders for the topic):\n"
+        "Your previous response was empty, invalid, or copied schema placeholders. "
+        "Write real lesson content for the topic below. "
+        "Return ONLY valid JSON matching this structure (replace every value for the topic):\n"
         f"{example_json}"
     )
+
+
+_SCHEMA_ECHO_MARKERS = (
+    "string —",
+    "string -",
+    "string—",
+    "string-",
+)
+
+
+def _looks_like_schema_field(text: str) -> bool:
+    lowered = text.strip().lower()
+    if not lowered:
+        return False
+    if any(marker in lowered for marker in _SCHEMA_ECHO_MARKERS):
+        return True
+    if lowered in {"string", "..."}:
+        return True
+    return False
+
+
+def outline_looks_like_schema_echo(outline: SlideOutline) -> bool:
+    """True when the model echoed prompt schema placeholders instead of lesson content."""
+    if _looks_like_schema_field(outline.title):
+        return True
+
+    schema_slides = 0
+    for slide in outline.slides:
+        if _looks_like_schema_field(slide.title):
+            schema_slides += 1
+            continue
+        bullets = [str(b).strip() for b in slide.bullets if str(b).strip()]
+        if bullets and all(_looks_like_schema_field(b) for b in bullets):
+            schema_slides += 1
+    return schema_slides >= max(1, len(outline.slides) // 2)
 
 
 def fallback_outline(req: EducationPptxInput) -> SlideOutline:

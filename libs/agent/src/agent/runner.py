@@ -33,6 +33,7 @@ from agent.prompts import (
     education_outline_user,
     fallback_outline,
     outline_json_example,
+    outline_looks_like_schema_echo,
     outline_max_tokens,
     outline_to_markdown,
 )
@@ -530,6 +531,10 @@ class AgentRunner:
     ) -> SlideOutline:
         data = self._sanitize_outline_data(self._extract_json(raw))
         outline = SlideOutline.model_validate(data)
+        if outline_looks_like_schema_echo(outline):
+            raise ValueError(
+                "Model echoed JSON schema placeholders instead of lesson content"
+            )
         original_count = len(outline.slides)
         outline = self._normalize_slide_count(outline, expected_slides)
         if trace and original_count != expected_slides:

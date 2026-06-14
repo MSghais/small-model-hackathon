@@ -11,11 +11,32 @@ import gradio as gr
 from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
 from echocoach.prompts import TeacherVoiceMode
-from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_text_turn
+from echocoach.recording import (
+    ServerRecordingError,
+    recording_backend_status,
+    recording_elapsed_seconds,
+    recording_level_warning,
+    start_server_recording,
+    stop_server_recording,
+)
+from echocoach.teacher_voice import RAG_MODES, run_teacher_voice_text_turn, run_teacher_voice_turn
 from gradio_space.api.serializers import err, ok, unwrap_update, update_value
-from gradio_space.model_loading import ensure_model_loaded, get_active_model_key, model_status
-from gradio_space.research_helpers import list_session_choices, pick_session_for_topic
-from gradio_space.tabs.education_pptx import generate_lesson_slides
+from gradio_space.model_loading import (
+    ensure_model_loaded,
+    get_active_model_key,
+    model_status,
+    reload_model,
+)
+from gradio_space.research_helpers import (
+    list_session_choices,
+    memory_summary,
+    pick_session_for_topic,
+    rag_aware_chat,
+    rag_scope_hint,
+    resolve_doc_ids,
+    resolve_session,
+)
+from gradio_space.tabs.education_pptx import SOURCE_MODES, SEARCH_WORKFLOWS, generate_lesson_slides
 from gradio_space.tabs.research_mind import (
     ask_question,
     auto_search_ingest,
@@ -25,12 +46,29 @@ from gradio_space.tabs.research_mind import (
 from gradio_space.ui.studio_html import (
     render_doc_cards,
     render_echo_coach_panel,
+    render_gallery_strip,
     render_slide_canvas,
+    render_trace_details,
 )
+from gradio_space.voice_helpers import speak_last_assistant_reply
+from inference.config import get_app_config
 from inference.factory import get_backend
+from researchmind.config import get_config as get_research_config
 from researchmind.ingest import IngestPipeline
 
 _echo_config = get_echo_coach_config()
+_app_config = get_app_config()
+_SAMPLE_PITCH_AUDIO = (
+    Path(__file__).resolve().parents[5]
+    / "libs"
+    / "echocoach"
+    / "tests"
+    / "fixtures"
+    / "silence_2s.wav"
+)
+
+_SOURCE_LABELS = {value: label for label, value in SOURCE_MODES}
+_WORKFLOW_LABELS = {value: label for label, value in SEARCH_WORKFLOWS}
 
 
 class _NoopProgress:
@@ -122,6 +160,69 @@ def _pick_session(topic_hint: str = "") -> str:
     return pick_session_for_topic(topic_hint)
 
 
+def _voice_stack_summary() -> str:
+    asr = _echo_config.get_asr()
+    tts = _echo_config.get_tts()
+    lines = [
+        f"ASR: {asr.label} ({_echo_config.asr_preset})",
+        f"TTS: {tts.label} ({_echo_config.tts_preset})",
+        f"Coach model: {_echo_config.coach_model}",
+        f"Max recording: {_echo_config.max_seconds}s",
+    ]
+    return "\n".join(lines)
+
+
+def _paths_summary() -> str:
+    rm = get_research_config()
+    lines = []
+    if _app_config.presets_path:
+        lines.append(f"Model presets: {_app_config.presets_path}")
+    else:
+        lines.append("Model presets: built-in defaults")
+    lines.append(f"ResearchMind store: {rm.data_dir.resolve()}")
+    return "\n".join(lines)
+
+
+def _resolve_source_labels(
+    source_mode: str,
+    search_workflow: str,
+    use_rag: bool,
+    session_id: str,
+    doc_ids: list[str] | None,
+) -> tuple[str, str, str, list[str]]:
+    """Return source_label, workflow_label, effective_session, effective_docs."""
+    mode = (source_mode or "").strip().lower()
+    if not mode:
+        sid = (session_id or "").strip()
+        has_sources = _session_has_rag_sources(sid, doc_ids) if use_rag else False
+        if use_rag and has_sources:
+            return (
+                _SOURCE_LABELS["rag"],
+                _WORKFLOW_LABELS["two_step"],
+                sid,
+                doc_ids or [],
+            )
+        return _SOURCE_LABELS["none"], _WORKFLOW_LABELS["two_step"], "", []
+
+    workflow_key = (search_workflow or "two_step").strip().lower()
+    if workflow_key not in _WORKFLOW_LABELS:
+        workflow_key = "two_step"
+
+    if mode not in _SOURCE_LABELS:
+        mode = "none"
+
+    sid = (session_id or "").strip()
+    if mode == "rag" and not sid:
+        sid = ""
+
+    return (
+        _SOURCE_LABELS[mode],
+        _WORKFLOW_LABELS[workflow_key],
+        sid if mode == "rag" else sid,
+        doc_ids or [] if mode == "rag" else [],
+    )
+
+
 def api_list_sessions() -> dict[str, Any]:
     return ok(sessions=_sessions_payload())
 
@@ -129,7 +230,16 @@ def api_list_sessions() -> dict[str, Any]:
 def api_list_documents(session_id: str = "") -> dict[str, Any]:
     docs = _documents_payload(session_id)
     html_cards = render_doc_cards(docs, rag_active=bool(docs))
-    return ok(session_id=session_id, documents=docs, documents_html=html_cards)
+    return ok(
+        session_id=session_id,
+        documents=docs,
+        documents_html=html_cards,
+        memory_markdown=memory_summary(session_id),
+    )
+
+
+def api_session_memory(session_id: str = "") -> dict[str, Any]:
+    return ok(memory_markdown=memory_summary(session_id))
 
 
 def _ingest_response(
@@ -147,6 +257,7 @@ def _ingest_response(
         documents_html=render_doc_cards(docs, rag_active=bool(docs)),
         trace_json=trace_json,
         trace_summary=trace_summary,
+        trace_html=render_trace_details(trace_summary=trace_summary, trace_json=trace_json),
     )
 
 
@@ -164,6 +275,7 @@ def api_discover_sources(topic: str, session_id: str = "") -> dict[str, Any]:
     urls = list(url_payload.get("choices") or []) if isinstance(url_payload, dict) else []
     selected = list(url_payload.get("value") or urls) if isinstance(url_payload, dict) else urls
     sid = update_value(sess_up, session_id)
+    trace_str = trace_json if isinstance(trace_json, str) else ""
     if summary and "error" in summary.lower() and not urls:
         return err(strip_md_summary(summary), status=summary, urls=[], session_id=sid)
     return ok(
@@ -172,7 +284,8 @@ def api_discover_sources(topic: str, session_id: str = "") -> dict[str, Any]:
         selected_urls=selected,
         session_id=sid,
         trace_summary=trace_sum,
-        trace_json=trace_json if isinstance(trace_json, str) else "",
+        trace_json=trace_str,
+        trace_html=render_trace_details(trace_summary=trace_sum, trace_json=trace_str),
     )
 
 
@@ -261,12 +374,54 @@ def api_research_chat(
         if msg.get("role") == "assistant":
             assistant = str(msg.get("content") or "")
             break
+    trace_str = trace_json if isinstance(trace_json, str) else ""
     return ok(
         history=hist,
         assistant=assistant,
         rag_hint=rag_hint,
-        trace_json=trace_json if isinstance(trace_json, str) else "",
+        trace_json=trace_str,
         trace_summary=trace_sum,
+        trace_html=render_trace_details(trace_summary=trace_sum, trace_json=trace_str),
+    )
+
+
+def api_debug_chat(
+    message: str,
+    history: list[list[str]] | None = None,
+    use_rag: bool = False,
+    session_id: str = "",
+    doc_ids: list[str] | None = None,
+    model_key: str = "",
+    workspace_session_id: str = "",
+    workspace_doc_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    if not (message or "").strip():
+        return err("Enter a message.")
+    key = (model_key or "").strip() or get_active_model_key()
+    load_error = ensure_model_loaded(key)
+    if load_error:
+        return err(load_error)
+
+    sid = resolve_session(session_id, workspace_session_id)
+    docs = resolve_doc_ids(doc_ids, workspace_doc_ids)
+    hist = history or []
+    reply, trace_json, trace_summary = rag_aware_chat(
+        message.strip(),
+        hist,
+        key,
+        use_rag,
+        sid,
+        docs,
+    )
+    new_history = list(hist)
+    new_history.append([message.strip(), reply])
+    return ok(
+        history=new_history,
+        assistant=reply,
+        rag_hint=rag_scope_hint(sid, docs),
+        trace_json=trace_json,
+        trace_summary=trace_summary,
+        trace_html=render_trace_details(trace_summary=trace_summary, trace_json=trace_json),
     )
 
 
@@ -277,25 +432,40 @@ def api_generate_slides(
     session_id: str = "",
     use_rag: bool = True,
     doc_ids: list[str] | None = None,
+    source_mode: str = "",
+    search_workflow: str = "two_step",
+    urls_text: str = "",
+    selected_urls: list[str] | None = None,
+    file_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     rag_docs = doc_ids or []
     sid = (session_id or "").strip()
-    if use_rag and not sid:
+    if not (source_mode or "").strip() and use_rag and not sid:
         sid = _pick_session(topic)
 
-    has_sources = _session_has_rag_sources(sid, rag_docs) if use_rag else False
-    use_rag_effective = bool(use_rag and has_sources)
-    rag_notice = ""
-    if use_rag and not use_rag_effective:
-        rag_notice = (
-            "Cross-Reference Sources is on, but this session has no indexed documents — "
-            "generated from model knowledge only. Ingest sources in Step 1 to enable RAG."
-        )
+    source_label, workflow_label, effective_sid, effective_docs = _resolve_source_labels(
+        source_mode,
+        search_workflow,
+        use_rag,
+        sid,
+        rag_docs,
+    )
 
-    source_label = "RAG (indexed sources)" if use_rag_effective else "None (model only)"
-    workflow_label = "Two-step (discover & confirm)"
-    effective_sid = sid if use_rag_effective else ""
-    effective_docs = rag_docs if use_rag_effective else []
+    rag_notice = ""
+    if (source_mode or "").strip().lower() == "rag" or (
+        not (source_mode or "").strip() and use_rag
+    ):
+        has_sources = _session_has_rag_sources(sid, rag_docs)
+        if use_rag and not has_sources and source_label == _SOURCE_LABELS["rag"]:
+            rag_notice = (
+                "Cross-Reference Sources is on, but this session has no indexed documents — "
+                "generated from model knowledge only. Ingest sources in Step 1 to enable RAG."
+            )
+            source_label = _SOURCE_LABELS["none"]
+            effective_sid = ""
+            effective_docs = []
+
+    upload_files = file_paths if file_paths else None
 
     gen = generate_lesson_slides(
         topic,
@@ -303,16 +473,16 @@ def api_generate_slides(
         int(slide_count),
         source_label,
         workflow_label,
-        "",
-        [],
-        None,
+        urls_text or "",
+        selected_urls or [],
+        upload_files,
         effective_sid,
         effective_docs,
         topic,
         effective_sid,
         effective_docs,
         _NoopProgress(),
-        skip_preview_images=True,
+        skip_preview_images=False,
     )
     last: tuple | None = None
     for item in gen:
@@ -344,6 +514,7 @@ def api_generate_slides(
         "docx": docx,
         "html": html_export,
     }
+    trace_str = trace_json if isinstance(trace_json, str) else ""
     return ok(
         topic=topic,
         session_id=sid,
@@ -351,14 +522,20 @@ def api_generate_slides(
         preview_html=preview_html,
         canvas_html=render_slide_canvas(preview_html),
         gallery=gallery or [],
+        gallery_html=render_gallery_strip(gallery or []),
         downloads=downloads,
         status=status,
         rag_fallback=bool(rag_notice),
         progress_log=processing_log,
         trace_summary=trace_sum,
-        trace_json=trace_json,
+        trace_json=trace_str,
+        trace_html=render_trace_details(
+            trace_summary=trace_sum,
+            trace_json=trace_str,
+            progress_log=processing_log,
+        ),
         elapsed_seconds=_elapsed_seconds_from_log(processing_log),
-        progress=_progress_from_trace(trace_json),
+        progress=_progress_from_trace(trace_str),
     )
 
 
@@ -368,8 +545,10 @@ def api_teacher_voice_turn(
     topic: str = "",
     session_id: str = "",
     use_rag: bool = True,
-    history: list[list[str]] | None = None,
+    history: list | None = None,
     doc_ids: list[str] | None = None,
+    language: str = "en",
+    asr_preset: str | None = None,
 ) -> dict[str, Any]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -385,7 +564,7 @@ def api_teacher_voice_turn(
             message.strip(),
             hist,
             mode=mode,
-            language=_echo_config.language_choices()[0][1],
+            language=language,
             topic=topic.strip() or None,
             backend=get_backend(model_key),
             use_rag=use_rag and mode in RAG_MODES,
@@ -403,10 +582,94 @@ def api_teacher_voice_turn(
     )
 
 
+def api_teacher_voice_audio_turn(
+    audio_path: str,
+    mode: TeacherVoiceMode = "lesson",
+    topic: str = "",
+    session_id: str = "",
+    use_rag: bool = True,
+    history: list | None = None,
+    doc_ids: list[str] | None = None,
+    language: str = "en",
+    asr_preset: str | None = None,
+) -> dict[str, Any]:
+    model_key = get_active_model_key()
+    load_error = ensure_model_loaded(model_key)
+    if load_error:
+        return err(load_error)
+
+    if not audio_path or not Path(audio_path).is_file():
+        return err("Record or upload audio first.")
+
+    hist = history or []
+    preset = asr_preset or _echo_config.asr_preset
+    max_turn = min(15, _echo_config.max_seconds)
+    try:
+        result = run_teacher_voice_turn(
+            audio_path,
+            hist,
+            mode=mode,
+            language=language,
+            asr_preset=preset,
+            topic=topic.strip() or None,
+            backend=get_backend(model_key),
+            use_rag=use_rag and mode in RAG_MODES,
+            session_id=session_id or None,
+            doc_ids=doc_ids or None,
+            max_turn_seconds=max_turn,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return err(str(exc))
+
+    return ok(
+        history=result.history,
+        assistant=result.assistant_text,
+        status=result.rag_status or "Turn complete.",
+        voiceout_path=result.voiceout_path,
+        user_text=result.user_text,
+    )
+
+
+def api_teacher_voice_clear() -> dict[str, Any]:
+    return ok(
+        history=[],
+        assistant="",
+        status="Conversation cleared.",
+    )
+
+
+def api_teacher_voice_speak(
+    history: list | None = None,
+    language: str = "en",
+    first_sentence_only: bool = False,
+) -> dict[str, Any]:
+    playback, status = speak_last_assistant_reply(
+        history or [],
+        language,
+        first_sentence_only=first_sentence_only,
+    )
+    if not playback:
+        return err(status)
+    return ok(voiceout_path=playback, status=status)
+
+
+def api_load_sample_pitch() -> dict[str, Any]:
+    if not _SAMPLE_PITCH_AUDIO.is_file():
+        return err(
+            f"Sample clip missing at `{_SAMPLE_PITCH_AUDIO}`. "
+            "Run `uv run python libs/echocoach/tests/make_fixture.py`."
+        )
+    return ok(
+        audio_path=str(_SAMPLE_PITCH_AUDIO),
+        status="Sample clip loaded — click Analyze pitch when ready.",
+    )
+
+
 def api_analyze_pitch(
     audio_path: str,
     language: str = "en",
     asr_preset: str | None = None,
+    speak_rewrite: bool = False,
 ) -> dict[str, Any]:
     model_key = get_active_model_key()
     load_error = ensure_model_loaded(model_key)
@@ -423,7 +686,7 @@ def api_analyze_pitch(
             language=language,
             asr_preset=preset,
             backend=get_backend(model_key),
-            speak_rewrite=False,
+            speak_rewrite=speak_rewrite,
         )
     except Exception as exc:  # noqa: BLE001
         return err(str(exc))
@@ -433,6 +696,10 @@ def api_analyze_pitch(
         wpm=result.pace.wpm,
         tip=result.coach.one_tip,
         report_md=result.report_markdown,
+        transcript_html=result.transcript_html,
+        filler_chart=result.filler_chart_path,
+        pace_chart=result.pace_chart_path,
+        voiceout_path=result.voiceout_path,
     )
     return ok(
         transcript_html=result.transcript_html,
@@ -451,6 +718,80 @@ def api_model_status() -> dict[str, Any]:
     key = get_active_model_key()
     status_md = model_status(key)
     return ok(model_key=key, status_markdown=status_md)
+
+
+def api_model_choices() -> dict[str, Any]:
+    active = _app_config.active
+    allow_switch = bool(
+        _app_config.allow_model_switch and len(_app_config.models) > 1
+    )
+    choices = []
+    if allow_switch:
+        choices = [{"key": k, "label": label} for label, k in _app_config.model_choices()]
+    return ok(
+        active_model=_app_config.active_model,
+        active_label=active.label,
+        active_backend=active.backend,
+        allow_model_switch=allow_switch,
+        choices=choices,
+        voice_stack=_voice_stack_summary(),
+        paths=_paths_summary(),
+    )
+
+
+def api_reload_model(model_key: str = "") -> dict[str, Any]:
+    key = (model_key or "").strip() or get_active_model_key()
+    status_md = reload_model(key)
+    if status_md.lower().startswith("error") or "failed" in status_md.lower():
+        return err(status_md, status_markdown=status_md, model_key=key)
+    return ok(status_markdown=status_md, model_key=key)
+
+
+def api_recording_status() -> dict[str, Any]:
+    status = recording_backend_status()
+    return ok(
+        backend=status,
+        message=status,
+        max_seconds=_echo_config.max_seconds,
+    )
+
+
+def api_recording_start(max_seconds: int | None = None) -> dict[str, Any]:
+    limit = int(max_seconds or _echo_config.max_seconds)
+    try:
+        start_server_recording(limit)
+    except ServerRecordingError as exc:
+        return err(str(exc))
+    return ok(
+        status=f"Recording… speak now, then stop (auto-stops after {limit}s).",
+        max_seconds=limit,
+    )
+
+
+def api_recording_stop() -> dict[str, Any]:
+    try:
+        elapsed = recording_elapsed_seconds()
+        path = stop_server_recording()
+        warning = recording_level_warning(path)
+    except ServerRecordingError as exc:
+        return err(str(exc))
+    except Exception as exc:  # noqa: BLE001
+        return err(f"Recording failed: {exc}")
+
+    status = f"Recording saved ({elapsed:.1f}s)."
+    if warning:
+        status += f" Warning: {warning}"
+    return ok(path=str(path), elapsed_seconds=elapsed, status=status, warning=warning or "")
+
+
+def api_voice_presets() -> dict[str, Any]:
+    return ok(
+        languages=[{"label": label, "value": value} for label, value in _echo_config.language_choices()],
+        asr_presets=[{"label": label, "value": value} for label, value in _echo_config.asr_choices()],
+        default_language=_echo_config.language_choices()[0][1] if _echo_config.language_choices() else "en",
+        default_asr=_echo_config.asr_preset,
+        max_seconds=_echo_config.max_seconds,
+    )
 
 
 def api_save_upload(filename: str, content_base64: str) -> dict[str, Any]:
@@ -479,6 +820,10 @@ def register_studio_apis(server: gr.Server) -> None:
     @server.api(name="list_documents")
     def _list_documents(session_id: str = "") -> dict[str, Any]:
         return api_list_documents(session_id)
+
+    @server.api(name="session_memory")
+    def _session_memory(session_id: str = "") -> dict[str, Any]:
+        return api_session_memory(session_id)
 
     @server.api(name="discover_sources")
     def _discover_sources(topic: str, session_id: str = "") -> dict[str, Any]:
@@ -513,6 +858,28 @@ def register_studio_apis(server: gr.Server) -> None:
     ) -> dict[str, Any]:
         return api_research_chat(question, session_id, doc_ids, history)
 
+    @server.api(name="debug_chat")
+    def _debug_chat(
+        message: str,
+        history: list[list[str]] | None = None,
+        use_rag: bool = False,
+        session_id: str = "",
+        doc_ids: list[str] | None = None,
+        model_key: str = "",
+        workspace_session_id: str = "",
+        workspace_doc_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return api_debug_chat(
+            message,
+            history,
+            use_rag,
+            session_id,
+            doc_ids,
+            model_key,
+            workspace_session_id,
+            workspace_doc_ids,
+        )
+
     @server.api(name="ingest_files")
     def _ingest_files(
         topic: str,
@@ -529,9 +896,24 @@ def register_studio_apis(server: gr.Server) -> None:
         session_id: str = "",
         use_rag: bool = True,
         doc_ids: list[str] | None = None,
+        source_mode: str = "",
+        search_workflow: str = "two_step",
+        urls_text: str = "",
+        selected_urls: list[str] | None = None,
+        file_paths: list[str] | None = None,
     ) -> dict[str, Any]:
         return api_generate_slides(
-            topic, grade, slide_count, session_id, use_rag, doc_ids
+            topic,
+            grade,
+            slide_count,
+            session_id,
+            use_rag,
+            doc_ids,
+            source_mode,
+            search_workflow,
+            urls_text,
+            selected_urls,
+            file_paths,
         )
 
     @server.api(name="teacher_voice_turn")
@@ -541,24 +923,99 @@ def register_studio_apis(server: gr.Server) -> None:
         topic: str = "",
         session_id: str = "",
         use_rag: bool = True,
-        history: list[list[str]] | None = None,
+        history: list | None = None,
         doc_ids: list[str] | None = None,
+        language: str = "en",
+        asr_preset: str | None = None,
     ) -> dict[str, Any]:
         return api_teacher_voice_turn(
-            message, mode, topic, session_id, use_rag, history, doc_ids
+            message,
+            mode,
+            topic,
+            session_id,
+            use_rag,
+            history,
+            doc_ids,
+            language,
+            asr_preset,
         )
+
+    @server.api(name="teacher_voice_audio_turn")
+    def _teacher_voice_audio_turn(
+        audio_path: str,
+        mode: Literal["explain", "lesson", "pitch"] = "lesson",
+        topic: str = "",
+        session_id: str = "",
+        use_rag: bool = True,
+        history: list | None = None,
+        doc_ids: list[str] | None = None,
+        language: str = "en",
+        asr_preset: str | None = None,
+    ) -> dict[str, Any]:
+        return api_teacher_voice_audio_turn(
+            audio_path,
+            mode,
+            topic,
+            session_id,
+            use_rag,
+            history,
+            doc_ids,
+            language,
+            asr_preset,
+        )
+
+    @server.api(name="teacher_voice_clear")
+    def _teacher_voice_clear() -> dict[str, Any]:
+        return api_teacher_voice_clear()
+
+    @server.api(name="teacher_voice_speak")
+    def _teacher_voice_speak(
+        history: list | None = None,
+        language: str = "en",
+        first_sentence_only: bool = False,
+    ) -> dict[str, Any]:
+        return api_teacher_voice_speak(history, language, first_sentence_only)
+
+    @server.api(name="load_sample_pitch")
+    def _load_sample_pitch() -> dict[str, Any]:
+        return api_load_sample_pitch()
 
     @server.api(name="analyze_pitch")
     def _analyze_pitch(
         audio_path: str,
         language: str = "en",
         asr_preset: str | None = None,
+        speak_rewrite: bool = False,
     ) -> dict[str, Any]:
-        return api_analyze_pitch(audio_path, language, asr_preset)
+        return api_analyze_pitch(audio_path, language, asr_preset, speak_rewrite)
 
     @server.api(name="model_status")
     def _model_status() -> dict[str, Any]:
         return api_model_status()
+
+    @server.api(name="model_choices")
+    def _model_choices() -> dict[str, Any]:
+        return api_model_choices()
+
+    @server.api(name="reload_model")
+    def _reload_model(model_key: str = "") -> dict[str, Any]:
+        return api_reload_model(model_key)
+
+    @server.api(name="recording_status")
+    def _recording_status() -> dict[str, Any]:
+        return api_recording_status()
+
+    @server.api(name="recording_start")
+    def _recording_start(max_seconds: int | None = None) -> dict[str, Any]:
+        return api_recording_start(max_seconds)
+
+    @server.api(name="recording_stop")
+    def _recording_stop() -> dict[str, Any]:
+        return api_recording_stop()
+
+    @server.api(name="voice_presets")
+    def _voice_presets() -> dict[str, Any]:
+        return api_voice_presets()
 
     @server.api(name="save_upload")
     def _save_upload(filename: str, content_base64: str) -> dict[str, Any]:

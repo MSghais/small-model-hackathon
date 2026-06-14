@@ -9,30 +9,37 @@ const SLIDE_PIPELINE_STEPS = [
 ];
 
 const state = {
-  workspaceTopic: "photosynthesis",
+  workspaceTopic: "small model finetuning",
   workspaceSessionId: "",
   workspaceDocIds: [],
   discoveredUrls: [],
   selectedUrls: [],
+  slideDiscoveredUrls: [],
+  slideSelectedUrls: [],
+  voiceDiscoveredUrls: [],
+  voiceSelectedUrls: [],
   researchChatHistory: [],
+  debugChatHistory: [],
   voiceMode: "lesson",
   history: [],
   downloads: null,
   client: null,
   progressTimer: null,
   progressStartedAt: null,
+  voicePresets: null,
+  modelChoices: null,
+  recordingTarget: null,
+  browserRecorder: null,
+  browserRecordChunks: [],
+  pendingVoiceAudioPath: null,
+  pendingCoachAudioPath: null,
+  useBrowserMic: true,
 };
 
 function effectiveTopic(local) {
   const localVal = (local || "").trim();
   if (localVal) return localVal;
   return (state.workspaceTopic || "").trim();
-}
-
-function effectiveSession(local) {
-  const localVal = (local || "").trim();
-  if (localVal) return localVal;
-  return (state.workspaceSessionId || "").trim();
 }
 
 function selectedWorkspaceDocIds() {
@@ -62,6 +69,34 @@ function renderMarkdownLite(text) {
     .replace(/\[(\d+)\]/g, "<sup>[$1]</sup>");
 }
 
+function stripMd(text) {
+  return String(text).replace(/\*\*/g, "").replace(/`/g, "");
+}
+
+function fileUrl(path) {
+  if (!path) return "";
+  return `/file=${encodeURIComponent(path)}`;
+}
+
+function setTracePanel(panelId, data) {
+  const panel = $(panelId);
+  if (!panel) return;
+  const html = data?.trace_html || "";
+  if (html) {
+    panel.innerHTML = html;
+    panel.closest("details")?.classList.remove("hidden");
+  } else if (data?.trace_summary || data?.trace_json) {
+    const parts = [];
+    if (data.trace_summary) {
+      parts.push(`<pre class="studio-trace-summary">${escapeHtml(data.trace_summary)}</pre>`);
+    }
+    if (data.trace_json) {
+      parts.push(`<pre class="studio-trace-json">${escapeHtml(data.trace_json)}</pre>`);
+    }
+    panel.innerHTML = parts.join("");
+  }
+}
+
 function getIngestWorkflow() {
   return $("#ingest-workflow")?.value || "direct";
 }
@@ -76,8 +111,24 @@ function syncIngestWorkflowUi() {
   );
 }
 
+function syncSlideSourceUi() {
+  const mode = $("#slide-source-mode")?.value || "";
+  const isWeb = mode === "web";
+  $("#slide-web-workflow-wrap")?.classList.toggle("hidden", !isWeb);
+  $("#slide-web-discover-wrap")?.classList.toggle("hidden", !isWeb);
+  if (isWeb && $("#slide-search-workflow")?.value === "two_step") {
+    $("#slide-url-choices-panel")?.classList.toggle(
+      "hidden",
+      !state.slideDiscoveredUrls.length
+    );
+  } else {
+    $("#slide-url-choices-panel")?.classList.add("hidden");
+  }
+}
+
 function syncResearchLayout() {
   syncIngestWorkflowUi();
+  syncSlideSourceUi();
   updateResearchDocCount(state.workspaceDocIds?.length || 0);
 }
 
@@ -94,19 +145,36 @@ function updateResearchDocCount(count) {
 }
 
 function openResearchView() {
-  const researchNav = document.querySelector('.nav-item[data-view="research"]');
-  researchNav?.click();
-  window.setTimeout(() => {
-    $("#research-question")?.focus();
-  }, 80);
+  document.querySelector('.nav-item[data-view="research"]')?.click();
+  window.setTimeout(() => $("#research-question")?.focus(), 80);
 }
 
-function getSelectedDiscoveredUrls() {
-  const boxes = document.querySelectorAll("#url-choices-list input[type=checkbox]:checked");
+function getSelectedDiscoveredUrls(listId = "#url-choices-list") {
+  const boxes = document.querySelectorAll(`${listId} input[type=checkbox]:checked`);
   return [...boxes].map((el) => el.value);
 }
 
-function renderUrlChoices(urls, selected) {
+function renderUrlChoices(urls, selected, listId, panelId, urlState) {
+  urlState.discovered = urls || [];
+  urlState.selected = selected?.length ? selected : [...urlState.discovered];
+  const list = $(listId);
+  const panel = $(panelId);
+  if (!urlState.discovered.length) {
+    if (list) list.innerHTML = "";
+    panel?.classList.add("hidden");
+    return;
+  }
+  list.innerHTML = urlState.discovered
+    .map((url) => {
+      const checked = urlState.selected.includes(url) ? "checked" : "";
+      const label = url.length > 72 ? `${url.slice(0, 69)}…` : url;
+      return `<label class="url-choice-item"><input type="checkbox" value="${escapeHtml(url)}" ${checked} /><span title="${escapeHtml(url)}">${escapeHtml(label)}</span></label>`;
+    })
+    .join("");
+  panel?.classList.remove("hidden");
+}
+
+function renderResearchUrlChoices(urls, selected) {
   state.discoveredUrls = urls || [];
   state.selectedUrls = selected?.length ? selected : [...state.discoveredUrls];
   const list = $("#url-choices-list");
@@ -127,9 +195,177 @@ function renderUrlChoices(urls, selected) {
     box.addEventListener("change", syncUrlSelectAll);
   });
   syncUrlSelectAll();
-  if (getIngestWorkflow() === "select") {
-    panel?.classList.remove("hidden");
+  if (getIngestWorkflow() === "select") panel?.classList.remove("hidden");
+}
+
+function voiceEffectiveTopic() {
+  if (state.voiceMode === "pitch") return effectiveTopic("");
+  return effectiveTopic($("#voice-topic")?.value || "");
+}
+
+function voiceUseRag() {
+  return $("#use-rag").checked && state.voiceMode !== "pitch";
+}
+
+function voiceMessageText(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const textPart = content.find((part) => typeof part === "string");
+    return textPart || "";
   }
+  if (typeof content === "object" && content.text) return String(content.text);
+  return String(content);
+}
+
+function ingestSucceeded(status) {
+  const text = (status || "").toLowerCase();
+  return !(
+    text.includes("error") ||
+    text.includes("enter a research topic") ||
+    text.includes("add urls") ||
+    text.includes("no verified urls found")
+  );
+}
+
+function applyVoiceIngestResult(data) {
+  $("#voice-ingest-status").textContent = stripMd(data.status || "Ingest complete.");
+  state.workspaceSessionId = data.session_id || state.workspaceSessionId;
+  $("#workspace-session").value = state.workspaceSessionId;
+  if (data.documents_html) {
+    $("#documents-panel").innerHTML = data.documents_html;
+  }
+  renderWorkspaceDocList(data.documents || []);
+  updateResearchRagBadge();
+  updateResearchDocCount((data.documents || []).length);
+  if (ingestSucceeded(data.status)) {
+    $("#use-rag").checked = true;
+  }
+}
+
+async function discoverVoiceSources() {
+  const topic = voiceEffectiveTopic();
+  if (!topic) {
+    showError("Set a focus or workspace topic before discovering sources.");
+    return;
+  }
+  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+  $("#voice-ingest-status").textContent = stripMd(data.status || "Discovery complete.");
+  renderVoiceUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  if (data.session_id) {
+    state.workspaceSessionId = data.session_id;
+    $("#workspace-session").value = data.session_id;
+  }
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function autoVoiceIngest() {
+  const topic = voiceEffectiveTopic();
+  if (!topic) {
+    showError("Set a focus or workspace topic before auto-ingest.");
+    return;
+  }
+  const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
+  applyVoiceIngestResult(data);
+  state.voiceDiscoveredUrls = [];
+  state.voiceSelectedUrls = [];
+  renderVoiceUrlChoices([], []);
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function ingestVoiceSources() {
+  const topic = voiceEffectiveTopic();
+  const pasted = $("#voice-urls-text")?.value.trim() || "";
+  const selected = getSelectedDiscoveredUrls("#voice-url-choices-list");
+  const paths = [];
+  const files = $("#voice-ingest-file")?.files;
+  if (files?.length) {
+    for (const file of files) {
+      paths.push(await uploadFile(file));
+    }
+  }
+  if (!pasted && !selected.length && !paths.length) {
+    showError("Add URLs, select suggested sources, or upload a file — then ingest.");
+    return;
+  }
+  const data = await callApi("ingest_sources", [
+    topic,
+    state.workspaceSessionId,
+    pasted,
+    selected,
+    paths,
+  ]);
+  applyVoiceIngestResult(data);
+  if (pasted) $("#voice-urls-text").value = "";
+  if (files?.length) $("#voice-ingest-file").value = "";
+  await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+function syncVoiceModeUi() {
+  const ragMode = state.voiceMode === "explain" || state.voiceMode === "lesson";
+  $("#voice-topic-wrap")?.classList.toggle("hidden", !ragMode);
+  $("#voice-rag-sources")?.classList.toggle("hidden", !ragMode);
+  const placeholders = {
+    explain: "e.g. How does finetuning differ from pretraining?",
+    lesson: "What is the difference between pretraining and finetuning a small model?",
+    pitch: "e.g. Here is my opening line — how can I improve it?",
+  };
+  const messageEl = $("#voice-message");
+  if (messageEl) messageEl.placeholder = placeholders[state.voiceMode] || placeholders.lesson;
+}
+
+function renderVoiceChat() {
+  const container = $("#voice-chat-messages");
+  if (!container) return;
+  if (!state.history.length) {
+    container.innerHTML =
+      '<p class="research-chat-empty">Type a message or record audio, then send.</p>';
+    return;
+  }
+  const parts = [];
+  for (const item of state.history) {
+    if (item && typeof item === "object" && item.role) {
+      const role = item.role === "user" ? "user" : "assistant";
+      const label = role === "user" ? "You" : "Teacher";
+      const body = renderMarkdownLite(voiceMessageText(item.content));
+      parts.push(
+        `<div class="research-chat-bubble research-chat-${role}"><div class="research-chat-role">${label}</div><div class="research-chat-body">${body}</div></div>`
+      );
+    } else if (Array.isArray(item) && item.length === 2) {
+      const [user, assistant] = item;
+      parts.push(
+        `<div class="research-chat-bubble research-chat-user"><div class="research-chat-role">You</div><div class="research-chat-body">${renderMarkdownLite(user)}</div></div>` +
+          `<div class="research-chat-bubble research-chat-assistant"><div class="research-chat-role">Teacher</div><div class="research-chat-body">${renderMarkdownLite(assistant)}</div></div>`
+      );
+    }
+  }
+  container.innerHTML = parts.join("");
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderVoiceUrlChoices(urls, selected) {
+  state.voiceDiscoveredUrls = urls || [];
+  state.voiceSelectedUrls = selected?.length ? selected : [...state.voiceDiscoveredUrls];
+  renderUrlChoices(
+    urls,
+    selected,
+    "#voice-url-choices-list",
+    "#voice-url-choices-panel",
+    { discovered: state.voiceDiscoveredUrls, selected: state.voiceSelectedUrls }
+  );
+}
+
+function renderSlideUrlChoices(urls, selected) {
+  state.slideDiscoveredUrls = urls || [];
+  state.slideSelectedUrls = selected?.length ? selected : [...state.slideDiscoveredUrls];
+  renderUrlChoices(
+    urls,
+    selected,
+    "#slide-url-choices-list",
+    "#slide-url-choices-panel",
+    { discovered: state.slideDiscoveredUrls, selected: state.slideSelectedUrls }
+  );
+  syncSlideSourceUi();
 }
 
 function syncUrlSelectAll() {
@@ -149,6 +385,7 @@ function applyIngestResult(data) {
   $("#documents-panel").innerHTML =
     data.documents_html || '<p class="studio-empty-docs">No documents indexed yet.</p>';
   renderWorkspaceDocList(data.documents || []);
+  setTracePanel("#research-trace-panel", data);
   updateResearchRagBadge();
   updateResearchDocCount((data.documents || []).length);
 }
@@ -161,12 +398,23 @@ async function discoverSources() {
   }
   const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
   $("#ingest-status").textContent = stripMd(data.status || "Discovery complete.");
-  renderUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  renderResearchUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
   if (data.session_id) {
     state.workspaceSessionId = data.session_id;
     $("#workspace-session").value = data.session_id;
   }
+  setTracePanel("#research-trace-panel", data);
   await refreshWorkspaceSessions(state.workspaceSessionId);
+}
+
+async function discoverSlideSources() {
+  const topic = effectiveTopic($("#lesson-topic")?.value);
+  if (!topic) {
+    showError("Set a topic before discovering sources.");
+    return;
+  }
+  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+  renderSlideUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
 }
 
 async function autoSearchIngest() {
@@ -179,7 +427,7 @@ async function autoSearchIngest() {
   applyIngestResult(data);
   state.discoveredUrls = [];
   state.selectedUrls = [];
-  renderUrlChoices([], []);
+  renderResearchUrlChoices([], []);
   await refreshWorkspaceSessions(state.workspaceSessionId);
 }
 
@@ -187,9 +435,7 @@ async function ingestSources({ urlsText = "", selectedUrls = [], pendingFiles = 
   const topic = effectiveTopic("");
   const workflow = getIngestWorkflow();
   let selected = selectedUrls;
-  if (workflow === "select") {
-    selected = getSelectedDiscoveredUrls();
-  }
+  if (workflow === "select") selected = getSelectedDiscoveredUrls();
   const pasted = workflow === "direct" ? urlsText : urlsText || $("#ingest-url").value.trim();
   const paths = [];
   const files = pendingFiles || $("#ingest-file").files;
@@ -234,18 +480,29 @@ function renderResearchChat() {
   container.scrollTop = container.scrollHeight;
 }
 
+function renderDebugChat() {
+  const container = $("#debug-chat-messages");
+  if (!state.debugChatHistory.length) {
+    container.innerHTML =
+      '<p class="research-chat-empty">Send a message to test the active local model.</p>';
+    return;
+  }
+  container.innerHTML = state.debugChatHistory
+    .map(([user, assistant]) => {
+      return `<div class="research-chat-bubble research-chat-user"><div class="research-chat-role">You</div><div class="research-chat-body">${renderMarkdownLite(user)}</div></div><div class="research-chat-bubble research-chat-assistant"><div class="research-chat-role">Model</div><div class="research-chat-body">${renderMarkdownLite(assistant)}</div></div>`;
+    })
+    .join("");
+  container.scrollTop = container.scrollHeight;
+}
+
 function updateResearchRagBadge() {
   const badge = $("#research-rag-badge");
   if (!badge) return;
   const nDocs = (state.workspaceDocIds || []).length;
   const selected = selectedWorkspaceDocIds().length;
-  if (selected) {
-    badge.textContent = `RAG · ${selected} doc(s)`;
-  } else if (nDocs) {
-    badge.textContent = `RAG · ${nDocs} in session`;
-  } else {
-    badge.textContent = "RAG · corpus";
-  }
+  if (selected) badge.textContent = `RAG · ${selected} doc(s)`;
+  else if (nDocs) badge.textContent = `RAG · ${nDocs} in session`;
+  else badge.textContent = "RAG · corpus";
 }
 
 async function askResearchQuestion() {
@@ -265,7 +522,107 @@ async function askResearchQuestion() {
   renderResearchChat();
   $("#research-question").value = "";
   $("#research-chat-status").textContent = stripMd(data.rag_hint || "");
+  setTracePanel("#research-trace-panel", data);
   updateResearchRagBadge();
+}
+
+async function sendDebugMessage() {
+  const message = $("#debug-message").value.trim();
+  if (!message) {
+    showError("Enter a message.");
+    return;
+  }
+  const useRag = $("#debug-use-rag").checked;
+  const debugSession = $("#debug-session")?.value || "";
+  const debugDocIds = selectedDebugDocIds();
+  const workspaceDocIds = selectedWorkspaceDocIds();
+  const modelKey = $("#debug-model-key")?.value || "";
+  const data = await callApi("debug_chat", [
+    message,
+    state.debugChatHistory,
+    useRag,
+    debugSession,
+    debugDocIds,
+    modelKey,
+    state.workspaceSessionId,
+    workspaceDocIds,
+  ]);
+  state.debugChatHistory = data.history || [];
+  renderDebugChat();
+  $("#debug-message").value = "";
+  if (data.rag_hint) {
+    $("#debug-rag-hint").textContent = stripMd(data.rag_hint);
+  }
+  setTracePanel("#debug-trace-panel", data);
+}
+
+function effectiveDebugSessionId() {
+  return ($("#debug-session")?.value || "").trim() || state.workspaceSessionId;
+}
+
+function selectedDebugDocIds() {
+  const boxes = document.querySelectorAll("#debug-doc-list input[type=checkbox]");
+  if (!boxes.length) return [];
+  return [...document.querySelectorAll("#debug-doc-list input[type=checkbox]:checked")].map(
+    (el) => el.value
+  );
+}
+
+function renderDebugDocList(docs) {
+  const container = $("#debug-doc-list");
+  if (!container) return;
+  if (!docs?.length) {
+    container.innerHTML = '<p class="status-text">No documents in this session yet.</p>';
+    updateDebugRagHint();
+    return;
+  }
+  container.innerHTML = docs
+    .map(
+      (d) =>
+        `<label class="workspace-doc-item"><input type="checkbox" value="${d.id}" checked />${escapeHtml(d.title)}</label>`
+    )
+    .join("");
+  container.querySelectorAll("input[type=checkbox]").forEach((box) => {
+    box.addEventListener("change", updateDebugRagHint);
+  });
+  updateDebugRagHint();
+}
+
+function updateDebugRagHint() {
+  const el = $("#debug-rag-hint");
+  if (!el) return;
+  const sid = effectiveDebugSessionId();
+  const selected = selectedDebugDocIds();
+  const total = document.querySelectorAll("#debug-doc-list input[type=checkbox]").length;
+  if (selected.length && selected.length < total) {
+    el.textContent = `RAG scope: ${selected.length} selected document(s).`;
+  } else if (sid) {
+    el.textContent = total
+      ? `RAG scope: all ${total} document(s) in session.`
+      : "RAG scope: all documents in session.";
+  } else {
+    el.textContent = "RAG scope: entire indexed corpus (all sessions).";
+  }
+}
+
+async function refreshDebugSessions(selectId) {
+  const data = await callApi("list_sessions", []);
+  const sessions = data.sessions || [];
+  const select = $("#debug-session");
+  if (!select) return;
+  const current = selectId ?? select.value;
+  select.innerHTML =
+    '<option value="">Workspace default</option>' +
+    sessions.map((s) => `<option value="${s.id}">${s.label || s.topic}</option>`).join("");
+  if (current && sessions.some((s) => s.id === current)) {
+    select.value = current;
+  }
+}
+
+async function refreshDebugDocuments() {
+  const sessionId = effectiveDebugSessionId();
+  const data = await callApi("list_documents", [sessionId]);
+  renderDebugDocList(data.documents || []);
 }
 
 function updateProjectTitle() {
@@ -281,7 +638,7 @@ function updateWorkspaceRagHint() {
   if (sid) {
     hint = nDocs
       ? `RAG scope: ${nDocs} selected document(s) in session.`
-      : `RAG scope: all documents in session.`;
+      : "RAG scope: all documents in session.";
   }
   const el = $("#workspace-rag-hint");
   if (el) el.textContent = hint;
@@ -362,14 +719,12 @@ function finishProgressPanel(data) {
     clearInterval(state.progressTimer);
     state.progressTimer = null;
   }
-
   const stepsEl = $("#progress-steps");
   const traceSteps = data?.progress?.steps || [];
   if (traceSteps.length) {
     stepsEl.innerHTML = traceSteps
       .map((step) => {
-        const duration =
-          step.duration_s != null ? ` (${step.duration_s}s)` : "";
+        const duration = step.duration_s != null ? ` (${step.duration_s}s)` : "";
         const detail = step.detail ? ` — ${step.detail}` : "";
         return `<li class="progress-step done">${step.label}${duration}${detail}</li>`;
       })
@@ -380,21 +735,18 @@ function finishProgressPanel(data) {
       node.classList.add("done");
     });
   }
-
   if (data?.progress_log) {
     const logEl = $("#progress-log");
     const log = data.progress_log;
-    if (/<[a-z][\s\S]*>/i.test(log)) {
-      logEl.innerHTML = log;
-    } else {
-      logEl.textContent = stripMd(log);
-    }
+    if (/<[a-z][\s\S]*>/i.test(log)) logEl.innerHTML = log;
+    else logEl.textContent = stripMd(log);
     logEl.classList.remove("hidden");
   }
   if (data?.elapsed_seconds != null) {
     $("#progress-elapsed").textContent = `Elapsed: ${Number(data.elapsed_seconds).toFixed(1)}s`;
   }
   $("#progress-eta").textContent = "Complete";
+  setTracePanel("#slides-trace-panel", data);
 }
 
 function showError(msg) {
@@ -411,9 +763,7 @@ function showError(msg) {
 function unwrapApiPayload(result) {
   const raw = result?.data ?? result;
   if (Array.isArray(raw)) {
-    if (raw.length === 1 && raw[0] !== null && typeof raw[0] === "object") {
-      return raw[0];
-    }
+    if (raw.length === 1 && raw[0] !== null && typeof raw[0] === "object") return raw[0];
     return raw;
   }
   return raw;
@@ -426,9 +776,7 @@ async function callApi(name, args = []) {
     const client = await getClient();
     const result = await client.predict(`/${name}`, args);
     const data = unwrapApiPayload(result);
-    if (data && data.ok === false) {
-      throw new Error(data.error || "Request failed");
-    }
+    if (data && data.ok === false) throw new Error(data.error || "Request failed");
     return data;
   } catch (err) {
     const message = err?.message || String(err);
@@ -442,19 +790,22 @@ async function callApi(name, args = []) {
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const raw = reader.result.split(",")[1];
-      resolve(raw);
-    };
+    reader.onload = () => resolve(reader.result.split(",")[1]);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
 
+async function uploadFile(file) {
+  const b64 = await fileToBase64(file);
+  const saved = await callApi("save_upload", [file.name, b64]);
+  return saved.path;
+}
+
 function renderWorkspaceDocList(docs) {
   const container = $("#workspace-doc-list");
   if (!docs?.length) {
-    container.innerHTML = "<p class=\"status-text\">No documents in this session yet.</p>";
+    container.innerHTML = '<p class="status-text">No documents in this session yet.</p>';
     state.workspaceDocIds = [];
     updateWorkspaceRagHint();
     updateResearchDocCount(0);
@@ -464,7 +815,7 @@ function renderWorkspaceDocList(docs) {
   container.innerHTML = docs
     .map(
       (d) =>
-        `<label class="workspace-doc-item"><input type="checkbox" value="${d.id}" checked />${d.title}</label>`
+        `<label class="workspace-doc-item"><input type="checkbox" value="${d.id}" checked />${escapeHtml(d.title)}</label>`
     )
     .join("");
   container.querySelectorAll("input[type=checkbox]").forEach((box) => {
@@ -484,10 +835,8 @@ async function refreshWorkspaceSessions(selectId) {
   const select = $("#workspace-session");
   const current = selectId || state.workspaceSessionId;
   select.innerHTML =
-    "<option value=\"\">New session (on ingest)</option>" +
-    sessions
-      .map((s) => `<option value="${s.id}">${s.label || s.topic}</option>`)
-      .join("");
+    '<option value="">New session (on ingest)</option>' +
+    sessions.map((s) => `<option value="${s.id}">${s.label || s.topic}</option>`).join("");
   if (current && sessions.some((s) => s.id === current)) {
     select.value = current;
     state.workspaceSessionId = current;
@@ -500,18 +849,87 @@ async function refreshWorkspaceSessions(selectId) {
       updateProjectTitle();
     }
   }
+  await refreshDebugSessions();
 }
 
 async function refreshDocuments() {
   const data = await callApi("list_documents", [state.workspaceSessionId]);
   $("#documents-panel").innerHTML =
-    data.documents_html ||
-    '<p class="studio-empty-docs">No documents indexed yet.</p>';
+    data.documents_html || '<p class="studio-empty-docs">No documents indexed yet.</p>';
   if (data.session_id) {
     state.workspaceSessionId = data.session_id;
     $("#workspace-session").value = data.session_id;
   }
   renderWorkspaceDocList(data.documents || []);
+  const mem = $("#workspace-memory");
+  if (mem && data.memory_markdown) {
+    mem.textContent = stripMd(data.memory_markdown);
+  }
+}
+
+async function initVoicePresets() {
+  const data = await callApi("voice_presets", []);
+  state.voicePresets = data;
+  const langSelect = $("#coach-language");
+  const asrSelect = $("#coach-asr");
+  if (langSelect) {
+    langSelect.innerHTML = (data.languages || [])
+      .map((o) => `<option value="${o.value}">${o.label}</option>`)
+      .join("");
+    langSelect.value = data.default_language || "en";
+  }
+  if (asrSelect) {
+    asrSelect.innerHTML = (data.asr_presets || [])
+      .map((o) => `<option value="${o.value}">${o.label}</option>`)
+      .join("");
+    asrSelect.value = data.default_asr || "";
+  }
+}
+
+async function initSettings() {
+  const data = await callApi("model_choices", []);
+  state.modelChoices = data;
+  $("#settings-active-model").textContent = `${data.active_label} (${data.active_backend})`;
+  $("#settings-voice-stack").textContent = data.voice_stack || "";
+  $("#settings-paths").textContent = data.paths || "";
+  const status = await callApi("model_status", []);
+  $("#settings-status").innerHTML = renderMarkdownLite(status.status_markdown || "");
+
+  const wrap = $("#settings-model-select-wrap");
+  const debugWrap = $("#debug-model-wrap");
+  const select = $("#settings-model-key");
+  const debugSelect = $("#debug-model-key");
+  if (data.allow_model_switch && data.choices?.length) {
+    wrap?.classList.remove("hidden");
+    debugWrap?.classList.remove("hidden");
+    const options = data.choices
+      .map((c) => `<option value="${c.key}">${c.label}</option>`)
+      .join("");
+    if (select) {
+      select.innerHTML = options;
+      select.value = data.active_model;
+    }
+    if (debugSelect) {
+      debugSelect.innerHTML = options;
+      debugSelect.value = data.active_model;
+    }
+  }
+}
+
+function openSettingsDrawer() {
+  $("#settings-drawer")?.classList.remove("hidden");
+  $("#settings-drawer")?.setAttribute("aria-hidden", "false");
+}
+
+function closeSettingsDrawer() {
+  $("#settings-drawer")?.classList.add("hidden");
+  $("#settings-drawer")?.setAttribute("aria-hidden", "true");
+}
+
+async function reloadModelFromSettings() {
+  const key = $("#settings-model-key")?.value || "";
+  const data = await callApi("reload_model", [key]);
+  $("#settings-status").innerHTML = renderMarkdownLite(data.status_markdown || "Reloaded.");
 }
 
 async function initWorkspace() {
@@ -521,6 +939,13 @@ async function initWorkspace() {
   updateResearchRagBadge();
   await refreshWorkspaceSessions();
   await refreshDocuments();
+  await initVoicePresets();
+  await initSettings();
+  syncVoiceModeUi();
+  renderVoiceChat();
+  await refreshDebugDocuments();
+  const recStatus = await callApi("recording_status", []);
+  state.useBrowserMic = !recStatus.backend || /unavailable|no capture/i.test(recStatus.message || "");
 }
 
 async function ingestUrl() {
@@ -532,16 +957,24 @@ async function ingestFiles(files) {
   await ingestSources({ pendingFiles: files });
 }
 
-function stripMd(text) {
-  return String(text).replace(/\*\*/g, "").replace(/`/g, "");
-}
-
 async function generateSlides() {
   const topic = effectiveTopic($("#lesson-topic").value);
   const grade = $("#lesson-grade").value;
   const slideCount = Number($("#slide-count").value);
   const useRag = $("#use-rag").checked;
   const docIds = effectiveDocIds([]);
+  const sourceMode = $("#slide-source-mode")?.value || "";
+  const searchWorkflow = $("#slide-search-workflow")?.value || "two_step";
+  const urlsText = $("#slide-urls-text")?.value.trim() || "";
+  const selectedUrls = getSelectedDiscoveredUrls("#slide-url-choices-list");
+
+  const filePaths = [];
+  const slideFiles = $("#slide-source-files")?.files;
+  if (slideFiles?.length) {
+    for (const file of slideFiles) {
+      filePaths.push(await uploadFile(file));
+    }
+  }
 
   startProgressPanel();
   const waitTimer = advanceProgressWhileWaiting();
@@ -554,6 +987,11 @@ async function generateSlides() {
       state.workspaceSessionId,
       useRag,
       docIds,
+      sourceMode,
+      searchWorkflow,
+      urlsText,
+      selectedUrls,
+      filePaths,
     ]);
   } catch (_err) {
     $("#progress-eta").textContent = "Failed";
@@ -567,34 +1005,76 @@ async function generateSlides() {
   }
 
   finishProgressPanel(data);
-
   $("#generate-status").textContent = stripMd(data.status || "Slides generated.");
   const canvasHtml =
     data.canvas_html ||
-    (data.preview_html
-      ? `<div class="studio-canvas-inner">${data.preview_html}</div>`
-      : "");
+    (data.preview_html ? `<div class="studio-canvas-inner">${data.preview_html}</div>` : "");
   $("#slide-canvas").innerHTML =
-    canvasHtml ||
-    '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
+    canvasHtml || '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
+
+  const galleryEl = $("#slide-gallery");
+  if (data.gallery_html) {
+    galleryEl.innerHTML = data.gallery_html;
+    galleryEl.classList.remove("hidden");
+  } else if (data.gallery?.length) {
+    galleryEl.innerHTML = data.gallery
+      .map(
+        (path, i) =>
+          `<a class="studio-gallery-item" href="${fileUrl(path)}" target="_blank" rel="noopener"><img src="${fileUrl(path)}" alt="Slide ${i + 1}" loading="lazy" /></a>`
+      )
+      .join("");
+    galleryEl.classList.remove("hidden");
+  } else {
+    galleryEl.classList.add("hidden");
+    galleryEl.innerHTML = "";
+  }
 
   state.downloads = data.downloads;
   const dl = $("#downloads");
   if (data.downloads?.pptx) {
     dl.classList.remove("hidden");
     dl.innerHTML = `
-      <a href="/file=${encodeURIComponent(data.downloads.pptx)}" download>PPTX</a>
-      <a href="/file=${encodeURIComponent(data.downloads.docx)}" download>DOCX</a>
-      <a href="/file=${encodeURIComponent(data.downloads.html)}" download>HTML</a>`;
+      <a href="${fileUrl(data.downloads.pptx)}" download>PPTX</a>
+      <a href="${fileUrl(data.downloads.docx)}" download>DOCX</a>
+      <a href="${fileUrl(data.downloads.html)}" download>HTML</a>`;
     $("#btn-export").disabled = false;
+  }
+
+  const outlineDetails = $("#slide-outline-details");
+  const outlineEl = $("#slide-outline");
+  if (data.outline_md) {
+    outlineEl.innerHTML = renderMarkdownLite(data.outline_md);
+    outlineDetails?.classList.remove("hidden");
+  } else {
+    outlineEl.innerHTML = "";
+    outlineDetails?.classList.add("hidden");
+  }
+}
+
+function renderVoiceReply(data, { keepAudio = false } = {}) {
+  state.history = data.history ?? state.history;
+  renderVoiceChat();
+  if (data.status) {
+    $("#voice-turn-status").textContent = stripMd(data.status);
+  }
+  const out = $("#voice-audio-out");
+  if (data.voiceout_path) {
+    out.innerHTML = `<audio controls src="${fileUrl(data.voiceout_path)}"></audio>`;
+  } else if (!keepAudio) {
+    out.innerHTML = "";
   }
 }
 
 async function sendVoiceTurn() {
   const message = $("#voice-message").value.trim();
-  const topic = effectiveTopic("");
-  const useRag = $("#use-rag").checked;
+  if (!message) {
+    showError("Enter a message first.");
+    return;
+  }
+  const topic = voiceEffectiveTopic();
+  const useRag = voiceUseRag();
   const docIds = effectiveDocIds([]);
+  const language = state.voicePresets?.default_language || "en";
   const data = await callApi("teacher_voice_turn", [
     message,
     state.voiceMode,
@@ -603,26 +1083,168 @@ async function sendVoiceTurn() {
     useRag,
     state.history,
     docIds,
+    language,
+    null,
   ]);
-  state.history = data.history || [];
-  $("#voice-reply").textContent = data.assistant || data.status || "";
+  $("#voice-message").value = "";
+  renderVoiceReply(data);
 }
 
-async function analyzePitch() {
-  const file = $("#coach-audio").files?.[0];
-  if (!file) {
-    showError("Choose an audio file to analyze.");
-    return;
+async function sendVoiceAudioTurn(audioPath) {
+  const topic = voiceEffectiveTopic();
+  const useRag = voiceUseRag();
+  const docIds = effectiveDocIds([]);
+  const language = state.voicePresets?.default_language || "en";
+  const asr = state.voicePresets?.default_asr || null;
+  const data = await callApi("teacher_voice_audio_turn", [
+    audioPath,
+    state.voiceMode,
+    topic,
+    state.workspaceSessionId,
+    useRag,
+    state.history,
+    docIds,
+    language,
+    asr,
+  ]);
+  if (data.user_text) $("#voice-message").value = data.user_text;
+  renderVoiceReply(data);
+}
+
+async function speakVoiceReply(firstSentenceOnly) {
+  const language = state.voicePresets?.default_language || "en";
+  const data = await callApi("teacher_voice_speak", [state.history, language, firstSentenceOnly]);
+  $("#voice-turn-status").textContent = stripMd(data.status || "VoiceOut ready.");
+  if (data.voiceout_path) {
+    $("#voice-audio-out").innerHTML = `<audio controls src="${fileUrl(data.voiceout_path)}"></audio>`;
   }
+}
+
+async function clearVoiceConversation() {
+  const data = await callApi("teacher_voice_clear", []);
+  state.history = [];
+  renderVoiceChat();
+  $("#voice-message").value = "";
+  $("#voice-turn-status").textContent = stripMd(data.status || "Conversation cleared.");
+  $("#voice-audio-out").innerHTML = "";
+}
+
+async function loadSamplePitch() {
+  const data = await callApi("load_sample_pitch", []);
+  state.pendingCoachAudioPath = data.audio_path;
+  $("#coach-record-status").textContent = stripMd(data.status || "Sample clip loaded.");
+}
+
+async function analyzePitchWithPath(audioPath) {
+  const language = $("#coach-language")?.value || "en";
+  const asr = $("#coach-asr")?.value || null;
+  const speakRewrite = $("#coach-speak-rewrite")?.checked || false;
   $("#coach-panel").innerHTML = `
     <div class="studio-coach-panel studio-coach-live">
       <div class="studio-coach-header"><span class="studio-coach-dot"></span>
       <span class="studio-coach-label">Analyzing…</span></div>
     </div>`;
-  const b64 = await fileToBase64(file);
-  const saved = await callApi("save_upload", [file.name, b64]);
-  const data = await callApi("analyze_pitch", [saved.path]);
+  const data = await callApi("analyze_pitch", [audioPath, language, asr, speakRewrite]);
   $("#coach-panel").innerHTML = data.coach_panel_html || "";
+}
+
+async function analyzePitch() {
+  let path = state.pendingCoachAudioPath;
+  const file = $("#coach-audio").files?.[0];
+  if (file) path = await uploadFile(file);
+  if (!path) {
+    showError("Record or upload audio to analyze.");
+    return;
+  }
+  await analyzePitchWithPath(path);
+}
+
+async function startBrowserRecording(statusEl) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  state.browserRecordChunks = [];
+  state.browserRecorder = new MediaRecorder(stream);
+  state.browserRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) state.browserRecordChunks.push(e.data);
+  };
+  state.browserRecorder.start();
+  if (statusEl) statusEl.textContent = "Recording… click Stop when done.";
+}
+
+async function stopBrowserRecording(statusEl) {
+  return new Promise((resolve, reject) => {
+    const recorder = state.browserRecorder;
+    if (!recorder) {
+      reject(new Error("No active recording."));
+      return;
+    }
+    recorder.onstop = async () => {
+      recorder.stream.getTracks().forEach((t) => t.stop());
+      state.browserRecorder = null;
+      const blob = new Blob(state.browserRecordChunks, { type: "audio/webm" });
+      state.browserRecordChunks = [];
+      try {
+        const file = new File([blob], "browser_recording.webm", { type: "audio/webm" });
+        const path = await uploadFile(file);
+        if (statusEl) statusEl.textContent = "Recording saved.";
+        resolve(path);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    recorder.stop();
+  });
+}
+
+async function startRecording(target, statusEl, startBtn, stopBtn) {
+  state.recordingTarget = target;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  if (state.useBrowserMic) {
+    try {
+      await startBrowserRecording(statusEl);
+    } catch (err) {
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      showError(`Microphone error: ${err.message}`);
+    }
+    return;
+  }
+  try {
+    const maxSec = state.voicePresets?.max_seconds || 30;
+    const data = await callApi("recording_start", [maxSec]);
+    if (statusEl) statusEl.textContent = stripMd(data.status || "Recording…");
+  } catch (_err) {
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+}
+
+async function stopRecording(statusEl, startBtn, stopBtn) {
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  let path = null;
+  if (state.useBrowserMic) {
+    path = await stopBrowserRecording(statusEl);
+  } else {
+    const data = await callApi("recording_stop", []);
+    path = data.path;
+    if (statusEl) statusEl.textContent = stripMd(data.status || "Recording saved.");
+  }
+  if (state.recordingTarget === "voice") state.pendingVoiceAudioPath = path;
+  if (state.recordingTarget === "coach") state.pendingCoachAudioPath = path;
+  state.recordingTarget = null;
+  return path;
+}
+
+async function sendVoiceFromRecording() {
+  let path = state.pendingVoiceAudioPath;
+  const file = $("#voice-audio-upload").files?.[0];
+  if (file) path = await uploadFile(file);
+  if (!path) {
+    showError("Record or upload audio first.");
+    return;
+  }
+  await sendVoiceAudioTurn(path);
 }
 
 function bindUi() {
@@ -632,9 +1254,7 @@ function bindUi() {
 
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item[data-view]").forEach((b) =>
-        b.classList.remove("active")
-      );
+      document.querySelectorAll(".nav-item[data-view]").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       $(".workspace").dataset.view = btn.dataset.view;
       syncResearchLayout();
@@ -642,14 +1262,14 @@ function bindUi() {
     });
   });
 
-  $("#btn-open-research-view")?.addEventListener("click", openResearchView);
+  $("#btn-open-settings")?.addEventListener("click", openSettingsDrawer);
+  $("#btn-close-settings")?.addEventListener("click", closeSettingsDrawer);
+  $("#settings-backdrop")?.addEventListener("click", closeSettingsDrawer);
+  $("#btn-reload-model")?.addEventListener("click", () => reloadModelFromSettings().catch(() => {}));
 
-  $("#sidebar-open")?.addEventListener("click", () =>
-    $("#sidebar").classList.add("open")
-  );
-  $("#sidebar-close")?.addEventListener("click", () =>
-    $("#sidebar").classList.remove("open")
-  );
+  $("#btn-open-research-view")?.addEventListener("click", openResearchView);
+  $("#sidebar-open")?.addEventListener("click", () => $("#sidebar").classList.add("open"));
+  $("#sidebar-close")?.addEventListener("click", () => $("#sidebar").classList.remove("open"));
 
   $("#workspace-topic").addEventListener("input", (e) => {
     state.workspaceTopic = e.target.value.trim();
@@ -659,6 +1279,7 @@ function bindUi() {
   $("#workspace-session").addEventListener("change", (e) => {
     state.workspaceSessionId = e.target.value;
     refreshDocuments().catch(() => {});
+    refreshDebugDocuments().catch(() => {});
   });
 
   $("#workspace-refresh-sessions").addEventListener("click", () => {
@@ -666,33 +1287,71 @@ function bindUi() {
   });
 
   $("#btn-ingest-url").addEventListener("click", () => ingestUrl().catch(() => {}));
-  $("#ingest-file").addEventListener("change", (e) =>
-    ingestFiles(e.target.files).catch(() => {})
-  );
+  $("#ingest-file").addEventListener("change", (e) => ingestFiles(e.target.files).catch(() => {}));
   $("#ingest-workflow")?.addEventListener("change", syncIngestWorkflowUi);
-  $("#btn-discover")?.addEventListener("click", () => discoverSources().catch(() => {}));
-  $("#btn-auto-ingest")?.addEventListener("click", () => autoSearchIngest().catch(() => {}));
+  $("#btn-discover").addEventListener("click", () => discoverSources().catch(() => {}));
+  $("#btn-auto-ingest").addEventListener("click", () => autoSearchIngest().catch(() => {}));
   $("#url-select-all")?.addEventListener("change", (e) => {
-    const checked = e.target.checked;
     document.querySelectorAll("#url-choices-list input[type=checkbox]").forEach((box) => {
-      box.checked = checked;
+      box.checked = e.target.checked;
     });
     syncUrlSelectAll();
   });
-  $("#btn-research-ask")?.addEventListener("click", () => askResearchQuestion().catch(() => {}));
+
+  $("#slide-source-mode")?.addEventListener("change", syncSlideSourceUi);
+  $("#slide-search-workflow")?.addEventListener("change", syncSlideSourceUi);
+  $("#btn-slide-discover")?.addEventListener("click", () => discoverSlideSources().catch(() => {}));
+
+  $("#btn-research-ask").addEventListener("click", () => askResearchQuestion().catch(() => {}));
   $("#research-question")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       askResearchQuestion().catch(() => {});
     }
   });
+
   $("#btn-generate").addEventListener("click", () => generateSlides().catch(() => {}));
   $("#btn-voice-send").addEventListener("click", () => sendVoiceTurn().catch(() => {}));
+  $("#btn-voice-audio-send").addEventListener("click", () => sendVoiceFromRecording().catch(() => {}));
+  $("#btn-voice-discover")?.addEventListener("click", () => discoverVoiceSources().catch(() => {}));
+  $("#btn-voice-auto-ingest")?.addEventListener("click", () => autoVoiceIngest().catch(() => {}));
+  $("#btn-voice-ingest")?.addEventListener("click", () => ingestVoiceSources().catch(() => {}));
+  $("#voice-ingest-file")?.addEventListener("change", (e) => ingestVoiceSources().catch(() => {}));
+  $("#btn-voice-speak-full")?.addEventListener("click", () => speakVoiceReply(false).catch(() => {}));
+  $("#btn-voice-speak-quick")?.addEventListener("click", () => speakVoiceReply(true).catch(() => {}));
+  $("#btn-voice-clear")?.addEventListener("click", () => clearVoiceConversation().catch(() => {}));
+  $("#btn-coach-sample")?.addEventListener("click", () => loadSamplePitch().catch(() => {}));
   $("#btn-analyze").addEventListener("click", () => analyzePitch().catch(() => {}));
+  $("#btn-debug-send").addEventListener("click", () => sendDebugMessage().catch(() => {}));
+  $("#debug-session")?.addEventListener("change", () => refreshDebugDocuments().catch(() => {}));
+  $("#debug-refresh-sessions")?.addEventListener("click", () => {
+    refreshDebugSessions().catch(() => {});
+    refreshDebugDocuments().catch(() => {});
+  });
+  $("#debug-use-rag")?.addEventListener("change", updateDebugRagHint);
+  $("#debug-message")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendDebugMessage().catch(() => {});
+    }
+  });
+
+  $("#btn-voice-record-start")?.addEventListener("click", () =>
+    startRecording("voice", $("#voice-record-status"), $("#btn-voice-record-start"), $("#btn-voice-record-stop")).catch(() => {})
+  );
+  $("#btn-voice-record-stop")?.addEventListener("click", () =>
+    stopRecording($("#voice-record-status"), $("#btn-voice-record-start"), $("#btn-voice-record-stop")).catch(() => {})
+  );
+  $("#btn-coach-record-start")?.addEventListener("click", () =>
+    startRecording("coach", $("#coach-record-status"), $("#btn-coach-record-start"), $("#btn-coach-record-stop")).catch(() => {})
+  );
+  $("#btn-coach-record-stop")?.addEventListener("click", () =>
+    stopRecording($("#coach-record-status"), $("#btn-coach-record-start"), $("#btn-coach-record-stop")).catch(() => {})
+  );
 
   $("#btn-export").addEventListener("click", () => {
     const p = state.downloads?.pptx;
-    if (p) window.open(`/file=${encodeURIComponent(p)}`, "_blank");
+    if (p) window.open(fileUrl(p), "_blank");
   });
 
   $("#btn-new-session").addEventListener("click", () => {
@@ -701,7 +1360,7 @@ function bindUi() {
     state.discoveredUrls = [];
     state.selectedUrls = [];
     renderResearchChat();
-    renderUrlChoices([], []);
+    renderResearchUrlChoices([], []);
     $("#workspace-session").value = "";
     $("#ingest-status").textContent =
       "Set workspace topic and ingest sources to start a new ResearchMind session.";
@@ -713,6 +1372,7 @@ function bindUi() {
       document.querySelectorAll(".mode-card").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       state.voiceMode = btn.dataset.mode;
+      syncVoiceModeUi();
     });
   });
 }
