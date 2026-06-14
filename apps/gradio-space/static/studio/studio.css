@@ -964,8 +964,10 @@ body {
 .workspace[data-view="voice"] .col-debug,
 .workspace[data-view="voice"] .view-coach-only { display: none; }
 
+.view-voice-only { display: none; }
+
 .workspace[data-view="voice"] {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   max-width: 1280px;
   margin-left: auto;
   margin-right: auto;
@@ -973,6 +975,7 @@ body {
 }
 
 .workspace[data-view="voice"] .col-studio {
+  grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
 }
@@ -1088,6 +1091,9 @@ body {
 .workspace[data-view="coach"] .col-slides { display: none; }
 
 .workspace[data-view="coach"] .view-voice-only { display: none; }
+
+.workspace[data-view="slides"] .col-studio,
+.workspace[data-view="research"] .col-debug { display: none; }
 
 .workspace[data-view="coach"] {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
