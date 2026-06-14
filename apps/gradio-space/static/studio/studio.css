@@ -384,6 +384,22 @@ body {
 
 .controls-actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
 
+.region-loading-host,
+.card-ingest,
+.card-chat,
+.voice-main-card,
+.coach-panel-wrap,
+.coach-debug-card,
+.controls-panel,
+.voice-rail-controls {
+  position: relative;
+}
+
+.region-loading,
+.canvas-overlay {
+  border-radius: inherit;
+}
+
 .slide-canvas {
   position: relative;
   flex: 1;
