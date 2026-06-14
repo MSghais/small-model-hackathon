@@ -8,6 +8,7 @@ import gradio as gr
 from agent.models import ResearchIngestResult
 from agent.runner import AgentRunner
 from gradio_space.model_loading import chat, ensure_model_loaded, get_active_model_key
+from gradio_space.spaces_runtime import gpu_task
 from inference.factory import get_backend
 from researchmind.ingest import IngestPipeline
 
@@ -209,6 +210,7 @@ def rag_scope_hint(session_id: str, doc_ids: list[str] | None) -> str:
     return "RAG scope: **entire** indexed corpus (all sessions)."
 
 
+@gpu_task(duration=180)
 def run_research_question(
     question: str,
     *,
@@ -252,6 +254,7 @@ def run_research_question(
     )
 
 
+@gpu_task(duration=180)
 def rag_aware_chat(
     message: str,
     history: list,

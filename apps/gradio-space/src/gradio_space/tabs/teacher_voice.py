@@ -18,6 +18,7 @@ from gradio_space.research_helpers import (
     resolve_topic,
     trace_as_dict,
 )
+from gradio_space.spaces_runtime import gpu_task
 from gradio_space.tabs.research_mind import (
     auto_search_ingest,
     discover_sources,

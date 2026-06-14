@@ -12,6 +12,7 @@ from gradio import mount_gradio_app
 from gradio_space.api.studio import register_studio_apis
 from gradio_space.app import build_demo
 from gradio_space.model_loading import preload_active_model
+from gradio_space.spaces_runtime import is_hf_gradio_runtime
 from gradio_space.tabs.education_pptx import gradio_allowed_paths
 from gradio_space.tabs.echo_coach import echo_coach_allowed_paths
 from gradio_space.tabs.research_mind import researchmind_allowed_paths
@@ -66,7 +67,8 @@ def create_server() -> gr.Server:
 
 
 def main() -> None:
-    preload_active_model()
+    if not is_hf_gradio_runtime():
+        preload_active_model()
     server = create_server()
     port = int(os.environ.get("PORT", "7860"))
     server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")

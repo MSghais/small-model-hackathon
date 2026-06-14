@@ -4,13 +4,13 @@ overview: "Add Gradio SDK deployment files on main alongside the existing Docker
 todos:
   - id: root-gradio-files
     content: Add root app.py, requirements.txt, packages.txt with editable workspace installs and Debian deps
-    status: in_progress
+    status: completed
   - id: readme-gradio-sdk
     content: "Fix README YAML frontmatter and switch to sdk: gradio (sdk_version 6.16.0, app_file: app.py)"
-    status: pending
+    status: in_progress
   - id: spaces-runtime
     content: Add gradio_space/spaces_runtime.py with gpu_task decorator and is_hf_gradio_runtime()
-    status: pending
+    status: completed
   - id: zerogpu-decorators
     content: Apply @gpu_task to LLM entry points in model_loading, research_helpers, and tab handlers; skip preload on HF Gradio runtime in server.py
     status: pending

@@ -1,13 +1,15 @@
 ---
-
 title: Lesson Agent
 emoji: 📚
 colorFrom: blue
 colorTo: green
-sdk: docker
-app_port: 7860
+sdk: gradio
+sdk_version: "6.16.0"
+app_file: app.py
+python_version: "3.12"
 pinned: false
 license: apache-2.0
+---
 
 # Lesson Agent
 
@@ -15,7 +17,7 @@ license: apache-2.0
 
 A local skill-based agent helps a teacher you know turn a **topic + grade level** into a downloadable **PowerPoint** — powered by a small transformers model (`MiniCPM5-1B` by default), no cloud LLM API.
 
-See **[USAGE.md](USAGE.md)** for local run, Docker smoke test, and HF Space deployment.
+See **[USAGE.md](USAGE.md)** for local run, Gradio SDK / ZeroGPU Space deployment, and Docker (later).
 
 ## Prerequisites
 
@@ -87,15 +89,12 @@ See [`.env.example`](.env.example) and [`models.yaml`](models.yaml) for model pr
 
 ## Hugging Face Space deployment
 
-1. Create a Space under [build-small-hackathon](https://huggingface.co/build-small-hackathon) with **Docker** SDK.
-2. Link this repository (root `Dockerfile` + root `README.md` YAML above).
-3. Hardware: **GPU basic** recommended for transformers (`minicpm5-1b`).
-4. Optional secrets: `ACTIVE_MODEL`, `N_GPU_LAYERS` (if using GGUF preset).
+1. Create a Space under [build-small-hackathon](https://huggingface.co/build-small-hackathon) with **Gradio** SDK (Blank template).
+2. Link this repository — HF builds from root `app.py` + `requirements.txt` (README YAML above).
+3. Hardware: **ZeroGPU** for burst GPU inference, or **GPU basic** for always-on GPU.
+4. Set `ACTIVE_MODEL=minicpm5-1b`, `ALLOW_MODEL_SWITCH=false`, `RESEARCHMIND_DATA_DIR=/tmp/researchmind`.
 
-```bash
-docker build -t hackathon-space .
-docker run --rm -p 7860:7860 -e ACTIVE_MODEL=minicpm5-1b hackathon-space
-```
+A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `sdk: docker`). See [USAGE.md](USAGE.md).
 
 ## Hackathon checklist
 

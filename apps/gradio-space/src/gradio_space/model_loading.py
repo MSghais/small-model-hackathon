@@ -1,3 +1,4 @@
+from gradio_space.spaces_runtime import gpu_task
 from inference.config import get_app_config, get_model_config
 from inference.factory import get_backend, reset_backend
 from inference.response_clean import strip_reasoning_output
@@ -74,6 +75,7 @@ def warmup(model_key: str | None = None) -> str:
     )
 
 
+@gpu_task(duration=120)
 def reload_model(model_key: str) -> str:
     """Clear cached backend and reload weights for settings panel."""
     global _current_model_key
@@ -120,6 +122,7 @@ def _history_to_messages(history: list) -> list[dict[str, str]]:
     return messages
 
 
+@gpu_task(duration=60)
 def chat(message: str, history: list, model_key: str) -> str:
     load_error = ensure_model_loaded(model_key)
     if load_error:
