@@ -43,8 +43,8 @@ def parse_args():
         "--model-type",
         type=str,
         default="auto",
-        choices=["auto", "hf", "ensemble"],
-        help="auto detects ensemble checkpoints via manifest.json",
+        choices=["auto", "hf"],
+        help="Model loader backend (HuggingFace transformers)",
     )
     parser.add_argument(
         "--benchmarks",
