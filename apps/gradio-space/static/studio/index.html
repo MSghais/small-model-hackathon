@@ -291,8 +291,8 @@
     </section>
 
     <section class="col col-studio">
-      <h2 class="section-label">Step 3 · Studio Controls</h2>
-      <div class="card">
+      <h2 class="section-label view-voice-only">Step 3 · Studio Controls</h2>
+      <div class="card view-voice-only">
         <p class="card-title">RAG Scope</p>
         <label class="toggle-row">
           <span>Cross-Reference Sources</span>
@@ -300,7 +300,7 @@
         </label>
         <p class="status-text">Session and documents use workspace defaults above unless overridden per tool.</p>
       </div>
-      <div class="card">
+      <div class="card view-voice-only">
         <p class="card-title">Teacher Voice Mode</p>
         <div class="mode-cards" id="voice-modes">
           <button type="button" class="mode-card" data-mode="explain">Explain</button>
@@ -357,17 +357,24 @@
         <div id="voice-audio-out" class="voice-audio-out"></div>
       </div>
       <div class="card coach-panel-wrap">
-        <h2 class="section-label">EchoCoach Feedback</h2>
-        <div class="recording-row">
-          <button type="button" id="btn-coach-record-start" class="btn btn-secondary">Start mic</button>
-          <button type="button" id="btn-coach-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
+        <div class="coach-card-head">
+          <h2 class="section-label">EchoCoach · Pitch analysis</h2>
+          <p class="coach-card-desc">Record or upload a short pitch for pace, filler highlights, and spoken feedback.</p>
         </div>
-        <p id="coach-record-status" class="status-text"></p>
-        <button type="button" id="btn-coach-sample" class="btn btn-ghost btn-block">Load sample clip</button>
-        <label class="field">
-          <span>Or upload pitch (WAV)</span>
-          <input id="coach-audio" type="file" accept="audio/*" />
-        </label>
+        <div class="coach-capture-row">
+          <div class="coach-capture-controls">
+            <div class="recording-row coach-recording-row">
+              <button type="button" id="btn-coach-record-start" class="btn btn-secondary">Start mic</button>
+              <button type="button" id="btn-coach-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
+              <button type="button" id="btn-coach-sample" class="btn btn-ghost">Load sample</button>
+            </div>
+            <p id="coach-record-status" class="status-text coach-record-status"></p>
+          </div>
+          <label class="field coach-upload-field">
+            <span>Upload pitch (WAV)</span>
+            <input id="coach-audio" type="file" accept="audio/*" />
+          </label>
+        </div>
         <div class="controls-grid coach-presets">
           <label class="field">
             <span>Language</span>
@@ -378,19 +385,22 @@
             <select id="coach-asr" class="input"></select>
           </label>
         </div>
-        <label class="toggle-row">
+        <label class="toggle-row coach-voiceout-toggle">
           <span>Speak full rewrite (VoiceOut)</span>
           <input id="coach-speak-rewrite" type="checkbox" />
         </label>
-        <button type="button" id="btn-analyze" class="btn btn-secondary btn-block">Analyze pitch</button>
-        <div id="coach-panel"></div>
+        <button type="button" id="btn-analyze" class="btn btn-primary btn-block coach-analyze-btn">Analyze pitch</button>
+        <div id="coach-panel" class="coach-results-panel"></div>
       </div>
     </section>
 
     <section class="col col-debug">
-      <div class="card card-tall">
-        <h2 class="section-label">Chat (debug)</h2>
-        <p class="status-text">Plain chat or corpus-grounded answers — traces appear below when RAG is on.</p>
+      <div class="card card-tall coach-debug-card">
+        <div class="coach-card-head">
+          <h2 class="section-label">Chat (debug)</h2>
+          <p class="coach-card-desc view-coach-only">Plain chat or corpus-grounded answers — traces appear below when RAG is on.</p>
+          <p class="status-text view-debug-only">Plain chat or corpus-grounded answers — traces appear below when RAG is on.</p>
+        </div>
         <label class="toggle-row">
           <span>Use ResearchMind RAG</span>
           <input id="debug-use-rag" type="checkbox" />
