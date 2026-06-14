@@ -13,13 +13,12 @@ small-model-hackathon/
 └── research/              ← experiments (this tree)
     ├── finetune.py
     ├── data/
-    ├── ensemble/          ← uv workspace package
     └── evals/             ← uv workspace package
 ```
 
-Research code is a **uv workspace sibling** of `apps/*` and `libs/*`. Root `pyproject.toml` declares optional dependency groups (`finetune`, `ensemble`, `evals`) so the Docker Space image does not need to install torch-heavy extras unless you opt in locally.
+Research code is a **uv workspace sibling** of `apps/*` and `libs/*`. Root `pyproject.toml` declares optional dependency groups (`finetune`, `evals`, `lm-eval`) so the Docker Space image does not need to install torch-heavy extras unless you opt in locally.
 
-## Three tracks
+## Two tracks
 
 ### Fine-tuning
 
@@ -27,38 +26,12 @@ Research code is a **uv workspace sibling** of `apps/*` and `libs/*`. Root `pypr
 
 Outputs land in `models/finetuned/` — you can register a new preset in `models.yaml` pointing at merged weights for the **Well-Tuned** hackathon badge.
 
-### Ensemble (JEPA / world model)
+### Agentic and academic evals
 
-`research/ensemble/` explores a modular stack inspired by LeCun-style architectures:
+`research/evals/` (`slm-evals` package) scores **whole models** on:
 
-```text
-Input ──► Embedder + VectorStore (retrieval memory)
-              │
-              ▼
-         JEPA encoder ──► latent state
-              │
-              ├──► World model (multi-step latent rollout)
-              │
-              └──► Energy model (scores LLM draft continuations)
-                        │
-                        ▼
-              Small LLM generates N drafts → pick lowest energy
-```
-
-Two entry ensembles:
-
-| Module | File | Critic |
-| ------ | ---- | ------ |
-| JEPA track | `ensemble.jepa_ensemble` | JEPA latent prediction |
-| World track | `ensemble.world_ensemble` | Energy model over world-model rollouts |
-
-`TinyBackend` runs on CPU with random weights for smoke tests. `HFBackend` loads real Hub models via `transformers` + optional `peft` LoRA banks.
-
-Eval harnesses (`ensemble.eval.jepa_harness`, `ensemble.eval.world_harness`) measure draft-selection accuracy on `research/data/benchmark-qa.jsonl` with optional KB retrieval from `benchmark-kb.jsonl`.
-
-### Agentic evals
-
-`research/evals/` (`slm-evals` package) scores **whole models** on public agent benchmarks — function calling, multi-turn tool use, GAIA tasks, and SWE-bench patches. This complements ensemble harnesses: evals test end-to-end model behavior; ensemble harnesses test internal selection mechanisms on a small custom QA set.
+- **Agentic benchmarks** — BFCL, τ-bench, GAIA, SWE-bench (`slm-benchmark`)
+- **Academic benchmarks** — GSM8K, ARC, HellaSwag, etc. via lm-evaluation-harness (`slm-lm-eval`)
 
 ## Data flow
 
@@ -79,20 +52,12 @@ flowchart LR
     tau[tau-bench]
     gaia[GAIA]
     swe[SWE-bench]
-  end
-
-  subgraph ens [ensemble]
-    jepa[JEPA harness]
-    world[World harness]
+    lmeval[lm-eval tasks]
   end
 
   lesson --> train
   train --> ckpt
   ckpt --> evals
-  qa --> jepa
-  kb --> jepa
-  qa --> world
-  kb --> world
 ```
 
 ## When to use which tool
@@ -101,14 +66,11 @@ flowchart LR
 | ---- | ---- |
 | Improve lesson slide quality on your data | `finetune.py` + optional eval before/after |
 | Compare base vs LoRA on public agent tasks | `slm-benchmark` |
-| Prototype latent draft selection | `ensemble` smoke → harness |
+| Compare base vs LoRA on academic tasks | `slm-lm-eval` |
 | Ship in Gradio Space | `apps/gradio-space` only — wire new weights via `models.yaml` |
 
-## Workspace packages
+## Workspace package
 
-Both subpackages are listed in root `[tool.uv.workspace] members`:
+`research/evals` is listed in root `[tool.uv.workspace] members` as import name `slm_evals`, CLI `slm-benchmark` and `slm-lm-eval`.
 
-- `research/ensemble` → import name `ensemble`
-- `research/evals` → import name `slm_evals`, CLI `slm-benchmark`
-
-Run with `uv run --package <name>` from the repo root so uv resolves workspace paths and shared lockfile versions.
+Run with `uv run --package slm-evals ...` from the repo root so uv resolves workspace paths and shared lockfile versions.

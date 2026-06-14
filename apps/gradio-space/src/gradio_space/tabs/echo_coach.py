@@ -7,6 +7,7 @@ import gradio as gr
 from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
 from gradio_space.model_loading import ensure_model_loaded, get_active_model_key
+from gradio_space.spaces_runtime import gpu_task
 from gradio_space.ui.components import (
     build_advanced_panel,
     build_recording_block,
@@ -64,6 +65,7 @@ def load_sample_pitch() -> tuple[str | None, str]:
     )
 
 
+@gpu_task(duration=180)
 def analyze_pitch(
     audio_path: str | None,
     language: str,

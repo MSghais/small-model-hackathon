@@ -23,6 +23,7 @@ from gradio_space.research_helpers import (
     run_research_question,
     trace_summary_markdown,
 )
+from gradio_space.spaces_runtime import gpu_task
 from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES, WorkspaceWidgets
 from inference.factory import get_backend
 
@@ -35,6 +36,7 @@ def _require_topic(topic: str | None) -> str | None:
     return None
 
 
+@gpu_task(duration=120)
 def discover_sources(
     topic: str,
     session_id: str,
@@ -118,6 +120,7 @@ def discover_sources(
         )
 
 
+@gpu_task(duration=180)
 def auto_search_ingest(
     topic: str,
     session_id: str,
@@ -279,6 +282,7 @@ def ingest_selected(
         )
 
 
+@gpu_task(duration=180)
 def ask_question(
     question: str,
     session_id: str,

@@ -7,7 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "agent",
     "echocoach",
-    "ensemble",
     "gradio-space",
     "inference",
     "researchmind",
@@ -23,11 +22,6 @@ finetune = [
     "datasets>=3.0.0",
     "peft>=0.14.0",
 ]
-ensemble = [
-    "accelerate>=1.2.0",
-    "peft>=0.14.0",
-    "transformers>=5.7.0",
-]
 evals = [
     "slm-evals",
 ]
@@ -39,14 +33,12 @@ lm-eval = [
 members = [
     "apps/*",
     "libs/*",
-    "research/ensemble",
     "research/evals",
 ]
 
 [tool.uv.sources]
 agent = { workspace = true }
 echocoach = { workspace = true }
-ensemble = { workspace = true }
 gradio-space = { workspace = true }
 inference = { workspace = true }
 researchmind = { workspace = true }

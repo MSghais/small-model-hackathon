@@ -16,6 +16,7 @@ from gradio_space.research_helpers import (
     resolve_session,
     resolve_topic,
 )
+from gradio_space.spaces_runtime import gpu_task
 from gradio_space.ui.components import build_advanced_panel, DOC_CHOICE_LIST_CLASSES, WorkspaceWidgets
 from inference.factory import get_backend
 from researchmind.config import get_config
@@ -158,6 +159,7 @@ def update_source_visibility(source_mode_label: str, search_workflow_label: str)
     )
 
 
+@gpu_task(duration=120)
 def discover_lesson_sources(
     topic: str,
     session_id: str,
@@ -208,6 +210,7 @@ def discover_lesson_sources(
         return msg, gr.update(choices=[], value=[]), refresh_sessions(session_id)
 
 
+@gpu_task(duration=300)
 def generate_lesson_slides(
     topic: str,
     grade: str,

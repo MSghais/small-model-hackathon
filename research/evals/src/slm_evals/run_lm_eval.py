@@ -1,8 +1,8 @@
 """
 slm-lm-eval — Academic benchmarks via lm-evaluation-harness
 ============================================================
-Run GSM8K, ARC, HellaSwag, and related tasks against presets, finetuned
-checkpoints, or ensemble manifests.
+Run GSM8K, ARC, HellaSwag, and related tasks against presets and finetuned
+checkpoints.
 
 Usage:
     uv run --package slm-evals slm-lm-eval \\
@@ -23,8 +23,6 @@ from typing import Any
 
 import yaml
 
-# Register custom ensemble backend before simple_evaluate().
-import slm_evals.lm_eval.ensemble_lm  # noqa: F401
 from slm_evals.lm_eval.preset_resolver import resolve_model_spec
 from slm_evals.lm_eval.profiles import (
     config_path_for_profile,
@@ -34,7 +32,7 @@ from slm_evals.lm_eval.profiles import (
 
 
 def _ensure_lm_eval_models_registered() -> None:
-    """Import lm-eval model backends so registry includes hf and ensemble-lm."""
+    """Import lm-eval model backends so registry includes hf."""
     import lm_eval.models  # noqa: F401 — registers bundled backends when available
 
     try:
@@ -98,7 +96,7 @@ def parse_args() -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        help="HF Hub id, merged checkpoint dir, or ensemble manifest dir",
+        help="HF Hub id or merged checkpoint dir",
     )
     parser.add_argument("--adapter", type=str, default=None, help="LoRA adapter path")
     parser.add_argument(
@@ -228,8 +226,6 @@ def write_summary_md(
     ]
     if spec.adapter_path:
         lines.append(f"- adapter: `{spec.adapter_path}`")
-    if spec.checkpoint_path:
-        lines.append(f"- ensemble checkpoint: `{spec.checkpoint_path}`")
     lines.extend(
         [
             f"- tasks: {', '.join(cfg['tasks'])}",
@@ -384,7 +380,6 @@ def main() -> int:
         "lm_eval_model": spec.lm_eval_model,
         "base_model": spec.base_model,
         "adapter_path": spec.adapter_path,
-        "checkpoint_path": spec.checkpoint_path,
         "tasks": cfg["tasks"],
         "num_fewshot": cfg.get("num_fewshot"),
         "limit": cfg.get("limit"),

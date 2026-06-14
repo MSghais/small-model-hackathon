@@ -10,7 +10,6 @@ from typing import Any
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
-_MANIFEST_FILE = "manifest.json"
 _HF_HUB_PREFIXES = (
     "openbmb/",
     "google/",
@@ -24,15 +23,6 @@ def _ensure_inference_on_path() -> None:
     libs = _REPO_ROOT / "libs" / "inference" / "src"
     if str(libs) not in sys.path:
         sys.path.insert(0, str(libs))
-
-
-def _is_ensemble_checkpoint(path: str | Path) -> bool:
-    try:
-        from ensemble.checkpoint import is_ensemble_checkpoint
-
-        return is_ensemble_checkpoint(path)
-    except ImportError:
-        return (Path(path) / _MANIFEST_FILE).is_file()
 
 
 def _looks_like_hf_hub_id(model_path: str) -> bool:
@@ -57,33 +47,14 @@ def _resolve_model_path(model_path: str) -> Path:
     return path
 
 
-def _list_ensemble_checkpoint_names() -> list[str]:
-    root = _REPO_ROOT / "models" / "ensemble"
-    if not root.is_dir():
-        return []
-    names: list[str] = []
-    for child in sorted(root.iterdir()):
-        if child.is_dir() and (child / _MANIFEST_FILE).is_file():
-            names.append(child.name)
-    return names
-
-
 def _missing_local_model_message(path: Path) -> str:
-    msg = f"Local model path not found: {path}"
-    ensembles = _list_ensemble_checkpoint_names()
-    if ensembles:
-        msg += (
-            "\nEnsemble checkpoints under models/ensemble/: "
-            + ", ".join(ensembles)
-        )
-    return msg
+    return f"Local model path not found: {path}"
 
 
 def _invalid_local_model_message(path: Path) -> str:
     return (
         f"Local path is not a recognized checkpoint: {path}\n"
-        f"Expected ensemble manifest at {path / _MANIFEST_FILE} "
-        "or HuggingFace config.json / adapter_config.json."
+        "Expected HuggingFace config.json or adapter_config.json."
     )
 
 
@@ -101,21 +72,6 @@ def _resolve_explicit_model_path(
     if not _looks_like_hf_hub_id(model_path):
         if not path.exists():
             raise FileNotFoundError(_missing_local_model_message(path))
-        if path.is_dir() and _is_ensemble_checkpoint(path):
-            args: dict[str, Any] = {"checkpoint_path": resolved}
-            if dtype:
-                args["dtype"] = dtype
-            if device:
-                args["device"] = device
-            return LMEvalModelSpec(
-                lm_eval_model="ensemble-lm",
-                model_args=args,
-                preset_key=None,
-                base_model=resolved,
-                adapter_path=None,
-                checkpoint_path=resolved,
-                trust_remote_code=trust_remote_code or False,
-            )
         if path.is_dir() and not (
             (path / "config.json").is_file()
             or (path / "adapter_config.json").is_file()
@@ -139,6 +95,8 @@ def _resolve_explicit_model_path(
         args["peft"] = peft
     if dtype:
         args["dtype"] = dtype
+    if device:
+        args["device"] = device
 
     return LMEvalModelSpec(
         lm_eval_model="hf",
@@ -146,7 +104,6 @@ def _resolve_explicit_model_path(
         preset_key=None,
         base_model=base,
         adapter_path=peft,
-        checkpoint_path=None,
         trust_remote_code=bool(args["trust_remote_code"]),
     )
 
@@ -170,7 +127,6 @@ class LMEvalModelSpec:
     preset_key: str | None
     base_model: str
     adapter_path: str | None
-    checkpoint_path: str | None
     trust_remote_code: bool
 
     def model_args_string(self) -> str:
@@ -255,22 +211,6 @@ def _resolve_from_preset(
             raise FileNotFoundError(_missing_local_model_message(path))
         model_id = str(path)
 
-    if _is_ensemble_checkpoint(model_id):
-        args: dict[str, Any] = {"checkpoint_path": model_id}
-        if dtype:
-            args["dtype"] = dtype
-        if device:
-            args["device"] = device
-        return LMEvalModelSpec(
-            lm_eval_model="ensemble-lm",
-            model_args=args,
-            preset_key=preset_key,
-            base_model=model_id,
-            adapter_path=None,
-            checkpoint_path=model_id,
-            trust_remote_code=model.trust_remote_code,
-        )
-
     adapter = adapter_override or model.adapter_path
     trust = (
         trust_remote_code
@@ -282,6 +222,8 @@ def _resolve_from_preset(
         args["peft"] = adapter
     if dtype:
         args["dtype"] = dtype
+    if device:
+        args["device"] = device
 
     return LMEvalModelSpec(
         lm_eval_model="hf",
@@ -289,6 +231,5 @@ def _resolve_from_preset(
         preset_key=preset_key,
         base_model=model_id,
         adapter_path=adapter,
-        checkpoint_path=None,
         trust_remote_code=trust,
     )

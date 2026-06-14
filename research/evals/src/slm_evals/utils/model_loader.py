@@ -7,7 +7,6 @@ Returns a model_bundle dict that every benchmark consumes.
 
 from __future__ import annotations
 import torch
-from pathlib import Path
 from typing import Any
 
 
@@ -18,74 +17,6 @@ DTYPE_MAP = {
 }
 
 
-def _resolve_model_type(model_path: str, model_type: str | None) -> str:
-    if model_type and model_type != "auto":
-        return model_type
-    try:
-        from ensemble.checkpoint import is_ensemble_checkpoint
-
-        if is_ensemble_checkpoint(model_path):
-            return "ensemble"
-    except ImportError:
-        pass
-    return "hf"
-
-
-def load_ensemble_model(
-    model_path: str,
-    device: str = "auto",
-    dtype: str = "bfloat16",
-) -> dict[str, Any]:
-    """Load a saved JEPA ensemble checkpoint (LLM + emb + JEPA + bridge)."""
-    from ensemble.checkpoint import load_checkpoint
-
-    resolved_device = (
-        "cpu"
-        if device == "cpu"
-        else None
-        if device == "auto"
-        else device
-    )
-    load_in_4bit = dtype == "int4"
-    ens = load_checkpoint(
-        model_path,
-        device=resolved_device,
-        load_in_4bit=load_in_4bit,
-    )
-
-    param_count = sum(p.numel() for p in ens.parameters()) / 1e9
-    llm_device = str(ens.llm.device)
-    tokenizer = getattr(ens.llm, "tokenizer", None)
-
-    def generate_fn(
-        prompt: str,
-        max_new_tokens: int = 512,
-        temperature: float = 0.0,
-        stop_strings: list[str] | None = None,
-    ) -> str:
-        text = ens.generate_text(
-            prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-        )
-        if stop_strings:
-            for stop in stop_strings:
-                if stop in text:
-                    text = text.split(stop, 1)[0]
-        return text.strip()
-
-    return {
-        "model": ens,
-        "tokenizer": tokenizer,
-        "device": llm_device,
-        "dtype": dtype,
-        "param_count": param_count,
-        "model_path": str(model_path),
-        "model_type": "ensemble",
-        "generate_fn": generate_fn,
-    }
-
-
 def load_model(
     model_path: str,
     device: str = "auto",
@@ -94,9 +25,6 @@ def load_model(
 ) -> dict[str, Any]:
     """
     Load model + tokenizer from a local path or HF Hub ID.
-
-    Set model_type to ``ensemble`` (or use a path with manifest.json) for
-    saved JEPA ensemble checkpoints under models/ensemble/.
 
     Returns
     -------
@@ -109,9 +37,11 @@ def load_model(
         model_path    – original path string
         generate_fn   – convenience callable (prompt → str)
     """
-    resolved = _resolve_model_type(model_path, model_type)
-    if resolved == "ensemble":
-        return load_ensemble_model(model_path, device=device, dtype=dtype)
+    if model_type and model_type not in ("auto", "hf"):
+        raise ValueError(
+            f"Unsupported model_type {model_type!r}; use 'auto' or 'hf'."
+        )
+
     # ── lazy imports so the module is importable without torch installed ──────
     try:
         from transformers import (
