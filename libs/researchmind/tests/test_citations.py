@@ -65,3 +65,11 @@ def test_clean_model_answer_strips_thinking_block():
     raw = f"{think_open}\nplan\n{think_close}\n\nAgents use tools and memory [1]."
     cleaned = clean_model_answer(raw)
     assert cleaned == "Agents use tools and memory [1]."
+
+
+def test_clean_model_answer_rejects_unclosed_thinking():
+    rt_open = "<" + "redacted_thinking" + ">"
+    raw = f"{rt_open}\nWe are given a context and need to plan the answer."
+    cleaned = clean_model_answer(raw)
+    assert "redacted_thinking" not in cleaned
+    assert "planning text without a final answer" in cleaned

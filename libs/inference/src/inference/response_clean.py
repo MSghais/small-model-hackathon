@@ -50,8 +50,10 @@ _COMPLETE_SENTENCE = re.compile(r"[.!?][\"')\]]*\s*$")
 _LIST_OUTLINE = re.compile(r"^\d+\.\s", re.MULTILINE)
 _REASONING_OPENERS = (
     "we need to",
+    "we are given",
     "first,",
     "first, the",
+    "first, let's",
     "next,",
     "the user",
     "let me",
@@ -61,6 +63,11 @@ _REASONING_OPENERS = (
     "i need to",
     "i should",
     "i recall",
+)
+_THINK_TAG_PAIRS = (
+    (_RT_OPEN, _RT_CLOSE),
+    (_THINK_OPEN, _THINK_CLOSE),
+    ("<thinking>", "</thinking>"),
 )
 
 
@@ -211,12 +218,31 @@ def prepare_display_reply(text: str) -> str:
     return cleaned
 
 
+def _strip_unclosed_think_tags(text: str) -> str:
+    """Drop thinking blocks that never closed (common when generation hits max_tokens)."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    for open_tag, close_tag in _THINK_TAG_PAIRS:
+        lower = cleaned.lower()
+        open_lower = open_tag.lower()
+        close_lower = close_tag.lower()
+        start = lower.find(open_lower)
+        if start == -1:
+            continue
+        if close_lower in lower[start + len(open_tag) :]:
+            continue
+        cleaned = cleaned[:start].strip()
+    return cleaned
+
+
 def strip_thinking_blocks(text: str) -> str:
     """Remove chain-of-thought wrapper tags; keep remaining text (e.g. JSON) intact."""
     cleaned = text.strip()
     if not cleaned:
         return ""
-    return _THINK_BLOCKS.sub("", cleaned).strip()
+    cleaned = _THINK_BLOCKS.sub("", cleaned).strip()
+    return _strip_unclosed_think_tags(cleaned)
 
 
 def strip_reasoning_output(text: str) -> str:
@@ -226,6 +252,7 @@ def strip_reasoning_output(text: str) -> str:
         return ""
 
     cleaned = _THINK_BLOCKS.sub("", cleaned).strip()
+    cleaned = _strip_unclosed_think_tags(cleaned)
     if cleaned and not _THINK_BLOCKS.search(text):
         extracted = _extract_best_answer(cleaned)
         if extracted:

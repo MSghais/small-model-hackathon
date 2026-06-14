@@ -18,6 +18,12 @@ def test_strips_redacted_thinking_block():
     assert strip_reasoning_output(raw) == "The capital of France is Paris."
 
 
+def test_strips_unclosed_redacted_thinking_block():
+    raw = f"{_RT_OPEN}\nplanning without a final answer that never closes"
+    assert strip_reasoning_output(raw) == ""
+    assert strip_thinking_blocks(raw) == ""
+
+
 def test_strips_think_block():
     raw = f"{_THINK_OPEN}\nplanning...\n{_THINK_CLOSE}\n\nAgents use memory [1]."
     assert strip_reasoning_output(raw) == "Agents use memory [1]."

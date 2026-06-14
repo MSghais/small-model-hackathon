@@ -906,7 +906,13 @@ class AgentRunner:
             model=model_key,
             user_input=req.model_dump(),
         )
+        load_started = monotonic()
         backend.load()
+        trace.log_step(
+            "load_model",
+            "Load language model",
+            duration_ms=int((monotonic() - load_started) * 1000),
+        )
 
         answer_tool = self._tools.get("research_answer")
         raw_answer, citations, refs = answer_tool.handler(
@@ -916,6 +922,7 @@ class AgentRunner:
             skill_path=skill.path,
             session_id=req.session_id,
             doc_ids=req.doc_ids or None,
+            trace=trace,
         )
         trace.log_llm(req.question, raw_answer)
         trace.log_note(

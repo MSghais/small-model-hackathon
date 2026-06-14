@@ -126,6 +126,17 @@ def trace_summary_markdown(trace_path: str) -> str:
         "",
     ]
     for step in data.get("steps", []):
+        if step.get("type") == "step":
+            label = step.get("label") or step.get("name") or "step"
+            dur = step.get("duration_ms")
+            extra = {k: v for k, v in step.items() if k not in ("type", "name", "label", "duration_ms", "elapsed_ms")}
+            detail = ""
+            if dur is not None:
+                detail = f" ({dur} ms)"
+            if extra:
+                detail += " — " + ", ".join(f"{k}={v!r}" for k, v in extra.items())
+            lines.append(f"- **{label}**{detail}")
+            continue
         if step.get("type") != "note":
             continue
         msg = step.get("message", "")
@@ -193,8 +204,8 @@ def format_citations_markdown(trace_json: str) -> str:
         return ""
     lines = ["", "---", "**Sources:**"]
     for i, cite in enumerate(citations[:5], start=1):
-        title = cite.get("title") or cite.get("uri") or "Source"
-        uri = cite.get("uri") or ""
+        title = cite.get("doc_title") or cite.get("title") or cite.get("doc_uri") or cite.get("uri") or "Source"
+        uri = cite.get("doc_uri") or cite.get("uri") or ""
         lines.append(f"{i}. [{title}]({uri})" if uri else f"{i}. {title}")
     if len(citations) > 5:
         lines.append(f"_…and {len(citations) - 5} more (see Advanced trace)._")
