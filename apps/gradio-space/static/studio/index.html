@@ -8,6 +8,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+  <script>
+    (function () {
+      var t = localStorage.getItem("studio-theme");
+      if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches))
+        document.documentElement.dataset.theme = "dark";
+    })();
+  </script>
   <link rel="stylesheet" href="/static/studio/studio.css" />
 </head>
 <body>
@@ -28,7 +35,6 @@
       <button type="button" class="nav-item" data-view="research"><span class="material-symbols-outlined">search</span>Research</button>
       <button type="button" class="nav-item active" data-view="slides"><span class="material-symbols-outlined">present_to_all</span>Slides</button>
       <button type="button" class="nav-item" data-view="voice"><span class="material-symbols-outlined">mic</span>Voice</button>
-      <button type="button" class="nav-item" data-view="coach"><span class="material-symbols-outlined">school</span>Coach</button>
       <button type="button" class="nav-item" data-view="debug"><span class="material-symbols-outlined">bug_report</span>Debug</button>
       <button type="button" id="btn-open-settings" class="nav-item"><span class="material-symbols-outlined">settings</span>Settings</button>
       <a href="/classic" class="nav-item nav-link"><span class="material-symbols-outlined">open_in_new</span>Classic UI</a>
@@ -47,6 +53,9 @@
       <strong id="project-title">Small Model Finetuning</strong>
     </nav>
     <div class="topbar-actions">
+      <button type="button" id="theme-toggle-btn" class="btn btn-ghost btn-icon" aria-label="Toggle light/dark theme" title="Toggle theme">
+        <span class="material-symbols-outlined" id="theme-icon">dark_mode</span>
+      </button>
       <a href="/classic" class="btn btn-ghost">Classic UI</a>
       <button type="button" id="btn-export" class="btn btn-primary" disabled>Export</button>
     </div>
@@ -266,11 +275,11 @@
           </div>
         </div>
         <div id="slide-canvas" class="slide-canvas">
-          <div id="canvas-overlay" class="canvas-overlay hidden" aria-live="polite">
-            <div class="canvas-overlay-inner">
-              <span class="canvas-spinner" aria-hidden="true"></span>
-              <p id="canvas-overlay-text">Generating slides…</p>
-              <p class="canvas-overlay-hint">Local CPU models often take 30–90 seconds.</p>
+          <div id="canvas-overlay" class="region-loading hidden" aria-live="polite">
+            <div class="region-loading-inner">
+              <span class="studio-spinner" aria-hidden="true"></span>
+              <p id="canvas-overlay-text" class="region-loading-text">Generating slides…</p>
+              <p class="region-loading-hint canvas-overlay-hint">Local CPU models often take 30–90 seconds.</p>
             </div>
           </div>
           <div id="slide-canvas-content" class="slide-canvas-content">
@@ -296,16 +305,16 @@
           <div class="card voice-rag-card">
             <p class="card-title">RAG Scope</p>
             <label class="toggle-row">
-              <span>Cross-Reference Sources</span>
+              <span>Answer from my indexed sources</span>
               <input id="use-rag" type="checkbox" checked />
             </label>
-            <p class="status-text">Uses workspace session and documents unless overridden below.</p>
+            <p class="status-text">Ground teacher replies in your workspace documents when enabled.</p>
           </div>
           <div class="card voice-rail-controls">
             <p class="card-title">Mode</p>
             <div class="mode-cards voice-mode-cards" id="voice-modes">
               <button type="button" class="mode-card" data-mode="explain">Explain</button>
-              <button type="button" class="mode-card active" data-mode="lesson">Coach</button>
+              <button type="button" class="mode-card active" data-mode="lesson">Lesson</button>
               <button type="button" class="mode-card" data-mode="pitch">Practice</button>
             </div>
             <label class="field voice-topic-wrap" id="voice-topic-wrap">
@@ -371,43 +380,46 @@
               <div id="voice-audio-out" class="voice-audio-out"></div>
             </div>
           </div>
-        </div>
-      </div>
-      <div class="card coach-panel-wrap view-coach-only">
-        <div class="coach-card-head">
-          <h2 class="section-label">EchoCoach · Pitch analysis</h2>
-          <p class="coach-card-desc">Record or upload a short pitch for pace, filler highlights, and spoken feedback.</p>
-        </div>
-        <div class="coach-capture-row">
-          <div class="coach-capture-controls">
-            <div class="recording-row coach-recording-row">
-              <button type="button" id="btn-coach-record-start" class="btn btn-secondary">Start mic</button>
-              <button type="button" id="btn-coach-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
-              <button type="button" id="btn-coach-sample" class="btn btn-ghost">Load sample</button>
+          <details class="card voice-pitch-analysis hidden" id="voice-pitch-analysis" open>
+            <summary class="voice-pitch-summary">
+              <span class="section-label">Deep pitch analysis</span>
+              <span class="voice-pitch-summary-hint">Pace, fillers, charts, and spoken rewrite</span>
+            </summary>
+            <div class="coach-panel-wrap">
+              <p class="coach-card-desc">Record or upload a short monologue (up to 30s), then analyze for metrics and feedback.</p>
+              <div class="coach-capture-row">
+                <div class="coach-capture-controls">
+                  <div class="recording-row coach-recording-row">
+                    <button type="button" id="btn-coach-record-start" class="btn btn-secondary">Start mic</button>
+                    <button type="button" id="btn-coach-record-stop" class="btn btn-secondary" disabled>Stop mic</button>
+                    <button type="button" id="btn-coach-sample" class="btn btn-ghost">Load sample</button>
+                  </div>
+                  <p id="coach-record-status" class="status-text coach-record-status"></p>
+                </div>
+                <label class="field coach-upload-field">
+                  <span>Upload pitch (WAV)</span>
+                  <input id="coach-audio" type="file" accept="audio/*" />
+                </label>
+              </div>
+              <div class="controls-grid coach-presets">
+                <label class="field">
+                  <span>Language</span>
+                  <select id="coach-language" class="input"></select>
+                </label>
+                <label class="field">
+                  <span>ASR preset</span>
+                  <select id="coach-asr" class="input"></select>
+                </label>
+              </div>
+              <label class="toggle-row coach-voiceout-toggle">
+                <span>Speak full rewrite (VoiceOut)</span>
+                <input id="coach-speak-rewrite" type="checkbox" />
+              </label>
+              <button type="button" id="btn-analyze" class="btn btn-primary btn-block coach-analyze-btn">Analyze pitch</button>
+              <div id="coach-panel" class="coach-results-panel"></div>
             </div>
-            <p id="coach-record-status" class="status-text coach-record-status"></p>
-          </div>
-          <label class="field coach-upload-field">
-            <span>Upload pitch (WAV)</span>
-            <input id="coach-audio" type="file" accept="audio/*" />
-          </label>
+          </details>
         </div>
-        <div class="controls-grid coach-presets">
-          <label class="field">
-            <span>Language</span>
-            <select id="coach-language" class="input"></select>
-          </label>
-          <label class="field">
-            <span>ASR preset</span>
-            <select id="coach-asr" class="input"></select>
-          </label>
-        </div>
-        <label class="toggle-row coach-voiceout-toggle">
-          <span>Speak full rewrite (VoiceOut)</span>
-          <input id="coach-speak-rewrite" type="checkbox" />
-        </label>
-        <button type="button" id="btn-analyze" class="btn btn-primary btn-block coach-analyze-btn">Analyze pitch</button>
-        <div id="coach-panel" class="coach-results-panel"></div>
       </div>
     </section>
 
@@ -415,7 +427,6 @@
       <div class="card card-tall coach-debug-card">
         <div class="coach-card-head">
           <h2 class="section-label">Chat (debug)</h2>
-          <p class="coach-card-desc view-coach-only">Plain chat or corpus-grounded answers — traces appear below when RAG is on.</p>
           <p class="status-text view-debug-only">Plain chat or corpus-grounded answers — traces appear below when RAG is on.</p>
         </div>
         <label class="toggle-row">
@@ -467,6 +478,10 @@
         <h2 id="settings-title">Settings</h2>
         <button type="button" id="btn-close-settings" class="btn btn-ghost btn-icon material-symbols-outlined" aria-label="Close">close</button>
       </div>
+      <label class="toggle-row theme-toggle">
+        <span>Dark theme</span>
+        <input id="theme-toggle" type="checkbox" role="switch" aria-label="Dark theme" />
+      </label>
       <div id="settings-model-wrap">
         <p id="settings-active-model" class="status-text"></p>
         <label class="field hidden" id="settings-model-select-wrap">

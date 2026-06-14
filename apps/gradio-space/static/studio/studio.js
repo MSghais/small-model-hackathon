@@ -1,6 +1,30 @@
 import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client@1.14.0/+esm";
 
 const $ = (sel) => document.querySelector(sel);
+const THEME_KEY = "studio-theme";
+
+function getPreferredTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+  localStorage.setItem(THEME_KEY, theme);
+  const icon = $("#theme-icon");
+  if (icon) icon.textContent = theme === "dark" ? "light_mode" : "dark_mode";
+  const checkbox = $("#theme-toggle");
+  if (checkbox) checkbox.checked = theme === "dark";
+}
+
+function toggleTheme() {
+  const current = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  applyTheme(current === "dark" ? "light" : "dark");
+}
+
+applyTheme(getPreferredTheme());
+
 const SLIDE_PIPELINE_STEPS = [
   "Load language model",
   "Gather lesson sources",
@@ -33,6 +57,7 @@ const state = {
   browserRecordChunks: [],
   pendingVoiceAudioPath: null,
   pendingCoachAudioPath: null,
+  lastPitchAnalysis: null,
   useBrowserMic: true,
 };
 
@@ -249,14 +274,16 @@ async function discoverVoiceSources() {
     showError("Set a focus or workspace topic before discovering sources.");
     return;
   }
-  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
-  $("#voice-ingest-status").textContent = stripMd(data.status || "Discovery complete.");
-  renderVoiceUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
-  if (data.session_id) {
-    state.workspaceSessionId = data.session_id;
-    $("#workspace-session").value = data.session_id;
-  }
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await withRegionLoading($(".voice-rail-controls"), "Discovering sources…", async () => {
+    const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+    $("#voice-ingest-status").textContent = stripMd(data.status || "Discovery complete.");
+    renderVoiceUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+    if (data.session_id) {
+      state.workspaceSessionId = data.session_id;
+      $("#workspace-session").value = data.session_id;
+    }
+    await refreshWorkspaceSessions(state.workspaceSessionId);
+  });
 }
 
 async function autoVoiceIngest() {
@@ -265,46 +292,53 @@ async function autoVoiceIngest() {
     showError("Set a focus or workspace topic before auto-ingest.");
     return;
   }
-  const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
-  applyVoiceIngestResult(data);
-  state.voiceDiscoveredUrls = [];
-  state.voiceSelectedUrls = [];
-  renderVoiceUrlChoices([], []);
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await withRegionLoading($(".voice-rail-controls"), "Auto-ingesting sources…", async () => {
+    const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
+    applyVoiceIngestResult(data);
+    state.voiceDiscoveredUrls = [];
+    state.voiceSelectedUrls = [];
+    renderVoiceUrlChoices([], []);
+    await refreshWorkspaceSessions(state.workspaceSessionId);
+  });
 }
 
 async function ingestVoiceSources() {
   const topic = voiceEffectiveTopic();
   const pasted = $("#voice-urls-text")?.value.trim() || "";
   const selected = getSelectedDiscoveredUrls("#voice-url-choices-list");
-  const paths = [];
   const files = $("#voice-ingest-file")?.files;
-  if (files?.length) {
-    for (const file of files) {
-      paths.push(await uploadFile(file));
-    }
-  }
-  if (!pasted && !selected.length && !paths.length) {
+  if (!pasted && !selected.length && !files?.length) {
     showError("Add URLs, select suggested sources, or upload a file — then ingest.");
     return;
   }
-  const data = await callApi("ingest_sources", [
-    topic,
-    state.workspaceSessionId,
-    pasted,
-    selected,
-    paths,
-  ]);
-  applyVoiceIngestResult(data);
-  if (pasted) $("#voice-urls-text").value = "";
-  if (files?.length) $("#voice-ingest-file").value = "";
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await withRegionLoading($(".voice-rail-controls"), "Ingesting sources…", async () => {
+    const paths = [];
+    if (files?.length) {
+      for (const file of files) {
+        paths.push(await uploadFile(file));
+      }
+    }
+    const data = await callApi("ingest_sources", [
+      topic,
+      state.workspaceSessionId,
+      pasted,
+      selected,
+      paths,
+    ]);
+    applyVoiceIngestResult(data);
+    if (pasted) $("#voice-urls-text").value = "";
+    if (files?.length) $("#voice-ingest-file").value = "";
+    await refreshWorkspaceSessions(state.workspaceSessionId);
+  });
 }
 
 function syncVoiceModeUi() {
   const ragMode = state.voiceMode === "explain" || state.voiceMode === "lesson";
+  const practiceMode = state.voiceMode === "pitch";
   $("#voice-topic-wrap")?.classList.toggle("hidden", !ragMode);
   $("#voice-rag-sources")?.classList.toggle("hidden", !ragMode);
+  $(".voice-rag-card")?.classList.toggle("hidden", practiceMode);
+  $("#voice-pitch-analysis")?.classList.toggle("hidden", !practiceMode);
   const placeholders = {
     explain: "e.g. How does finetuning differ from pretraining?",
     lesson: "What is the difference between pretraining and finetuning a small model?",
@@ -327,7 +361,10 @@ function renderVoiceChat() {
     if (item && typeof item === "object" && item.role) {
       const role = item.role === "user" ? "user" : "assistant";
       const label = role === "user" ? "You" : "Teacher";
-      const body = renderMarkdownLite(voiceMessageText(item.content));
+      let body = renderMarkdownLite(voiceMessageText(item.content));
+      if (role === "assistant" && item.rag_references) {
+        body += `<div class="voice-rag-refs">${renderMarkdownLite(item.rag_references)}</div>`;
+      }
       parts.push(
         `<div class="research-chat-bubble research-chat-${role}"><div class="research-chat-role">${label}</div><div class="research-chat-body">${body}</div></div>`
       );
@@ -396,15 +433,17 @@ async function discoverSources() {
     showError("Set a workspace topic before discovering sources.");
     return;
   }
-  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
-  $("#ingest-status").textContent = stripMd(data.status || "Discovery complete.");
-  renderResearchUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
-  if (data.session_id) {
-    state.workspaceSessionId = data.session_id;
-    $("#workspace-session").value = data.session_id;
-  }
-  setTracePanel("#research-trace-panel", data);
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await withRegionLoading($(".card-ingest"), "Discovering sources…", async () => {
+    const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+    $("#ingest-status").textContent = stripMd(data.status || "Discovery complete.");
+    renderResearchUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+    if (data.session_id) {
+      state.workspaceSessionId = data.session_id;
+      $("#workspace-session").value = data.session_id;
+    }
+    setTracePanel("#research-trace-panel", data);
+    await refreshWorkspaceSessions(state.workspaceSessionId);
+  });
 }
 
 async function discoverSlideSources() {
@@ -413,8 +452,10 @@ async function discoverSlideSources() {
     showError("Set a topic before discovering sources.");
     return;
   }
-  const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
-  renderSlideUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  await withRegionLoading($(".controls-panel"), "Discovering sources…", async () => {
+    const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+    renderSlideUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  });
 }
 
 async function autoSearchIngest() {
@@ -423,12 +464,14 @@ async function autoSearchIngest() {
     showError("Set a workspace topic before auto-ingest.");
     return;
   }
-  const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
-  applyIngestResult(data);
-  state.discoveredUrls = [];
-  state.selectedUrls = [];
-  renderResearchUrlChoices([], []);
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await withRegionLoading($(".card-ingest"), "Auto-ingesting sources…", async () => {
+    const data = await callApi("auto_search_ingest", [topic, state.workspaceSessionId]);
+    applyIngestResult(data);
+    state.discoveredUrls = [];
+    state.selectedUrls = [];
+    renderResearchUrlChoices([], []);
+    await refreshWorkspaceSessions(state.workspaceSessionId);
+  });
 }
 
 async function ingestSources({ urlsText = "", selectedUrls = [], pendingFiles = null } = {}) {
@@ -437,30 +480,32 @@ async function ingestSources({ urlsText = "", selectedUrls = [], pendingFiles = 
   let selected = selectedUrls;
   if (workflow === "select") selected = getSelectedDiscoveredUrls();
   const pasted = workflow === "direct" ? urlsText : urlsText || $("#ingest-url").value.trim();
-  const paths = [];
   const files = pendingFiles || $("#ingest-file").files;
-  if (files?.length) {
-    for (const file of files) {
-      const b64 = await fileToBase64(file);
-      const saved = await callApi("save_upload", [file.name, b64]);
-      paths.push(saved.path);
-    }
-  }
-  if (!pasted && !selected.length && !paths.length) {
+  if (!pasted && !selected.length && !files?.length) {
     showError("Add URLs, select suggested sources, or upload a file — then ingest.");
     return;
   }
-  const data = await callApi("ingest_sources", [
-    topic,
-    state.workspaceSessionId,
-    pasted,
-    selected,
-    paths,
-  ]);
-  applyIngestResult(data);
-  if (pasted) $("#ingest-url").value = "";
-  if (files?.length) $("#ingest-file").value = "";
-  await refreshWorkspaceSessions(state.workspaceSessionId);
+  await withRegionLoading($(".card-ingest"), "Ingesting sources…", async () => {
+    const paths = [];
+    if (files?.length) {
+      for (const file of files) {
+        const b64 = await fileToBase64(file);
+        const saved = await callApi("save_upload", [file.name, b64]);
+        paths.push(saved.path);
+      }
+    }
+    const data = await callApi("ingest_sources", [
+      topic,
+      state.workspaceSessionId,
+      pasted,
+      selected,
+      paths,
+    ]);
+    applyIngestResult(data);
+    if (pasted) $("#ingest-url").value = "";
+    if (files?.length) $("#ingest-file").value = "";
+    await refreshWorkspaceSessions(state.workspaceSessionId);
+  });
 }
 
 function renderResearchChat() {
@@ -512,18 +557,20 @@ async function askResearchQuestion() {
     return;
   }
   const docIds = effectiveDocIds([]);
-  const data = await callApi("research_chat", [
-    question,
-    state.workspaceSessionId,
-    docIds,
-    state.researchChatHistory,
-  ]);
-  state.researchChatHistory = data.history || [];
-  renderResearchChat();
-  $("#research-question").value = "";
-  $("#research-chat-status").textContent = stripMd(data.rag_hint || "");
-  setTracePanel("#research-trace-panel", data);
-  updateResearchRagBadge();
+  await withRegionLoading($("#research-chat-panel .card-chat"), "Searching sources…", async () => {
+    const data = await callApi("research_chat", [
+      question,
+      state.workspaceSessionId,
+      docIds,
+      state.researchChatHistory,
+    ]);
+    state.researchChatHistory = data.history || [];
+    renderResearchChat();
+    $("#research-question").value = "";
+    $("#research-chat-status").textContent = stripMd(data.rag_hint || "");
+    setTracePanel("#research-trace-panel", data);
+    updateResearchRagBadge();
+  });
 }
 
 async function sendDebugMessage() {
@@ -537,23 +584,25 @@ async function sendDebugMessage() {
   const debugDocIds = selectedDebugDocIds();
   const workspaceDocIds = selectedWorkspaceDocIds();
   const modelKey = $("#debug-model-key")?.value || "";
-  const data = await callApi("debug_chat", [
-    message,
-    state.debugChatHistory,
-    useRag,
-    debugSession,
-    debugDocIds,
-    modelKey,
-    state.workspaceSessionId,
-    workspaceDocIds,
-  ]);
-  state.debugChatHistory = data.history || [];
-  renderDebugChat();
-  $("#debug-message").value = "";
-  if (data.rag_hint) {
-    $("#debug-rag-hint").textContent = stripMd(data.rag_hint);
-  }
-  setTracePanel("#debug-trace-panel", data);
+  await withRegionLoading($(".coach-debug-card"), "Thinking…", async () => {
+    const data = await callApi("debug_chat", [
+      message,
+      state.debugChatHistory,
+      useRag,
+      debugSession,
+      debugDocIds,
+      modelKey,
+      state.workspaceSessionId,
+      workspaceDocIds,
+    ]);
+    state.debugChatHistory = data.history || [];
+    renderDebugChat();
+    $("#debug-message").value = "";
+    if (data.rag_hint) {
+      $("#debug-rag-hint").textContent = stripMd(data.rag_hint);
+    }
+    setTracePanel("#debug-trace-panel", data);
+  });
 }
 
 function effectiveDebugSessionId() {
@@ -651,8 +700,53 @@ async function getClient() {
   return state.client;
 }
 
+let globalLoadingSuppress = 0;
+
 function setLoading(on) {
+  if (on && globalLoadingSuppress > 0) return;
   $("#studio-loading").classList.toggle("hidden", !on);
+}
+
+function setRegionLoading(container, on, message = "Working…", { overlayEl = null, hint = "" } = {}) {
+  if (!container) return;
+  let overlay = overlayEl || container.querySelector(":scope > .region-loading");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.className = "region-loading hidden";
+    overlay.setAttribute("aria-live", "polite");
+    overlay.innerHTML = `
+      <div class="region-loading-inner">
+        <span class="studio-spinner" aria-hidden="true"></span>
+        <p class="region-loading-text"></p>
+        <p class="region-loading-hint hidden"></p>
+      </div>`;
+    container.insertBefore(overlay, container.firstChild);
+    if (getComputedStyle(container).position === "static") {
+      container.classList.add("region-loading-host");
+    }
+  }
+  const textEl =
+    overlay.querySelector(".region-loading-text") || overlay.querySelector("#canvas-overlay-text");
+  if (textEl) textEl.textContent = message;
+  const hintEl =
+    overlay.querySelector(".region-loading-hint") || overlay.querySelector(".canvas-overlay-hint");
+  if (hintEl) {
+    hintEl.textContent = hint;
+    hintEl.classList.toggle("hidden", !hint);
+  }
+  overlay.classList.toggle("hidden", !on);
+  container.setAttribute("aria-busy", on ? "true" : "false");
+}
+
+async function withRegionLoading(container, message, fn, options = {}) {
+  globalLoadingSuppress += 1;
+  setRegionLoading(container, true, message, options);
+  try {
+    return await fn();
+  } finally {
+    globalLoadingSuppress -= 1;
+    setRegionLoading(container, false, message, options);
+  }
 }
 
 function startProgressPanel() {
@@ -968,91 +1062,107 @@ async function generateSlides() {
   const urlsText = $("#slide-urls-text")?.value.trim() || "";
   const selectedUrls = getSelectedDiscoveredUrls("#slide-url-choices-list");
 
-  const filePaths = [];
-  const slideFiles = $("#slide-source-files")?.files;
-  if (slideFiles?.length) {
-    for (const file of slideFiles) {
-      filePaths.push(await uploadFile(file));
-    }
-  }
+  await withRegionLoading(
+    $("#slide-canvas"),
+    "Generating slides…",
+    async () => {
+      const filePaths = [];
+      const slideFiles = $("#slide-source-files")?.files;
+      if (slideFiles?.length) {
+        for (const file of slideFiles) {
+          filePaths.push(await uploadFile(file));
+        }
+      }
 
-  startProgressPanel();
-  const waitTimer = advanceProgressWhileWaiting();
-  let data;
-  try {
-    data = await callApi("generate_slides", [
-      topic,
-      grade,
-      slideCount,
-      state.workspaceSessionId,
-      useRag,
-      docIds,
-      sourceMode,
-      searchWorkflow,
-      urlsText,
-      selectedUrls,
-      filePaths,
-    ]);
-  } catch (_err) {
-    $("#progress-eta").textContent = "Failed";
-    throw _err;
-  } finally {
-    clearInterval(waitTimer);
-    if (state.progressTimer) {
-      clearInterval(state.progressTimer);
-      state.progressTimer = null;
-    }
-  }
+      startProgressPanel();
+      const waitTimer = advanceProgressWhileWaiting();
+      let data;
+      try {
+        data = await callApi("generate_slides", [
+          topic,
+          grade,
+          slideCount,
+          state.workspaceSessionId,
+          useRag,
+          docIds,
+          sourceMode,
+          searchWorkflow,
+          urlsText,
+          selectedUrls,
+          filePaths,
+        ]);
+      } catch (_err) {
+        $("#progress-eta").textContent = "Failed";
+        throw _err;
+      } finally {
+        clearInterval(waitTimer);
+        if (state.progressTimer) {
+          clearInterval(state.progressTimer);
+          state.progressTimer = null;
+        }
+      }
 
-  finishProgressPanel(data);
-  $("#generate-status").textContent = stripMd(data.status || "Slides generated.");
-  const canvasHtml =
-    data.canvas_html ||
-    (data.preview_html ? `<div class="studio-canvas-inner">${data.preview_html}</div>` : "");
-  $("#slide-canvas").innerHTML =
-    canvasHtml || '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
+      finishProgressPanel(data);
+      $("#generate-status").textContent = stripMd(data.status || "Slides generated.");
+      const canvasHtml =
+        data.canvas_html ||
+        (data.preview_html ? `<div class="studio-canvas-inner">${data.preview_html}</div>` : "");
+      $("#slide-canvas-content").innerHTML =
+        canvasHtml || '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
 
-  const galleryEl = $("#slide-gallery");
-  if (data.gallery_html) {
-    galleryEl.innerHTML = data.gallery_html;
-    galleryEl.classList.remove("hidden");
-  } else if (data.gallery?.length) {
-    galleryEl.innerHTML = data.gallery
-      .map(
-        (path, i) =>
-          `<a class="studio-gallery-item" href="${fileUrl(path)}" target="_blank" rel="noopener"><img src="${fileUrl(path)}" alt="Slide ${i + 1}" loading="lazy" /></a>`
-      )
-      .join("");
-    galleryEl.classList.remove("hidden");
-  } else {
-    galleryEl.classList.add("hidden");
-    galleryEl.innerHTML = "";
-  }
+      const galleryEl = $("#slide-gallery");
+      if (data.gallery_html) {
+        galleryEl.innerHTML = data.gallery_html;
+        galleryEl.classList.remove("hidden");
+      } else if (data.gallery?.length) {
+        galleryEl.innerHTML = data.gallery
+          .map(
+            (path, i) =>
+              `<a class="studio-gallery-item" href="${fileUrl(path)}" target="_blank" rel="noopener"><img src="${fileUrl(path)}" alt="Slide ${i + 1}" loading="lazy" /></a>`
+          )
+          .join("");
+        galleryEl.classList.remove("hidden");
+      } else {
+        galleryEl.classList.add("hidden");
+        galleryEl.innerHTML = "";
+      }
 
-  state.downloads = data.downloads;
-  const dl = $("#downloads");
-  if (data.downloads?.pptx) {
-    dl.classList.remove("hidden");
-    dl.innerHTML = `
+      state.downloads = data.downloads;
+      const dl = $("#downloads");
+      if (data.downloads?.pptx) {
+        dl.classList.remove("hidden");
+        dl.innerHTML = `
       <a href="${fileUrl(data.downloads.pptx)}" download>PPTX</a>
       <a href="${fileUrl(data.downloads.docx)}" download>DOCX</a>
       <a href="${fileUrl(data.downloads.html)}" download>HTML</a>`;
-    $("#btn-export").disabled = false;
-  }
+        $("#btn-export").disabled = false;
+      }
 
-  const outlineDetails = $("#slide-outline-details");
-  const outlineEl = $("#slide-outline");
-  if (data.outline_md) {
-    outlineEl.innerHTML = renderMarkdownLite(data.outline_md);
-    outlineDetails?.classList.remove("hidden");
-  } else {
-    outlineEl.innerHTML = "";
-    outlineDetails?.classList.add("hidden");
-  }
+      const outlineDetails = $("#slide-outline-details");
+      const outlineEl = $("#slide-outline");
+      if (data.outline_md) {
+        outlineEl.innerHTML = renderMarkdownLite(data.outline_md);
+        outlineDetails?.classList.remove("hidden");
+      } else {
+        outlineEl.innerHTML = "";
+        outlineDetails?.classList.add("hidden");
+      }
+    },
+    {
+      overlayEl: $("#canvas-overlay"),
+      hint: "Local CPU models often take 30–90 seconds.",
+    }
+  );
 }
 
 function renderVoiceReply(data, { keepAudio = false } = {}) {
   state.history = data.history ?? state.history;
+  if (data.rag_references && state.history.length) {
+    const last = state.history[state.history.length - 1];
+    if (last && typeof last === "object" && last.role === "assistant") {
+      last.rag_references = data.rag_references;
+    }
+  }
   renderVoiceChat();
   if (data.status) {
     $("#voice-turn-status").textContent = stripMd(data.status);
@@ -1075,19 +1185,21 @@ async function sendVoiceTurn() {
   const useRag = voiceUseRag();
   const docIds = effectiveDocIds([]);
   const language = state.voicePresets?.default_language || "en";
-  const data = await callApi("teacher_voice_turn", [
-    message,
-    state.voiceMode,
-    topic,
-    state.workspaceSessionId,
-    useRag,
-    state.history,
-    docIds,
-    language,
-    null,
-  ]);
-  $("#voice-message").value = "";
-  renderVoiceReply(data);
+  await withRegionLoading($(".voice-main-card"), "Teacher is thinking…", async () => {
+    const data = await callApi("teacher_voice_turn", [
+      message,
+      state.voiceMode,
+      topic,
+      state.workspaceSessionId,
+      useRag,
+      state.history,
+      docIds,
+      language,
+      null,
+    ]);
+    $("#voice-message").value = "";
+    renderVoiceReply(data);
+  });
 }
 
 async function sendVoiceAudioTurn(audioPath) {
@@ -1096,19 +1208,21 @@ async function sendVoiceAudioTurn(audioPath) {
   const docIds = effectiveDocIds([]);
   const language = state.voicePresets?.default_language || "en";
   const asr = state.voicePresets?.default_asr || null;
-  const data = await callApi("teacher_voice_audio_turn", [
-    audioPath,
-    state.voiceMode,
-    topic,
-    state.workspaceSessionId,
-    useRag,
-    state.history,
-    docIds,
-    language,
-    asr,
-  ]);
-  if (data.user_text) $("#voice-message").value = data.user_text;
-  renderVoiceReply(data);
+  await withRegionLoading($(".voice-main-card"), "Processing voice…", async () => {
+    const data = await callApi("teacher_voice_audio_turn", [
+      audioPath,
+      state.voiceMode,
+      topic,
+      state.workspaceSessionId,
+      useRag,
+      state.history,
+      docIds,
+      language,
+      asr,
+    ]);
+    if (data.user_text) $("#voice-message").value = data.user_text;
+    renderVoiceReply(data);
+  });
 }
 
 async function speakVoiceReply(firstSentenceOnly) {
@@ -1139,13 +1253,36 @@ async function analyzePitchWithPath(audioPath) {
   const language = $("#coach-language")?.value || "en";
   const asr = $("#coach-asr")?.value || null;
   const speakRewrite = $("#coach-speak-rewrite")?.checked || false;
-  $("#coach-panel").innerHTML = `
-    <div class="studio-coach-panel studio-coach-live">
-      <div class="studio-coach-header"><span class="studio-coach-dot"></span>
-      <span class="studio-coach-label">Analyzing…</span></div>
-    </div>`;
-  const data = await callApi("analyze_pitch", [audioPath, language, asr, speakRewrite]);
-  $("#coach-panel").innerHTML = data.coach_panel_html || "";
+  await withRegionLoading($("#voice-pitch-analysis"), "Analyzing pitch…", async () => {
+    const data = await callApi("analyze_pitch", [audioPath, language, asr, speakRewrite]);
+    state.lastPitchAnalysis = data;
+    const panel = $("#coach-panel");
+    panel.innerHTML = data.coach_panel_html || "";
+    const discussBtn = document.createElement("button");
+    discussBtn.type = "button";
+    discussBtn.className = "btn btn-secondary voice-discuss-btn";
+    discussBtn.textContent = "Discuss in chat";
+    discussBtn.addEventListener("click", () => discussPitchInChat().catch(() => {}));
+    if (data.transcript_html || data.report_md || data.tip) {
+      panel.appendChild(discussBtn);
+    }
+  });
+}
+
+function discussPitchInChat() {
+  const data = state.lastPitchAnalysis;
+  if (!data) return;
+  const parts = [];
+  if (data.tip) parts.push(`Coach tip: ${stripMd(data.tip)}`);
+  if (data.report_md) parts.push(stripMd(data.report_md).slice(0, 800));
+  const prompt =
+    parts.length > 0
+      ? `Here is my pitch analysis. Help me improve based on this feedback:\n\n${parts.join("\n\n")}`
+      : "I just ran pitch analysis — what should I work on next?";
+  $("#voice-message").value = prompt;
+  $("#voice-message").focus();
+  const chat = $("#voice-chat-messages");
+  if (chat) chat.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 async function analyzePitch() {
@@ -1265,6 +1402,8 @@ function bindUi() {
   $("#btn-open-settings")?.addEventListener("click", openSettingsDrawer);
   $("#btn-close-settings")?.addEventListener("click", closeSettingsDrawer);
   $("#settings-backdrop")?.addEventListener("click", closeSettingsDrawer);
+  $("#theme-toggle")?.addEventListener("change", toggleTheme);
+  $("#theme-toggle-btn")?.addEventListener("click", toggleTheme);
   $("#btn-reload-model")?.addEventListener("click", () => reloadModelFromSettings().catch(() => {}));
 
   $("#btn-open-research-view")?.addEventListener("click", openResearchView);
@@ -1375,6 +1514,8 @@ function bindUi() {
       syncVoiceModeUi();
     });
   });
+
+  syncVoiceModeUi();
 }
 
 bindUi();

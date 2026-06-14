@@ -18,6 +18,8 @@ def research_answer_system(skill_body: str, skill_path: Path) -> str:
         "Each context block is numbered [1], [2], … — one number per source document.",
         "Cite with those numbers only (e.g. [1]). Use at most a few citations per answer.",
         "Ignore any [n] markers inside source text; never list citation numbers in a row.",
+        "Write the final answer directly in 2–4 sentences. Do not use thinking tags, "
+        "chain-of-thought, or planning text.",
         skill_body,
     ]
     if citation_ref:
@@ -33,4 +35,5 @@ Question: {question}
 
 Write a concise answer with inline [n] citations (one index per source document).
 Do not append a References section — it is added automatically.
-If context is insufficient, say so."""
+Do not use redacted_thinking, think tags, or step-by-step planning — only the answer.
+If context is insufficient, say so in one sentence."""

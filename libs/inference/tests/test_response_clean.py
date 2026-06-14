@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from inference.response_clean import (
     prepare_display_reply,
+    reply_ends_complete_sentence,
     strip_reasoning_output,
     strip_thinking_blocks,
 )
@@ -15,6 +16,12 @@ _THINK_CLOSE = "</" + "think" + ">"
 def test_strips_redacted_thinking_block():
     raw = f"{_RT_OPEN}\nplanning...\n{_RT_CLOSE}\n\nThe capital of France is Paris."
     assert strip_reasoning_output(raw) == "The capital of France is Paris."
+
+
+def test_strips_unclosed_redacted_thinking_block():
+    raw = f"{_RT_OPEN}\nplanning without a final answer that never closes"
+    assert strip_reasoning_output(raw) == ""
+    assert strip_thinking_blocks(raw) == ""
 
 
 def test_strips_think_block():
@@ -105,6 +112,11 @@ So, three"""
     assert "enhances efficiency" in out
     assert "First, the user" not in out
     assert "Sentence 1:" not in out
+
+
+def test_reply_ends_complete_sentence():
+    assert reply_ends_complete_sentence("Finetuning teaches a small model to specialize.")
+    assert not reply_ends_complete_sentence("The lesson aims to teach how to fine-tune small")
 
 
 def test_prepare_display_reply_wraps_malformed_think_prefix():

@@ -579,8 +579,8 @@ def api_teacher_voice_turn(
         assistant=result.assistant_text,
         status=result.rag_status or "Turn complete.",
         voiceout_path=result.voiceout_path,
+        rag_references=result.rag_references,
     )
-
 
 def api_teacher_voice_audio_turn(
     audio_path: str,
@@ -627,6 +627,7 @@ def api_teacher_voice_audio_turn(
         status=result.rag_status or "Turn complete.",
         voiceout_path=result.voiceout_path,
         user_text=result.user_text,
+        rag_references=result.rag_references,
     )
 
 
