@@ -1,6 +1,6 @@
 # Usage
 
-How to run the **Lesson Agent** Gradio app locally, test it in Docker, and deploy to a Hugging Face Space for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
+How to run the **Lesson Agent** Gradio app locally, deploy to a Hugging Face Space (Gradio SDK + ZeroGPU), and optionally test with Docker later for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
 The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **TeacherVoice** for spoken back-and-forth tutoring, **EchoCoach** for one-shot pitch analysis, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
@@ -223,23 +223,114 @@ INFERENCE_BACKEND=transformers MODEL_ID=Qwen/Qwen2.5-3B-Instruct \
 
 ---
 
-## Docker (local prod-like test)
+## Gradio SDK local smoke test (matches HF Space build)
 
-Run the same container image HF Spaces will build:
+Before pushing to Hugging Face, verify the Gradio SDK entry point:
+
+```bash
+python -m venv .venv-gradio && source .venv-gradio/bin/activate
+pip install -r requirements.txt
+ACTIVE_MODEL=minicpm5-1b ALLOW_MODEL_SWITCH=false python app.py
+```
+
+Open [http://localhost:7860](http://localhost:7860) — Studio at `/`, Classic at `/classic`.
+
+Day-to-day development can still use `uv run` (see above); this path mirrors what HF installs from `requirements.txt`.
+
+---
+
+## Hugging Face Space deployment (Gradio SDK + ZeroGPU)
+
+The Space card metadata lives in the YAML frontmatter at the top of [README.md](README.md) (`sdk: gradio`, `app_file: app.py`).
+
+### 1. Push code to GitHub
+
+Make sure `main` contains at minimum:
+
+- `app.py`, `requirements.txt`, `packages.txt`
+- `README.md` (with `sdk: gradio`, `sdk_version`, `app_file: app.py`)
+- `models.yaml`, `skills/`
+- `apps/gradio-space/` and all `libs/*` packages
+
+The root `Dockerfile` stays in the repo for a later Docker SDK deploy (see below).
+
+### 2. Create the Space
+
+1. Go to [build-small-hackathon](https://huggingface.co/build-small-hackathon)
+2. **New Space**
+3. Name: e.g. `lesson-agent` or `small-model-hackathon`
+4. SDK: **Gradio** (Blank template)
+5. Hardware: **ZeroGPU** (creator needs PRO/Team) or **GPU basic**
+6. Link your GitHub repo, or push directly to the Space git remote
+
+CLI alternative (if you have `hf` installed and org access):
+
+```bash
+hf repo create build-small-hackathon/<your-space-name> \
+  --repo-type space \
+  --space_sdk gradio
+```
+
+### 3. Set Space environment variables
+
+In the Space **Settings → Variables and secrets**:
+
+| Variable | Value |
+| -------- | ----- |
+| `ACTIVE_MODEL` | `minicpm5-1b` |
+| `ALLOW_MODEL_SWITCH` | `false` |
+| `RESEARCHMIND_DATA_DIR` | `/tmp/researchmind` |
+
+Default preset in [`models.yaml`](models.yaml) is `minicpm5-1b` (transformers) — suitable for ZeroGPU.
+
+### 4. Build and verify
+
+HF installs from `requirements.txt` and runs root `app.py`. Check the **Logs** tab for:
+
+- Successful pip install (first build may take several minutes — `llama-cpp-python` compiles)
+- `Running on local URL: 0.0.0.0:7860`
+
+Smoke test on the live Space:
+
+1. **`/`** — Studio UI loads
+2. **`/classic`** — all tabs render
+3. Generate slides with a simple topic (e.g. "Photosynthesis, grade 8, 5 slides")
+4. First LLM request may be slow (model download + ZeroGPU queue)
+
+### 5. ZeroGPU notes
+
+LLM handlers use `@spaces.GPU` via [`gradio_space/spaces_runtime.py`](apps/gradio-space/src/gradio_space/spaces_runtime.py). If you see **No CUDA GPUs are available**, an inference path is running outside a decorated handler.
+
+Startup model preload is skipped on HF Gradio runtime; the first user request loads the model inside a GPU task.
+
+### 6. Optional: persistent model cache
+
+Attach a **Storage Bucket** in Space settings so Hub model weights survive restarts.
+
+---
+
+## Docker SDK deployment (later)
+
+Both deploy paths live on the same branch. HF reads **one** `sdk:` from README — switch to Docker when you are ready for a dedicated-GPU Space.
+
+1. Change [README.md](README.md) frontmatter to `sdk: docker`, `app_port: 7860` (remove `sdk_version` / `app_file`)
+2. Create or reconfigure a Space with **Docker** SDK and **GPU basic** hardware
+3. Set the same env vars (`ACTIVE_MODEL=minicpm5-1b`, etc.)
+
+### Local Docker smoke test
 
 ```bash
 docker build -t hackathon-space .
 docker run --rm -p 7860:7860 \
-  -e MODEL_REPO=Qwen/Qwen2.5-3B-Instruct-GGUF \
-  -e MODEL_FILE=qwen2.5-3b-instruct-q4_k_m.gguf \
-  -e N_CTX=4096 \
-  -e N_GPU_LAYERS=0 \
+  -e ACTIVE_MODEL=minicpm5-1b \
+  -e ALLOW_MODEL_SWITCH=false \
+  -e RESEARCHMIND_DATA_DIR=/tmp/researchmind \
   hackathon-space
 ```
 
 Open [http://localhost:7860](http://localhost:7860) — Studio at `/`, Classic tabs at `/classic`. Stop with `Ctrl+C`.
 
-To use a pre-downloaded local model inside Docker, mount it and set `MODEL_PATH`:
+To use a pre-downloaded local GGUF model inside Docker, mount it and set `MODEL_PATH`:
 
 ```bash
 docker run --rm -p 7860:7860 \
@@ -250,102 +341,29 @@ docker run --rm -p 7860:7860 \
 
 ---
 
-## Hugging Face Space deployment
-
-This repo uses the **Docker SDK**. The Space card metadata lives in the YAML frontmatter at the top of [README.md](README.md).
-
-### 1. Push code to GitHub
-
-Make sure `main` (or your deploy branch) contains at minimum:
-
-- `Dockerfile`
-- `README.md` (with `sdk: docker` and `app_port: 7860`)
-- `pyproject.toml`, `uv.lock`
-- `apps/gradio-space/` and `libs/inference/`
-
-### 2. Create the Space
-
-1. Go to [build-small-hackathon](https://huggingface.co/build-small-hackathon)
-2. **New Space**
-3. Name: e.g. `small-model-hackathon`
-4. SDK: **Docker**
-5. Link your GitHub repo, or push directly to the Space repo
-
-CLI alternative (if you have `hf` installed and org access):
-
-```bash
-hf repo create build-small-hackathon/<your-space-name> \
-  --repo-type space \
-  --space_sdk docker
-```
-
-### 3. Configure hardware
-
-
-| Setting  | Recommendation                                               |
-| -------- | ------------------------------------------------------------ |
-| Hardware | **CPU basic** to start (llama.cpp with `N_GPU_LAYERS=0`)     |
-| Upgrade  | GPU Space if you set `N_GPU_LAYERS > 0` for faster inference |
-
-
-### 4. Set Space environment variables
-
-In the Space **Settings → Variables and secrets**:
-
-
-| Variable            | Value                             |
-| ------------------- | --------------------------------- |
-| `INFERENCE_BACKEND` | `llama_cpp`                       |
-| `MODEL_REPO`        | `Qwen/Qwen2.5-3B-Instruct-GGUF`   |
-| `MODEL_FILE`        | `qwen2.5-3b-instruct-q4_k_m.gguf` |
-| `N_CTX`             | `4096`                            |
-| `N_GPU_LAYERS`      | `0` (or higher on GPU hardware)   |
-
-
-### 5. Build and verify
-
-HF builds from the root `Dockerfile` and runs:
-
-```bash
-uv run --package gradio-space python -m gradio_space.app
-```
-
-Check the **Logs** tab while the Space builds. Once running, open the Space URL and send a test chat message. The first message may take several minutes on CPU while the GGUF downloads.
-
-### 6. Optional: persistent model cache
-
-If cold starts are too slow, attach a **Storage Bucket** in Space settings so downloaded GGUF files survive restarts.
-
----
-
 ## Troubleshooting
 
 
 | Symptom                                  | Likely cause                      | Fix                                                                  |
 | ---------------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
-| First chat hangs / slow                  | GGUF downloading from Hub         | Pre-download locally; on Space, wait or use Storage Bucket           |
-| `Failed to load model` in chat           | Wrong `MODEL_REPO` / `MODEL_FILE` | Check env vars match a valid GGUF on Hub                             |
-| Docker build fails on `llama-cpp-python` | Missing build tools               | Dockerfile already installs `build-essential` and `cmake`            |
-| Space build fails                        | Missing `uv.lock` or README YAML  | Ensure `sdk: docker` is in root `README.md` frontmatter              |
-| `transformers` backend error             | Optional deps not installed       | Run `uv sync --package inference --extra transformers`               |
-| Port already in use locally              | Another process on 7860           | `PORT=7861 uv run --package gradio-space python -m gradio_space.app` |
+| First chat hangs / slow                  | Model downloading from Hub        | Wait on Space; use Storage Bucket for cache                            |
+| `Failed to load model` in chat           | Wrong `ACTIVE_MODEL` preset       | Use `minicpm5-1b` or valid key from `models.yaml`                    |
+| Space build fails on pip install         | `llama-cpp-python` compile        | Check Logs; default preset avoids GGUF at runtime                    |
+| Space build fails                        | Malformed README YAML             | Ensure `sdk: gradio` and `app_file: app.py` in README frontmatter    |
+| No CUDA GPUs on ZeroGPU                  | Handler outside `@spaces.GPU`     | LLM entry points must use `gpu_task` in `spaces_runtime.py`          |
+| Docker build fails on `llama-cpp-python` | Missing build tools               | Dockerfile installs `build-essential` and `cmake`                    |
+| Port already in use locally              | Another process on 7860           | `PORT=7861 python app.py` or `uv run ...`                            |
 
 
 ---
 
 ## Entrypoint summary
 
-All three environments use the same command:
-
-```bash
-uv run --package gradio-space python -m gradio_space.app
-```
-
-
-| Environment | How to run                                                 |
-| ----------- | ---------------------------------------------------------- |
-| Local dev   | `uv run --package gradio-space python -m gradio_space.app` |
-| Docker      | `docker run -p 7860:7860 hackathon-space`                  |
-| HF Space    | Built and started automatically from `Dockerfile` `CMD`    |
+| Environment | How to run |
+| ----------- | ---------- |
+| Local dev (uv) | `uv run --package gradio-space python -m gradio_space.app` |
+| Local Gradio SDK smoke | `pip install -r requirements.txt && python app.py` |
+| HF Gradio Space | HF runs root `app.py` automatically |
+| Docker (later) | `docker run -p 7860:7860 hackathon-space` (after README `sdk: docker`) |
 
 

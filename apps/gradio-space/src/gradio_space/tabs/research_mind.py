@@ -120,6 +120,7 @@ def discover_sources(
         )
 
 
+@gpu_task(duration=180)
 def auto_search_ingest(
     topic: str,
     session_id: str,
@@ -281,6 +282,7 @@ def ingest_selected(
         )
 
 
+@gpu_task(duration=180)
 def ask_question(
     question: str,
     session_id: str,

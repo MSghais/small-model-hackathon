@@ -88,6 +88,7 @@ def _turn_error(history: list | None, message: str) -> tuple:
     )
 
 
+@gpu_task(duration=180)
 def send_turn(
     audio_path: str | None,
     history: list,
@@ -143,6 +144,7 @@ def send_turn(
     return _turn_result(result)
 
 
+@gpu_task(duration=180)
 def send_text_turn(
     message: str,
     history: list,

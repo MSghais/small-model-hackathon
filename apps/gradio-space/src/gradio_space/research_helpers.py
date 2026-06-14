@@ -254,7 +254,6 @@ def run_research_question(
     )
 
 
-@gpu_task(duration=180)
 def rag_aware_chat(
     message: str,
     history: list,

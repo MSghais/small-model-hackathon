@@ -7,19 +7,19 @@ todos:
     status: completed
   - id: readme-gradio-sdk
     content: "Fix README YAML frontmatter and switch to sdk: gradio (sdk_version 6.16.0, app_file: app.py)"
-    status: in_progress
+    status: completed
   - id: spaces-runtime
     content: Add gradio_space/spaces_runtime.py with gpu_task decorator and is_hf_gradio_runtime()
     status: completed
   - id: zerogpu-decorators
     content: Apply @gpu_task to LLM entry points in model_loading, research_helpers, and tab handlers; skip preload on HF Gradio runtime in server.py
-    status: pending
+    status: completed
   - id: usage-docs
     content: Update USAGE.md with Gradio SDK + ZeroGPU deploy steps; demote Docker section to later phase
-    status: pending
+    status: completed
   - id: local-smoke
     content: Validate pip install + python app.py locally before pushing to HF Space
-    status: pending
+    status: in_progress
   - id: hf-space-create
     content: Create Gradio Space under build-small-hackathon with ZeroGPU hardware and env vars; verify Studio + Classic smoke tests
     status: pending

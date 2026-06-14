@@ -65,6 +65,7 @@ def load_sample_pitch() -> tuple[str | None, str]:
     )
 
 
+@gpu_task(duration=180)
 def analyze_pitch(
     audio_path: str | None,
     language: str,
