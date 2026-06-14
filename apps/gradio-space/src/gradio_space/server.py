@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 
 import gradio as gr
-from fastapi.responses import FileResponse
+from fastapi import Request
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from gradio import mount_gradio_app
@@ -47,6 +48,10 @@ def _register_hf_https_middleware(server: gr.Server) -> None:
         return await call_next(request)
 
 
+def _wants_classic_ui(request: Request) -> bool:
+    return "classic" in request.query_params
+
+
 def create_server() -> gr.Server:
     server = gr.Server(title="Build Small Studio")
     _register_hf_https_middleware(server)
@@ -57,11 +62,16 @@ def create_server() -> gr.Server:
         server.mount("/static/studio", StaticFiles(directory=str(_STATIC_DIR)), name="studio_static")
 
     @server.get("/")
-    async def studio_index() -> FileResponse:
+    async def studio_index(request: Request):
+        if _wants_classic_ui(request):
+            # Relative path keeps huggingface.co/spaces/.../classic on HTTPS (not http hf.space).
+            return RedirectResponse(url="classic", status_code=302)
         return FileResponse(_STATIC_DIR / "index.html")
 
     @server.get("/studio")
-    async def studio_alias() -> FileResponse:
+    async def studio_alias(request: Request):
+        if _wants_classic_ui(request):
+            return RedirectResponse(url="classic", status_code=302)
         return FileResponse(_STATIC_DIR / "index.html")
 
     demo = build_demo()

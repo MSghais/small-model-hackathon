@@ -31,29 +31,6 @@ function appOrigin() {
   return `${secureProto}//${hostname}`;
 }
 
-function classicUiUrl() {
-  const { hostname, pathname } = window.location;
-  const hubPrefix =
-    hostname === "huggingface.co"
-      ? pathname.match(/^(\/spaces\/[^/]+\/[^/]+)/)?.[1] ?? ""
-      : "";
-  return `https://${hostname}${hubPrefix}/classic`;
-}
-
-function ensureSecureBase() {
-  const base = document.querySelector("base");
-  if (base?.href?.startsWith("http://")) {
-    base.href = base.href.replace(/^http:/, "https:");
-  }
-}
-
-function wireClassicLinks() {
-  ensureSecureBase();
-  document.querySelectorAll("a[href='/classic'], a[href='/classic/']").forEach((link) => {
-    link.href = classicUiUrl();
-  });
-}
-
 const SLIDE_PIPELINE_STEPS = [
   "Load language model",
   "Gather lesson sources",
@@ -1034,7 +1011,7 @@ async function callApi(name, args = []) {
     return data;
   } catch (err) {
     const message = err?.message || String(err);
-    showError(`${message} — try Classic UI at /classic`);
+    showError(`${message} — try Classic UI (?classic)`);
     throw err;
   } finally {
     setLoading(false);
@@ -1541,8 +1518,6 @@ async function stopRecording(statusEl, startBtn, stopBtn) {
 }
 
 function bindUi() {
-  wireClassicLinks();
-
   $("#slide-count").addEventListener("input", (e) => {
     $("#slide-count-val").textContent = e.target.value;
   });
@@ -1707,5 +1682,5 @@ function bindUi() {
 bindUi();
 initWorkspace().catch((err) => {
   console.error(err);
-  showError("Could not connect to Studio API. Open /classic for full Gradio UI.");
+  showError("Could not connect to Studio API. Open ?classic for full Gradio UI.");
 });
