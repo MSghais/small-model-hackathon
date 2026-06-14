@@ -2,7 +2,7 @@
 
 How to run the **Lesson Agent** Gradio app locally, deploy to a Hugging Face Space (Gradio SDK + ZeroGPU), and optionally test with Docker later for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **TeacherVoice** for spoken back-and-forth tutoring, **EchoCoach** for one-shot pitch analysis, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **Language lessons** for multilingual text + voice tutoring (Cohere Transcribe + Tiny Aya), **EchoCoach** for one-shot pitch analysis in Classic UI, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -115,10 +115,11 @@ Configure presets in [`voice_models.yaml`](voice_models.yaml) or via `.env`:
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `ECHOCOACH_ASR_PRESET` | `whisper-cpp-tiny` | ASR preset key |
+| `ECHOCOACH_ASR_PRESET` | `cohere-transcribe` | ASR preset key (Space demo); use `whisper-cpp-tiny` on CPU dev |
 | `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key (EchoCoach, default VoiceOut) |
-| `ECHOCOACH_REALTIME_TTS_PRESET` | `vibevoice-realtime-0.5b` | TeacherVoice streaming TTS (see below) |
-| `ECHOCOACH_COACH_MODEL` | `minicpm5-1b` | Text coach preset (from `models.yaml`) |
+| `ECHOCOACH_REALTIME_TTS_PRESET` | `vibevoice-realtime-0.5b` | Language lessons streaming TTS (see below) |
+| `ECHOCOACH_COACH_MODEL` | `tiny-aya-global` | Text coach preset (Tiny Aya; from `models.yaml`) |
+| `ECHOCOACH_COACH_FALLBACK` | `minicpm5-1b` | Comma-separated fallback presets if primary coach fails to load |
 | `ECHOCOACH_MAX_SECONDS` | `30` | Max recording length |
 
 **Cohere Transcribe** (`cohere-transcribe`) is gated on Hugging Face — run `huggingface-cli login`, accept the model terms, then set `ECHOCOACH_ASR_PRESET=cohere-transcribe`. GPU recommended for ASR + coach together.
@@ -129,9 +130,39 @@ Smoke tests (analysis only, no GPU):
 bash scripts/echo_coach_smoke.sh
 ```
 
-### TeacherVoice — spoken conversation (turn-based)
+### Language lessons — multilingual coach (Studio tab)
 
-The **TeacherVoice** tab is a **multi-turn voice teacher** — not full duplex like a phone call, but speak → wait → hear a reply → repeat.
+The **Language lessons** tab is the primary voice learning experience: one page for **text**, **hold-to-talk mic**, and **audio upload**, with optional auto VoiceOut on every reply.
+
+| Input | Output |
+| ----- | ------ |
+| Type a question | Chat bubble in target language |
+| Hold mic / upload audio | Transcript + teacher reply; auto-play TTS when enabled |
+| **Other (text only)** language code | Tiny Aya written lesson (no Piper voice for unsupported codes) |
+
+**Stack (Cohere Labs partner demo):** [Cohere Transcribe](https://huggingface.co/CohereLabs/c4ai-transcribe-v2) (14 voice langs) → [Tiny Aya Global / regional](https://huggingface.co/CohereLabs/tiny-aya-global) (70+ text langs) → Piper or VibeVoice Realtime for speech out.
+
+Set Space secrets (GPU recommended):
+
+```bash
+ECHOCOACH_ASR_PRESET=cohere-transcribe
+ECHOCOACH_COACH_MODEL=tiny-aya-global
+ECHOCOACH_TTS_PRESET=piper-multilingual
+ECHOCOACH_REALTIME_TTS_PRESET=vibevoice-realtime-0.5b
+```
+
+| Mode | Purpose |
+| ---- | ------- |
+| **Explain** | Tutor any topic in plain language |
+| **Lesson coach** | Discuss and outline lesson content |
+
+Turn-based (not full duplex): speak → wait → hear reply. **Auto-speak replies** synthesizes TTS each turn when the language has a Piper voice.
+
+Pitch metrics and monologue analysis live in **Classic UI → EchoCoach** (`/classic`).
+
+### TeacherVoice — Classic UI (turn-based)
+
+The **TeacherVoice** tab in `/classic` is the legacy multi-turn voice teacher — same pipeline as Language lessons, plus **Pitch practice** mode.
 
 | Mode | Purpose |
 | ---- | ------- |

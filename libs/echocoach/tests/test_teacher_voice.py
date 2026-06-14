@@ -7,7 +7,7 @@ import pytest
 import soundfile as sf
 
 from inference.response_clean import reply_ends_complete_sentence
-from echocoach.prompts import PITCH_SYSTEM, system_prompt_for_mode
+from echocoach.prompts import PITCH_SYSTEM, resolve_aya_preset, system_prompt_for_mode
 from echocoach.teacher_voice import (
     RagContext,
     append_chat_turn,
@@ -131,8 +131,43 @@ def test_build_teacher_messages_includes_topic_and_rag():
     assert "Reply now in 2-4 complete spoken sentences only" in messages[-1]["content"]
 
 
+def test_coach_model_chain_dedupes():
+    from echocoach.config import EchoCoachConfig, LanguageOption
+
+    cfg = EchoCoachConfig(
+        asr_preset="whisper-cpp-tiny",
+        tts_preset="piper-multilingual",
+        realtime_tts_preset=None,
+        coach_model="tiny-aya-global",
+        coach_fallbacks=("minicpm5-1b", "tiny-aya-global"),
+        max_seconds=30,
+        languages=[LanguageOption("en", "English")],
+        asr_presets={},
+        tts_presets={},
+    )
+    assert cfg.coach_model_chain() == ["tiny-aya-global", "minicpm5-1b"]
+
+
+def test_resolve_aya_preset_uses_global_only():
+    assert resolve_aya_preset("fr", "auto") == "tiny-aya-global"
+    assert resolve_aya_preset("hi", "auto") == "tiny-aya-global"
+    assert resolve_aya_preset("en", "tiny-aya-water") == "tiny-aya-global"
+
+
+def test_build_teacher_messages_includes_language_instruction():
+    messages = build_teacher_messages(
+        mode="lesson",
+        history=[],
+        user_text="Explique le fine-tuning.",
+        topic="ML",
+        language="fr",
+    )
+    assert "Target language: French" in messages[0]["content"]
+    assert "Reply ONLY in French" in messages[0]["content"]
+
+
 def test_pitch_mode_system_prompt():
-    assert "Deep pitch analysis" in system_prompt_for_mode("pitch")
+    assert "public-speaking coach" in system_prompt_for_mode("pitch")
     assert PITCH_SYSTEM == system_prompt_for_mode("pitch")
 
 

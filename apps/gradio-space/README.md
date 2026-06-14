@@ -33,8 +33,9 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 
 **Voice & coach**
 
+- `language_lesson_turn` — unified text/audio turn for Language lessons (mode, language, `auto_voiceout`, coach variant)
 - `teacher_voice_turn`, `teacher_voice_audio_turn`, `teacher_voice_clear`, `teacher_voice_speak`
-- `load_sample_pitch`, `analyze_pitch` (language, ASR preset, `speak_rewrite`)
+- `load_sample_pitch`, `analyze_pitch` (Classic EchoCoach; language, ASR preset, `speak_rewrite`)
 - `recording_status`, `recording_start`, `recording_stop`
 - `voice_presets`
 
@@ -44,15 +45,23 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 - `debug_chat`
 - `save_upload`
 
-## Demo script (judges)
+## Demo script (judges) — Language lessons + Cohere stack
+
+**Badge line:** Cohere Labs — Transcribe + Tiny Aya on one local Language lessons page.
 
 1. Open `/` — **Small Model Finetuning** project workspace
-2. Paste a URL in Research → **Ingest URL** → documents appear with **RAG Active**
-3. Center column → **Generate Slides** → slide preview canvas, thumbnail strip, and **Outline** panel
-4. Optional: expand **Research sources** → Web search or RAG modes
-5. Voice view → text or **mic** → full conversation thread + **Speak full reply**
-6. Coach view → **Load sample clip** or record → **Analyze pitch** (charts, transcript, VoiceOut)
-7. Debug sidebar → RAG scope overrides, plain chat or corpus-grounded test with traces
-8. Settings drawer → model status / reload (Classic at `/classic` still available)
+2. **Language lessons** tab → select **French** → hold mic → ask *« Explique le fine-tuning en termes simples. »* → hear Piper/VibeVoice reply
+3. Switch to **Spanish**, type a follow-up (text in, text + audio out with **Auto-speak replies** on)
+4. Select **Other (text only)** → enter `hi` → show Tiny Aya Fire-quality written lesson (text only banner)
+5. Toggle **Use indexed sources** after ingesting one PDF in **Research**
+6. Optional: **Generate Slides** from the Slides tab; **Classic UI** (`/classic`) for EchoCoach pitch metrics
+
+Space secrets for GPU demo:
+
+```bash
+ECHOCOACH_ASR_PRESET=cohere-transcribe
+ECHOCOACH_COACH_MODEL=tiny-aya-global
+ECHOCOACH_REALTIME_TTS_PRESET=vibevoice-realtime-0.5b
+```
 
 Space card metadata lives in the [repository root README.md](../../README.md).

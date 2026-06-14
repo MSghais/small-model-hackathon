@@ -45,11 +45,22 @@ class EchoCoachConfig:
     tts_preset: str
     realtime_tts_preset: str | None
     coach_model: str
+    coach_fallbacks: tuple[str, ...]
     max_seconds: int
     languages: list[LanguageOption]
     asr_presets: dict[str, AsrPreset]
     tts_presets: dict[str, TtsPreset]
     presets_path: Path | None = None
+
+    def coach_model_chain(self) -> list[str]:
+        """Primary coach preset followed by fallbacks (deduped, order preserved)."""
+        chain: list[str] = []
+        seen: set[str] = set()
+        for key in (self.coach_model, *self.coach_fallbacks):
+            if key and key not in seen:
+                seen.add(key)
+                chain.append(key)
+        return chain
 
     def get_asr(self, key: str | None = None) -> AsrPreset:
         preset_key = key or self.asr_preset
@@ -114,6 +125,7 @@ def _builtin_config() -> EchoCoachConfig:
         tts_preset="piper-multilingual",
         realtime_tts_preset=None,
         coach_model="minicpm5-1b",
+        coach_fallbacks=(),
         max_seconds=30,
         languages=langs,
         asr_presets=asr,
@@ -201,11 +213,15 @@ def load_echo_coach_config() -> EchoCoachConfig:
         if tts_default not in tts_presets:
             tts_default = next(iter(tts_presets))
 
+        raw_fallbacks = defaults.get("coach_fallbacks") or []
+        coach_fallbacks = tuple(str(item) for item in raw_fallbacks)
+
         config = EchoCoachConfig(
             asr_preset=asr_default,
             tts_preset=tts_default,
             realtime_tts_preset=defaults.get("realtime_tts_preset"),
             coach_model=str(defaults.get("coach_model", "minicpm5-1b")),
+            coach_fallbacks=coach_fallbacks,
             max_seconds=int(defaults.get("max_seconds", 30)),
             languages=languages,
             asr_presets=asr_presets,
@@ -222,6 +238,12 @@ def load_echo_coach_config() -> EchoCoachConfig:
         updates["realtime_tts_preset"] = os.environ["ECHOCOACH_REALTIME_TTS_PRESET"]
     if os.environ.get("ECHOCOACH_COACH_MODEL"):
         updates["coach_model"] = os.environ["ECHOCOACH_COACH_MODEL"]
+    if os.environ.get("ECHOCOACH_COACH_FALLBACK"):
+        updates["coach_fallbacks"] = tuple(
+            part.strip()
+            for part in os.environ["ECHOCOACH_COACH_FALLBACK"].split(",")
+            if part.strip()
+        )
     if os.environ.get("ECHOCOACH_MAX_SECONDS"):
         updates["max_seconds"] = int(os.environ["ECHOCOACH_MAX_SECONDS"])
 
