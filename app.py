@@ -1,5 +1,10 @@
 """Hugging Face Gradio SDK entry point (ZeroGPU / Gradio Spaces)."""
 
+import os
+
+# HF Spaces default SSR to True; Node proxy then binds 7860 and Python falls back to 7861.
+os.environ["GRADIO_SSR_MODE"] = "False"
+
 import sys
 from pathlib import Path
 

@@ -83,6 +83,7 @@ def main() -> None:
         footer_links=[],
         allowed_paths=_all_allowed_paths(),
         show_error=True,
+        ssr_mode=False,
     )
 
 
