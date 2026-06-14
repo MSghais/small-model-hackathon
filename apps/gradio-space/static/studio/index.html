@@ -21,6 +21,8 @@
   <div id="studio-error" class="studio-banner studio-banner-error hidden" role="alert"></div>
   <div id="studio-loading" class="studio-banner studio-banner-loading hidden">Working…</div>
 
+  <button type="button" id="sidebar-backdrop" class="sidebar-backdrop hidden" aria-label="Close menu"></button>
+
   <aside id="sidebar" class="sidebar">
     <button type="button" id="sidebar-close" class="sidebar-close material-symbols-outlined" aria-label="Close menu">close</button>
     <div class="sidebar-brand">
@@ -37,11 +39,11 @@
       <button type="button" class="nav-item" data-view="language-lessons"><span class="material-symbols-outlined">translate</span>Language lessons</button>
       <button type="button" class="nav-item" data-view="debug"><span class="material-symbols-outlined">bug_report</span>Debug</button>
       <button type="button" id="btn-open-settings" class="nav-item"><span class="material-symbols-outlined">settings</span>Settings</button>
-      <a href="/classic" class="nav-item nav-link"><span class="material-symbols-outlined">open_in_new</span>Classic UI</a>
+      <a href="?classic" class="nav-item nav-link"><span class="material-symbols-outlined">open_in_new</span>Classic UI</a>
     </nav>
     <div class="sidebar-footer">
       <p class="sidebar-foot-label">Powered by local small models</p>
-      <a href="/classic">Open Classic UI</a>
+      <a href="?classic">Open Classic UI</a>
     </div>
   </aside>
 
@@ -56,31 +58,41 @@
       <button type="button" id="theme-toggle-btn" class="btn btn-ghost btn-icon" aria-label="Toggle light/dark theme" title="Toggle theme">
         <span class="material-symbols-outlined" id="theme-icon">dark_mode</span>
       </button>
-      <a href="/classic" class="btn btn-ghost">Classic UI</a>
-      <button type="button" id="btn-export" class="btn btn-primary" disabled>Export</button>
+      <a href="?classic" class="btn btn-ghost topbar-classic-link" aria-label="Classic UI" title="Classic UI">
+        <span class="material-symbols-outlined">open_in_new</span>
+        <span class="topbar-classic-label">Classic UI</span>
+      </a>
+      <button type="button" id="btn-export" class="btn btn-primary topbar-export" disabled>Export</button>
     </div>
   </header>
 
   <div class="workspace-context-bar" id="workspace-context-bar">
-    <div class="workspace-context-inner">
-      <label class="field ws-field">
-        <span>Workspace topic</span>
-        <input id="workspace-topic" type="text" class="input" value="small model finetuning" placeholder="e.g. Small language model finetuning" />
-      </label>
-      <label class="field ws-field">
-        <span>ResearchMind session</span>
-        <select id="workspace-session" class="input">
-          <option value="">New session (on ingest)</option>
-        </select>
-      </label>
-      <button type="button" id="workspace-refresh-sessions" class="btn btn-ghost btn-icon" title="Refresh sessions">↻</button>
-      <details class="workspace-docs-details" id="workspace-docs-details">
-        <summary>Source scope (RAG)</summary>
-        <div id="workspace-doc-list" class="workspace-doc-list"></div>
-        <p id="workspace-rag-hint" class="status-text"></p>
-        <p id="workspace-memory" class="status-text workspace-memory"></p>
-      </details>
-    </div>
+    <details class="workspace-context-mobile" id="workspace-context-mobile">
+      <summary class="workspace-context-summary">
+        <span class="material-symbols-outlined workspace-context-summary-icon">tune</span>
+        <span id="workspace-context-summary-text" class="workspace-context-summary-text">Workspace</span>
+        <span class="material-symbols-outlined workspace-context-chevron">expand_more</span>
+      </summary>
+      <div class="workspace-context-inner">
+        <label class="field ws-field">
+          <span>Workspace topic</span>
+          <input id="workspace-topic" type="text" class="input" value="small model finetuning" placeholder="e.g. Small language model finetuning" />
+        </label>
+        <label class="field ws-field">
+          <span>ResearchMind session</span>
+          <select id="workspace-session" class="input">
+            <option value="">New session (on ingest)</option>
+          </select>
+        </label>
+        <button type="button" id="workspace-refresh-sessions" class="btn btn-ghost btn-icon" title="Refresh sessions">↻</button>
+        <details class="workspace-docs-details" id="workspace-docs-details">
+          <summary>Source scope (RAG)</summary>
+          <div id="workspace-doc-list" class="workspace-doc-list"></div>
+          <p id="workspace-rag-hint" class="status-text"></p>
+          <p id="workspace-memory" class="status-text workspace-memory"></p>
+        </details>
+      </div>
+    </details>
   </div>
 
   <main class="workspace" data-view="slides">
@@ -396,7 +408,7 @@
           </div>
           <p class="lessons-classic-link status-text">
             Pitch metrics and monologue analysis live in
-            <a href="/classic">Classic UI → EchoCoach</a>.
+            <a href="?classic">Classic UI → EchoCoach</a>.
           </p>
         </div>
       </div>
@@ -478,7 +490,7 @@
         <summary>Paths &amp; files</summary>
         <pre id="settings-paths" class="settings-pre"></pre>
       </details>
-      <a href="/classic" class="btn btn-ghost btn-block">Open Classic UI</a>
+      <a href="?classic" class="btn btn-ghost btn-block">Open Classic UI</a>
     </aside>
   </div>
 

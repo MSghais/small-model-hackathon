@@ -1,9 +1,5 @@
-# Workspace packages (HF clones full repo)
--e ./libs/inference
--e ./libs/researchmind
--e ./libs/agent
--e ./libs/echocoach[piper,whisper]
--e ./apps/gradio-space
+# Monorepo workspace packages are loaded via PYTHONPATH in app.py (HF installs
+# requirements before copying the repo, so -e ./libs/* editable installs fail).
 
 # Pinned runtime deps (do not pin gradio, spaces, or huggingface_hub — HF preinstalls them)
 accelerate==1.13.0
@@ -11,7 +7,8 @@ torch==2.12.0
 torchvision==0.27.0
 transformers==5.10.2
 peft==0.19.1
-llama-cpp-python==0.3.26
+# llama-cpp-python omitted — compiles from source on HF (10+ min / timeout).
+# Space uses transformers presets (minicpm5-1b). Install locally for GGUF presets.
 sentence-transformers==5.5.1
 pydantic>=2.0.0
 pyyaml>=6.0.2

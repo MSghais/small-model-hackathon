@@ -24,7 +24,7 @@ def build_demo() -> gr.Blocks:
 <div class="brand-block">
   <h1>Build Small</h1>
   <p>Local lesson slides, research, voice coaching — offline on small models.
-  <a href="/">Studio UI</a> ·
+  <a href="../">Studio UI</a> ·
   <a href="https://huggingface.co/build-small-hackathon" target="_blank">Hackathon</a></p>
 </div>
 """

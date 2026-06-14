@@ -1,6 +1,5 @@
 from inference.base import InferenceBackend
 from inference.config import ModelConfig, get_model_config
-from inference.llama_cpp import LlamaCppBackend
 
 _backend: InferenceBackend | None = None
 _backend_key: tuple | None = None
@@ -8,6 +7,8 @@ _backend_key: tuple | None = None
 
 def _create_backend(config: ModelConfig) -> InferenceBackend:
     if config.backend == "llama_cpp":
+        from inference.llama_cpp import LlamaCppBackend
+
         return LlamaCppBackend(config)
 
     if config.backend == "transformers":
