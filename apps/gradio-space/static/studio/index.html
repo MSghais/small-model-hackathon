@@ -428,11 +428,13 @@
         <div id="debug-chat-messages" class="research-chat-messages debug-chat-messages">
           <p class="research-chat-empty">Send a message to test the active local model.</p>
         </div>
-        <label class="field">
-          <span>Message</span>
-          <textarea id="debug-message" class="input" rows="3" placeholder="Hello, model…"></textarea>
-        </label>
-        <button type="button" id="btn-debug-send" class="btn btn-primary btn-block">Send</button>
+        <div class="coach-debug-compose">
+          <label class="field">
+            <span>Message</span>
+            <textarea id="debug-message" class="input" rows="2" placeholder="Hello, model…"></textarea>
+          </label>
+          <button type="button" id="btn-debug-send" class="btn btn-primary btn-block">Send</button>
+        </div>
         <details class="studio-debug-trace" id="debug-trace-details">
           <summary>Debug trace</summary>
           <div id="debug-trace-panel"></div>

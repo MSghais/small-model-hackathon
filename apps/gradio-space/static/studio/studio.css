@@ -971,20 +971,13 @@ body {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   max-width: 1280px;
   gap: 1.25rem;
-  align-items: stretch;
-}
-
-.workspace[data-view="coach"] .col-studio,
-.workspace[data-view="coach"] .col-debug {
-  min-height: calc(100vh - var(--topbar-h) - var(--context-bar-h) - 3rem);
+  align-items: start;
 }
 
 .workspace[data-view="coach"] .coach-panel-wrap,
 .workspace[data-view="coach"] .coach-debug-card {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .workspace[data-view="coach"] .coach-results-panel {
@@ -1000,13 +993,29 @@ body {
 }
 
 .workspace[data-view="coach"] .debug-chat-messages {
-  flex: 1;
-  min-height: 160px;
-  max-height: none;
+  min-height: 140px;
+  max-height: min(240px, 30vh);
+  margin-bottom: 0.5rem;
 }
 
-.workspace[data-view="coach"] .coach-debug-card .field:last-of-type {
-  margin-top: auto;
+.workspace[data-view="coach"] .coach-debug-compose {
+  padding-top: 0;
+  border-top: none;
+}
+
+.workspace[data-view="coach"] .coach-debug-compose textarea {
+  min-height: 3.5rem;
+  resize: vertical;
+}
+
+.workspace[data-view="coach"] .coach-debug-card .studio-debug-trace {
+  flex-shrink: 0;
+  margin-top: 0.5rem;
+}
+
+.workspace[data-view="coach"] .coach-debug-card .toggle-row,
+.workspace[data-view="coach"] .coach-debug-card .debug-rag-scope {
+  flex-shrink: 0;
 }
 
 .view-coach-only { display: none; }
@@ -1071,11 +1080,6 @@ body {
     max-width: 640px;
     margin-left: auto;
     margin-right: auto;
-  }
-
-  .workspace[data-view="coach"] .col-studio,
-  .workspace[data-view="coach"] .col-debug {
-    min-height: auto;
   }
 
   .coach-capture-row {
