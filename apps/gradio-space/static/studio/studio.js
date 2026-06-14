@@ -745,7 +745,70 @@ async function refreshDebugDocuments() {
 function updateProjectTitle() {
   const topic = state.workspaceTopic || "";
   const short = topic.split(" for ")[0] || topic || "Project";
-  $("#project-title").textContent = short.slice(0, 40);
+  const title = short.slice(0, 40);
+  const el = $("#project-title");
+  if (el) {
+    el.textContent = title;
+    el.title = topic || title;
+  }
+  updateWorkspaceContextSummary();
+}
+
+function updateWorkspaceContextSummary() {
+  const el = $("#workspace-context-summary-text");
+  if (!el) return;
+  const topic = (state.workspaceTopic || "Workspace").trim();
+  const shortTopic = (topic.split(" for ")[0] || topic || "Workspace").slice(0, 32);
+  const sessionSel = $("#workspace-session");
+  let sessionLabel = "New session";
+  if (sessionSel?.value) {
+    const label = sessionSel.selectedOptions[0]?.textContent?.trim() || "Session";
+    sessionLabel = label.length > 22 ? `${label.slice(0, 19)}…` : label;
+  }
+  el.textContent = `${shortTopic} · ${sessionLabel}`;
+  el.title = topic ? `${topic} · ${sessionLabel}` : sessionLabel;
+}
+
+function syncViewChrome(view) {
+  const active = view || $(".workspace")?.dataset.view || "slides";
+  document.body.dataset.view = active;
+}
+
+function openSidebar() {
+  $("#sidebar")?.classList.add("open");
+  $("#sidebar-backdrop")?.classList.remove("hidden");
+  document.body.classList.add("sidebar-open");
+}
+
+function closeSidebar() {
+  $("#sidebar")?.classList.remove("open");
+  $("#sidebar-backdrop")?.classList.add("hidden");
+  document.body.classList.remove("sidebar-open");
+}
+
+function syncLayoutOffsets() {
+  const topbar = $(".topbar");
+  const ctxBar = $("#workspace-context-bar");
+  if (!topbar || !ctxBar) return;
+  document.documentElement.style.setProperty("--topbar-h", `${topbar.offsetHeight}px`);
+  document.documentElement.style.setProperty("--context-bar-h", `${ctxBar.offsetHeight}px`);
+}
+
+function bindLayoutSync() {
+  syncLayoutOffsets();
+  window.addEventListener("resize", syncLayoutOffsets);
+  const ctxBar = $("#workspace-context-bar");
+  if (ctxBar && typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => syncLayoutOffsets());
+    ro.observe(ctxBar);
+    if ($(".topbar")) ro.observe($(".topbar"));
+  }
+  $("#workspace-context-mobile")?.addEventListener("toggle", syncLayoutOffsets);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#sidebar")?.classList.contains("open")) {
+      closeSidebar();
+    }
+  });
 }
 
 function updateWorkspaceRagHint() {
@@ -1012,6 +1075,7 @@ async function refreshWorkspaceSessions(selectId) {
     }
   }
   await refreshDebugSessions();
+  updateWorkspaceContextSummary();
 }
 
 async function refreshDocuments() {
@@ -1104,6 +1168,7 @@ async function reloadModelFromSettings() {
 async function initWorkspace() {
   $("#workspace-topic").value = state.workspaceTopic;
   syncResearchLayout();
+  syncViewChrome();
   updateProjectTitle();
   updateResearchRagBadge();
   await refreshWorkspaceSessions();
@@ -1115,6 +1180,7 @@ async function initWorkspace() {
   await refreshDebugDocuments();
   const recStatus = await callApi("recording_status", []);
   state.useBrowserMic = !recStatus.backend || /unavailable|no capture/i.test(recStatus.message || "");
+  syncLayoutOffsets();
 }
 
 async function ingestUrl() {
@@ -1211,6 +1277,7 @@ async function generateSlides() {
       <a href="${fileUrl(data.downloads.docx)}" download>DOCX</a>
       <a href="${fileUrl(data.downloads.html)}" download>HTML</a>`;
         $("#btn-export").disabled = false;
+        syncLayoutOffsets();
       }
 
       const outlineDetails = $("#slide-outline-details");
@@ -1455,11 +1522,15 @@ function bindUi() {
       btn.classList.add("active");
       $(".workspace").dataset.view = btn.dataset.view;
       syncResearchLayout();
-      $("#sidebar").classList.remove("open");
+      syncViewChrome(btn.dataset.view);
+      closeSidebar();
     });
   });
 
-  $("#btn-open-settings")?.addEventListener("click", openSettingsDrawer);
+  $("#btn-open-settings")?.addEventListener("click", () => {
+    closeSidebar();
+    openSettingsDrawer();
+  });
   $("#btn-close-settings")?.addEventListener("click", closeSettingsDrawer);
   $("#settings-backdrop")?.addEventListener("click", closeSettingsDrawer);
   $("#theme-toggle")?.addEventListener("change", toggleTheme);
@@ -1467,8 +1538,9 @@ function bindUi() {
   $("#btn-reload-model")?.addEventListener("click", () => reloadModelFromSettings().catch(() => {}));
 
   $("#btn-open-research-view")?.addEventListener("click", openResearchView);
-  $("#sidebar-open")?.addEventListener("click", () => $("#sidebar").classList.add("open"));
-  $("#sidebar-close")?.addEventListener("click", () => $("#sidebar").classList.remove("open"));
+  $("#sidebar-open")?.addEventListener("click", openSidebar);
+  $("#sidebar-close")?.addEventListener("click", closeSidebar);
+  $("#sidebar-backdrop")?.addEventListener("click", closeSidebar);
 
   $("#workspace-topic").addEventListener("input", (e) => {
     state.workspaceTopic = e.target.value.trim();
@@ -1477,6 +1549,7 @@ function bindUi() {
 
   $("#workspace-session").addEventListener("change", (e) => {
     state.workspaceSessionId = e.target.value;
+    updateWorkspaceContextSummary();
     refreshDocuments().catch(() => {});
     refreshDebugDocuments().catch(() => {});
   });
@@ -1597,6 +1670,7 @@ function bindUi() {
   });
 
   syncLessonsModeUi();
+  bindLayoutSync();
 }
 
 bindUi();
