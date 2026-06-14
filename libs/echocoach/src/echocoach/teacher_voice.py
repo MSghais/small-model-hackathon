@@ -12,7 +12,7 @@ from agent.trace import TraceRecorder
 from inference.base import InferenceBackend
 from inference.response_clean import (
     needs_teacher_compaction,
-    prepare_display_reply,
+    reply_ends_complete_sentence,
     strip_reasoning_output,
 )
 from researchmind.ingest import IngestPipeline
@@ -161,6 +161,7 @@ def fetch_rag_context(
 def _rag_turn_via_agent(
     user_text: str,
     *,
+    mode: TeacherVoiceMode,
     topic: str | None,
     session_id: str,
     doc_ids: list[str] | None,
@@ -198,8 +199,13 @@ def _rag_turn_via_agent(
         research_trace=result.trace_path,
     )
 
-    assistant_text = result.answer.strip()
-    display_reply = prepare_display_reply(assistant_text)
+    raw_answer = strip_references_for_tts(result.answer.strip())
+    assistant_text, display_reply = _finalize_voice_reply(
+        raw_answer,
+        mode=mode,
+        backend=backend,
+        trace=trace,
+    )
     rag_refs = result.references_markdown or None
     return assistant_text, rag_refs, rag_status, display_reply
 
@@ -251,25 +257,36 @@ def _compact_teacher_reply(
     return compact or seed
 
 
-def _finalize_non_rag_reply(
+def _finalize_voice_reply(
     raw_reply: str,
     *,
     mode: TeacherVoiceMode,
     backend: InferenceBackend,
     trace: TraceRecorder,
 ) -> tuple[str, str]:
+    """Normalize model output into a complete spoken reply and chat display text."""
     assistant_text = strip_reasoning_output(raw_reply).strip()
-    if needs_teacher_compaction(raw_reply) or not assistant_text:
+    needs_fix = (
+        not assistant_text
+        or needs_teacher_compaction(raw_reply)
+        or needs_teacher_compaction(assistant_text)
+        or not reply_ends_complete_sentence(assistant_text)
+    )
+    if needs_fix:
         assistant_text = _compact_teacher_reply(
             raw_reply,
             mode=mode,
             backend=backend,
             trace=trace,
         )
-    display_reply = prepare_display_reply(raw_reply)
-    if needs_teacher_compaction(display_reply):
-        display_reply = prepare_display_reply(assistant_text)
-    return assistant_text, display_reply
+    if not reply_ends_complete_sentence(assistant_text):
+        assistant_text = _compact_teacher_reply(
+            assistant_text or raw_reply,
+            mode=mode,
+            backend=backend,
+            trace=trace,
+        )
+    return assistant_text, assistant_text
 
 
 def build_teacher_messages(
@@ -320,6 +337,7 @@ def _generate_teacher_reply(
     if use_rag and mode in RAG_MODES:
         assistant_text, rag_refs, rag_status, display_reply = _rag_turn_via_agent(
             user_text,
+            mode=mode,
             topic=topic,
             session_id=session_id,
             doc_ids=doc_ids,
@@ -334,8 +352,8 @@ def _generate_teacher_reply(
             user_text=user_text,
             topic=topic,
         )
-        raw_reply = backend.chat(messages, max_tokens=256, temperature=0.2)
-        assistant_text, display_reply = _finalize_non_rag_reply(
+        raw_reply = backend.chat(messages, max_tokens=512, temperature=0.2)
+        assistant_text, display_reply = _finalize_voice_reply(
             raw_reply,
             mode=mode,
             backend=backend,

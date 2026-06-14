@@ -276,11 +276,11 @@
           </div>
         </div>
         <div id="slide-canvas" class="slide-canvas">
-          <div id="canvas-overlay" class="canvas-overlay hidden" aria-live="polite">
-            <div class="canvas-overlay-inner">
-              <span class="canvas-spinner" aria-hidden="true"></span>
-              <p id="canvas-overlay-text">Generating slides…</p>
-              <p class="canvas-overlay-hint">Local CPU models often take 30–90 seconds.</p>
+          <div id="canvas-overlay" class="region-loading hidden" aria-live="polite">
+            <div class="region-loading-inner">
+              <span class="studio-spinner" aria-hidden="true"></span>
+              <p id="canvas-overlay-text" class="region-loading-text">Generating slides…</p>
+              <p class="region-loading-hint canvas-overlay-hint">Local CPU models often take 30–90 seconds.</p>
             </div>
           </div>
           <div id="slide-canvas-content" class="slide-canvas-content">
@@ -306,10 +306,10 @@
           <div class="card voice-rag-card">
             <p class="card-title">RAG Scope</p>
             <label class="toggle-row">
-              <span>Cross-Reference Sources</span>
+              <span>Answer from my indexed sources</span>
               <input id="use-rag" type="checkbox" checked />
             </label>
-            <p class="status-text">Uses workspace session and documents unless overridden below.</p>
+            <p class="status-text">Ground teacher replies in your workspace documents when enabled.</p>
           </div>
           <div class="card voice-rail-controls">
             <p class="card-title">Mode</p>

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
+from inference.response_clean import reply_ends_complete_sentence
 from echocoach.prompts import PITCH_SYSTEM, system_prompt_for_mode
 from echocoach.teacher_voice import (
     RagContext,
@@ -221,6 +222,7 @@ def test_rag_turn_via_agent_mock(monkeypatch, tmp_path):
     trace = TraceRecorder(skill="teacher-voice", model="test", user_input={})
     text, refs, status, display = _rag_turn_via_agent(
         "How do plants eat?",
+        mode="explain",
         topic="Photosynthesis",
         session_id="",
         doc_ids=None,
@@ -249,6 +251,30 @@ def research_env(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("RESEARCHMIND_DATA_DIR", str(cfg.data_dir))
     monkeypatch.setenv("AGENT_OUTPUTS_DIR", str(tmp_path / "outputs"))
+
+
+def test_finalize_voice_reply_compacts_incomplete_sentence():
+    from echocoach.teacher_voice import _finalize_voice_reply
+    from agent.trace import TraceRecorder
+
+    class _Backend:
+        def chat(self, messages, *, max_tokens=512, temperature=0.2):
+            return (
+                "Finetuning adapts a pretrained small model to your task using extra labeled data. "
+                "You keep most of the base weights and train on a focused dataset. "
+                "That usually beats prompting alone for domain-specific work."
+            )
+
+    trace = TraceRecorder(skill="teacher-voice", model="test", user_input={})
+    text, display = _finalize_voice_reply(
+        "The lesson aims to teach how to fine-tune small",
+        mode="lesson",
+        backend=_Backend(),
+        trace=trace,
+    )
+    assert reply_ends_complete_sentence(text)
+    assert "fine-tune" in text.lower() or "finetun" in text.lower()
+    assert text == display
 
 
 def test_run_teacher_voice_text_turn_mock(monkeypatch, tmp_path):

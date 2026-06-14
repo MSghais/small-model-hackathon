@@ -395,11 +395,6 @@ body {
   position: relative;
 }
 
-.region-loading,
-.canvas-overlay {
-  border-radius: inherit;
-}
-
 .slide-canvas {
   position: relative;
   flex: 1;
@@ -415,39 +410,52 @@ body {
   min-height: 280px;
 }
 
-.canvas-overlay {
+.region-loading {
   position: absolute;
   inset: 0;
   z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--canvas-overlay-bg);
-  backdrop-filter: blur(2px);
-  border-radius: var(--radius-lg);
+  background: transparent;
+  pointer-events: none;
 }
 
-.canvas-overlay-inner {
+.region-loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
   text-align: center;
-  padding: 1.5rem;
 }
 
+.studio-spinner,
 .canvas-spinner,
 .lesson-running-spinner {
   display: inline-block;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 3px solid var(--outline-variant);
   border-top-color: var(--primary);
   border-radius: 50%;
   animation: studio-spin 0.9s linear infinite;
-  margin-bottom: 0.75rem;
+  flex-shrink: 0;
 }
 
-.canvas-overlay-hint {
-  margin: 0.35rem 0 0;
+.region-loading-text,
+.canvas-overlay-text {
+  margin: 0;
   font-size: 0.85rem;
+  font-weight: 500;
   color: var(--secondary);
+}
+
+.region-loading-hint,
+.canvas-overlay-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--secondary);
+  opacity: 0.85;
 }
 
 @keyframes studio-spin {
@@ -1452,6 +1460,14 @@ body {
   cursor: pointer;
   font-weight: 600;
   font-size: 0.875rem;
+}
+
+.voice-rag-refs {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--outline-variant);
+  font-size: 0.82rem;
+  color: var(--on-surface-variant);
 }
 
 .voice-replay-row {

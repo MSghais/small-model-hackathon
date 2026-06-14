@@ -357,7 +357,10 @@ function renderVoiceChat() {
     if (item && typeof item === "object" && item.role) {
       const role = item.role === "user" ? "user" : "assistant";
       const label = role === "user" ? "You" : "Teacher";
-      const body = renderMarkdownLite(voiceMessageText(item.content));
+      let body = renderMarkdownLite(voiceMessageText(item.content));
+      if (role === "assistant" && item.rag_references) {
+        body += `<div class="voice-rag-refs">${renderMarkdownLite(item.rag_references)}</div>`;
+      }
       parts.push(
         `<div class="research-chat-bubble research-chat-${role}"><div class="research-chat-role">${label}</div><div class="research-chat-body">${body}</div></div>`
       );
@@ -705,11 +708,11 @@ function setRegionLoading(container, on, message = "Working…", { overlayEl = n
   let overlay = overlayEl || container.querySelector(":scope > .region-loading");
   if (!overlay) {
     overlay = document.createElement("div");
-    overlay.className = "canvas-overlay region-loading hidden";
+    overlay.className = "region-loading hidden";
     overlay.setAttribute("aria-live", "polite");
     overlay.innerHTML = `
-      <div class="canvas-overlay-inner">
-        <span class="canvas-spinner" aria-hidden="true"></span>
+      <div class="region-loading-inner">
+        <span class="studio-spinner" aria-hidden="true"></span>
         <p class="region-loading-text"></p>
         <p class="region-loading-hint hidden"></p>
       </div>`;
@@ -1150,6 +1153,12 @@ async function generateSlides() {
 
 function renderVoiceReply(data, { keepAudio = false } = {}) {
   state.history = data.history ?? state.history;
+  if (data.rag_references && state.history.length) {
+    const last = state.history[state.history.length - 1];
+    if (last && typeof last === "object" && last.role === "assistant") {
+      last.rag_references = data.rag_references;
+    }
+  }
   renderVoiceChat();
   if (data.status) {
     $("#voice-turn-status").textContent = stripMd(data.status);

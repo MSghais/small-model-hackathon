@@ -167,6 +167,14 @@ def looks_like_reasoning_only(text: str) -> bool:
     return bool(_SENTENCE_PART.search(text) and len(text) > 120)
 
 
+def reply_ends_complete_sentence(text: str) -> bool:
+    """True when visible reply text ends with sentence-ending punctuation."""
+    cleaned = strip_reasoning_output(text).strip()
+    if not cleaned:
+        return False
+    return bool(_COMPLETE_SENTENCE.search(cleaned))
+
+
 def needs_teacher_compaction(text: str) -> bool:
     cleaned = text.strip()
     if not cleaned:
