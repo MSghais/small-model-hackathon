@@ -1,6 +1,6 @@
 from agent.models import EducationPptxInput, SlideOutline, SlideSpec
 from agent.preview import outline_to_html, render_slide_images
-from agent.prompts import fallback_outline, outline_max_tokens
+from agent.prompts import fallback_outline, outline_looks_like_schema_echo, outline_max_tokens
 from agent.runner import AgentRunner
 from agent.tools.docx import create_docx, create_html_export
 from agent.tools.pptx import create_pptx
@@ -82,6 +82,34 @@ def test_parse_outline_or_error_empty():
     outline, err = runner._parse_outline_or_error("", 5, None)
     assert outline is None
     assert "empty" in err.lower()
+
+
+def test_parse_outline_rejects_schema_echo():
+    runner = AgentRunner()
+    raw = (
+        '{"title": "string — presentation title", "slides": ['
+        '{"title": "string — slide heading", "bullets": ["string", "..."], '
+        '"speaker_note": "string — one sentence for the teacher"}'
+        "]}"
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="schema placeholders"):
+        runner._parse_outline(raw, expected_slides=5)
+
+
+def test_outline_looks_like_schema_echo():
+    echo = SlideOutline(
+        title="string — presentation title",
+        slides=[SlideSpec(title="string — slide heading", bullets=["string", "..."])],
+    )
+    assert outline_looks_like_schema_echo(echo) is True
+
+    real = SlideOutline(
+        title="Small model finetuning",
+        slides=[SlideSpec(title="What is finetuning?", bullets=["Adapting a base model"])],
+    )
+    assert outline_looks_like_schema_echo(real) is False
 
 
 def test_fallback_outline_slide_count():
