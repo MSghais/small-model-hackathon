@@ -51,7 +51,7 @@ from gradio_space.ui.studio_html import (
     render_trace_details,
 )
 from gradio_space.voice_helpers import speak_last_assistant_reply
-from inference.config import get_app_config
+from inference.config import get_app_config, get_model_config
 from inference.factory import get_backend
 from researchmind.config import get_config as get_research_config
 from researchmind.ingest import IngestPipeline
@@ -167,6 +167,7 @@ def _voice_stack_summary() -> str:
         f"ASR: {asr.label} ({_echo_config.asr_preset})",
         f"TTS: {tts.label} ({_echo_config.tts_preset})",
         f"Coach model: {_echo_config.coach_model}",
+        f"Coach fallbacks: {', '.join(_echo_config.coach_fallbacks) or 'none'}",
         f"Max recording: {_echo_config.max_seconds}s",
     ]
     return "\n".join(lines)
@@ -189,15 +190,64 @@ def _coach_model_key(
     return key
 
 
+def _coach_model_label(model_key: str) -> str:
+    try:
+        return get_model_config(model_key).label
+    except Exception:
+        return model_key
+
+
+def _coach_model_candidates(
+    coach_model: str | None = None,
+    *,
+    language: str = "en",
+    coach_variant: str = "auto",
+) -> list[str]:
+    if coach_model and coach_model.strip():
+        return [coach_model.strip()]
+    primary = _coach_model_key(None, language=language, coach_variant=coach_variant)
+    chain: list[str] = []
+    seen: set[str] = set()
+    for key in (primary, *_echo_config.coach_fallbacks):
+        if key and key not in seen:
+            seen.add(key)
+            chain.append(key)
+    return chain or [primary]
+
+
 def _ensure_coach_loaded(
     coach_model: str | None = None,
     *,
     language: str = "en",
     coach_variant: str = "auto",
-) -> tuple[str, str | None]:
-    key = _coach_model_key(coach_model, language=language, coach_variant=coach_variant)
-    load_error = ensure_model_loaded(key)
-    return key, load_error
+) -> tuple[str, str | None, str | None]:
+    """Load the first coach preset that succeeds. Returns (key, error, fallback_note)."""
+    candidates = _coach_model_candidates(
+        coach_model,
+        language=language,
+        coach_variant=coach_variant,
+    )
+    errors: list[str] = []
+    for index, key in enumerate(candidates):
+        load_error = ensure_model_loaded(key)
+        if not load_error:
+            if index == 0:
+                return key, None, None
+            label = _coach_model_label(key)
+            note = (
+                f"Primary coach unavailable — using fallback **{label}** (`{key}`). "
+                "Replies still follow your target language via prompts."
+            )
+            return key, None, note
+        errors.append(load_error)
+    return candidates[-1], errors[-1], None
+
+
+def _coach_turn_status(base: str | None, fallback_note: str | None) -> str:
+    status = (base or "Turn complete.").strip()
+    if fallback_note:
+        return f"{fallback_note} {status}".strip()
+    return status
 
 
 def _voice_language_codes() -> list[str]:
@@ -585,7 +635,7 @@ def api_teacher_voice_turn(
     coach_model: str = "",
     coach_variant: str = "auto",
 ) -> dict[str, Any]:
-    model_key, load_error = _ensure_coach_loaded(
+    model_key, load_error, fallback_note = _ensure_coach_loaded(
         coach_model or None,
         language=language,
         coach_variant=coach_variant,
@@ -617,11 +667,12 @@ def api_teacher_voice_turn(
     return ok(
         history=result.history,
         assistant=result.assistant_text,
-        status=result.rag_status or "Turn complete.",
+        status=_coach_turn_status(result.rag_status, fallback_note),
         voiceout_path=result.voiceout_path,
         voiceout_warning=result.voiceout_warning,
         rag_references=result.rag_references,
         coach_model=model_key,
+        coach_fallback=bool(fallback_note),
     )
 
 def api_teacher_voice_audio_turn(
@@ -638,7 +689,7 @@ def api_teacher_voice_audio_turn(
     coach_model: str = "",
     coach_variant: str = "auto",
 ) -> dict[str, Any]:
-    model_key, load_error = _ensure_coach_loaded(
+    model_key, load_error, fallback_note = _ensure_coach_loaded(
         coach_model or None,
         language=language,
         coach_variant=coach_variant,
@@ -674,12 +725,13 @@ def api_teacher_voice_audio_turn(
     return ok(
         history=result.history,
         assistant=result.assistant_text,
-        status=result.rag_status or "Turn complete.",
+        status=_coach_turn_status(result.rag_status, fallback_note),
         voiceout_path=result.voiceout_path,
         voiceout_warning=result.voiceout_warning,
         user_text=result.user_text,
         rag_references=result.rag_references,
         coach_model=model_key,
+        coach_fallback=bool(fallback_note),
     )
 
 
@@ -771,7 +823,7 @@ def api_analyze_pitch(
     asr_preset: str | None = None,
     speak_rewrite: bool = False,
 ) -> dict[str, Any]:
-    model_key, load_error = _ensure_coach_loaded(None, language=language)
+    model_key, load_error, _fallback_note = _ensure_coach_loaded(None, language=language)
     if load_error:
         return err(load_error)
 
@@ -887,6 +939,9 @@ def api_recording_stop() -> dict[str, Any]:
 def api_voice_presets() -> dict[str, Any]:
     tts = _echo_config.get_tts()
     voice_langs = _voice_language_codes()
+    coach_chain = _echo_config.coach_model_chain()
+    coach_chain_labels = [_coach_model_label(key) for key in coach_chain]
+    fallback_label = coach_chain_labels[1] if len(coach_chain_labels) > 1 else None
     return ok(
         languages=[{"label": label, "value": value} for label, value in _echo_config.language_choices()],
         asr_presets=[{"label": label, "value": value} for label, value in _echo_config.asr_choices()],
@@ -896,11 +951,15 @@ def api_voice_presets() -> dict[str, Any]:
         default_language=_echo_config.language_choices()[0][1] if _echo_config.language_choices() else "en",
         default_asr=_echo_config.asr_preset,
         default_coach=_echo_config.coach_model,
+        coach_fallbacks=list(_echo_config.coach_fallbacks),
+        coach_chain=coach_chain,
+        coach_chain_labels=coach_chain_labels,
         voice_languages=voice_langs,
         max_seconds=_echo_config.max_seconds,
         voiceout_note=(
             f"Voice in/out: {len(voice_langs)} languages via Piper · "
-            "Coach text: 70+ languages with Tiny Aya"
+            f"Coach: {coach_chain_labels[0]}"
+            + (f" (fallback: {fallback_label})" if fallback_label else "")
         ),
     )
 

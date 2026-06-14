@@ -119,6 +119,7 @@ Configure presets in [`voice_models.yaml`](voice_models.yaml) or via `.env`:
 | `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key (EchoCoach, default VoiceOut) |
 | `ECHOCOACH_REALTIME_TTS_PRESET` | `vibevoice-realtime-0.5b` | Language lessons streaming TTS (see below) |
 | `ECHOCOACH_COACH_MODEL` | `tiny-aya-global` | Text coach preset (Tiny Aya; from `models.yaml`) |
+| `ECHOCOACH_COACH_FALLBACK` | `minicpm5-1b` | Comma-separated fallback presets if primary coach fails to load |
 | `ECHOCOACH_MAX_SECONDS` | `30` | Max recording length |
 
 **Cohere Transcribe** (`cohere-transcribe`) is gated on Hugging Face — run `huggingface-cli login`, accept the model terms, then set `ECHOCOACH_ASR_PRESET=cohere-transcribe`. GPU recommended for ASR + coach together.

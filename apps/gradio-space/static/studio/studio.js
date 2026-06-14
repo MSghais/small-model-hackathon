@@ -1040,6 +1040,14 @@ async function initLanguageLessons() {
     langSelect.innerHTML = `${opts}<option value="other">Other (text only)</option>`;
     langSelect.value = data.default_language || "en";
   }
+  const coachEl = document.querySelector(".lessons-coach-model");
+  if (coachEl && data.coach_chain_labels?.length) {
+    const primary = data.coach_chain_labels[0];
+    const fallback = data.coach_chain_labels[1];
+    coachEl.textContent = fallback
+      ? `Coach: ${primary} (auto-fallback: ${fallback})`
+      : `Coach: ${primary}`;
+  }
   syncLessonsLanguageUi();
 }
 

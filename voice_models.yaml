@@ -7,6 +7,8 @@ defaults:
   # Realtime streaming TTS for TeacherVoice VoiceOut (set ECHOCOACH_TTS_PRESET to match)
   realtime_tts_preset: vibevoice-realtime-0.5b
   coach_model: tiny-aya-global
+  coach_fallbacks:
+    - minicpm5-1b
   max_seconds: 30
 
 languages:

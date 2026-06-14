@@ -131,6 +131,23 @@ def test_build_teacher_messages_includes_topic_and_rag():
     assert "Reply now in 2-4 complete spoken sentences only" in messages[-1]["content"]
 
 
+def test_coach_model_chain_dedupes():
+    from echocoach.config import EchoCoachConfig, LanguageOption
+
+    cfg = EchoCoachConfig(
+        asr_preset="whisper-cpp-tiny",
+        tts_preset="piper-multilingual",
+        realtime_tts_preset=None,
+        coach_model="tiny-aya-global",
+        coach_fallbacks=("minicpm5-1b", "tiny-aya-global"),
+        max_seconds=30,
+        languages=[LanguageOption("en", "English")],
+        asr_presets={},
+        tts_presets={},
+    )
+    assert cfg.coach_model_chain() == ["tiny-aya-global", "minicpm5-1b"]
+
+
 def test_resolve_aya_preset_uses_global_only():
     assert resolve_aya_preset("fr", "auto") == "tiny-aya-global"
     assert resolve_aya_preset("hi", "auto") == "tiny-aya-global"
