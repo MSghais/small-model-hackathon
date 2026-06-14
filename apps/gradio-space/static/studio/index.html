@@ -301,45 +301,46 @@
             </label>
             <p class="status-text">Uses workspace session and documents unless overridden below.</p>
           </div>
+          <div class="card voice-rail-controls">
+            <p class="card-title">Mode</p>
+            <div class="mode-cards voice-mode-cards" id="voice-modes">
+              <button type="button" class="mode-card" data-mode="explain">Explain</button>
+              <button type="button" class="mode-card active" data-mode="lesson">Coach</button>
+              <button type="button" class="mode-card" data-mode="pitch">Practice</button>
+            </div>
+            <label class="field voice-topic-wrap" id="voice-topic-wrap">
+              <span>Focus topic</span>
+              <input id="voice-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
+            </label>
+            <details class="voice-rag-sources" id="voice-rag-sources">
+              <summary>Add sources (optional)</summary>
+              <p class="status-text">Discover or ingest sources to ground answers in your library.</p>
+              <div class="ingest-action-row">
+                <button type="button" id="btn-voice-discover" class="btn btn-secondary">Discover on web</button>
+                <button type="button" id="btn-voice-auto-ingest" class="btn btn-secondary">Auto-ingest</button>
+              </div>
+              <div id="voice-url-choices-panel" class="url-choices-panel hidden">
+                <div id="voice-url-choices-list" class="url-choices-list"></div>
+              </div>
+              <label class="field">
+                <span>Paste URLs (one per line)</span>
+                <textarea id="voice-urls-text" class="input" rows="2" placeholder="https://…"></textarea>
+              </label>
+              <label class="upload-zone upload-zone-compact">
+                <input id="voice-ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
+                <span class="material-symbols-outlined">upload_file</span>
+                <span>Upload PDF or Doc</span>
+              </label>
+              <button type="button" id="btn-voice-ingest" class="btn btn-secondary btn-block">Ingest sources</button>
+              <p id="voice-ingest-status" class="status-text"></p>
+            </details>
+          </div>
         </aside>
         <div class="voice-main">
           <div class="card voice-main-card">
             <div class="voice-card-head">
               <h2 class="section-label">Teacher Voice</h2>
               <p class="voice-card-desc">Talk with the teacher using text or voice — grounded in your sources when RAG is on.</p>
-            </div>
-            <div class="mode-cards voice-mode-cards" id="voice-modes">
-              <button type="button" class="mode-card" data-mode="explain">Explain</button>
-              <button type="button" class="mode-card active" data-mode="lesson">Coach</button>
-              <button type="button" class="mode-card" data-mode="pitch">Practice</button>
-            </div>
-            <div class="voice-topic-row">
-              <label class="field voice-topic-wrap" id="voice-topic-wrap">
-                <span>Focus topic</span>
-                <input id="voice-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
-              </label>
-              <details class="voice-rag-sources" id="voice-rag-sources">
-                <summary>Add sources (optional)</summary>
-                <p class="status-text">Discover or ingest sources to ground answers in your library.</p>
-                <div class="ingest-action-row">
-                  <button type="button" id="btn-voice-discover" class="btn btn-secondary">Discover on web</button>
-                  <button type="button" id="btn-voice-auto-ingest" class="btn btn-secondary">Auto-ingest</button>
-                </div>
-                <div id="voice-url-choices-panel" class="url-choices-panel hidden">
-                  <div id="voice-url-choices-list" class="url-choices-list"></div>
-                </div>
-                <label class="field">
-                  <span>Paste URLs (one per line)</span>
-                  <textarea id="voice-urls-text" class="input" rows="2" placeholder="https://…"></textarea>
-                </label>
-                <label class="upload-zone upload-zone-compact">
-                  <input id="voice-ingest-file" type="file" accept=".pdf,.docx" multiple hidden />
-                  <span class="material-symbols-outlined">upload_file</span>
-                  <span>Upload PDF or Doc</span>
-                </label>
-                <button type="button" id="btn-voice-ingest" class="btn btn-secondary btn-block">Ingest sources</button>
-                <p id="voice-ingest-status" class="status-text"></p>
-              </details>
             </div>
             <div id="voice-chat-messages" class="research-chat-messages voice-chat-messages">
               <p class="research-chat-empty">Type a message or record audio, then send.</p>
