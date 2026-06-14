@@ -19,10 +19,10 @@ todos:
     status: completed
   - id: local-smoke
     content: Validate pip install + python app.py locally before pushing to HF Space
-    status: in_progress
+    status: completed
   - id: hf-space-create
     content: Create Gradio Space under build-small-hackathon with ZeroGPU hardware and env vars; verify Studio + Classic smoke tests
-    status: pending
+    status: cancelled
 isProject: false
 ---
 
