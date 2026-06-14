@@ -36,8 +36,20 @@ def _all_allowed_paths() -> list[str]:
     return list(dict.fromkeys(paths))
 
 
+def _register_hf_https_middleware(server: gr.Server) -> None:
+    """HF terminates TLS; the app sees HTTP and Gradio may emit http:// asset URLs."""
+    if not os.environ.get("SPACE_ID"):
+        return
+
+    @server.middleware("http")
+    async def force_https_scheme(request, call_next):
+        request.scope["scheme"] = "https"
+        return await call_next(request)
+
+
 def create_server() -> gr.Server:
     server = gr.Server(title="Build Small Studio")
+    _register_hf_https_middleware(server)
 
     register_studio_apis(server)
 
