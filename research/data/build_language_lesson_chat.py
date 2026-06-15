@@ -47,6 +47,7 @@ DEFAULT_FR_SOURCES = (
     "angeluriot/french_instruct",
     "CohereLabs/aya_dataset",
     "pinzhenchen/alpaca-cleaned-fr",
+    "jpacifico/French-Alpaca-dataset-Instruct-110K",
 )
 DEFAULT_AR_SOURCES = (
     "arbml/CIDAR",
@@ -59,6 +60,7 @@ SOURCE_CAPS: dict[str, dict[str, int]] = {
     "angeluriot/french_instruct": {"fr": 8000},
     "CohereLabs/aya_dataset": {"fr": 3000, "ar": 3000},
     "pinzhenchen/alpaca-cleaned-fr": {"fr": 2000},
+    "jpacifico/French-Alpaca-dataset-Instruct-110K": {"fr": 4000},
     "arbml/CIDAR": {"ar": 8000},
     "ClusterlabAi/InstAr-500k": {"ar": 5000},
 }
@@ -216,6 +218,25 @@ def _iter_alpaca_fr(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
                 break
 
 
+def _iter_french_alpaca_110k(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
+    from datasets import load_dataset
+
+    ds = load_dataset(
+        "jpacifico/French-Alpaca-dataset-Instruct-110K", split="train", streaming=True
+    )
+    count = 0
+    for row in ds:
+        instruction = (row.get("instruction") or "").strip()
+        inp = (row.get("input") or "").strip()
+        output = (row.get("output") or "").strip()
+        user_text = f"{instruction}\n{inp}".strip() if inp else instruction
+        if user_text and _assistant_ok(output):
+            yield user_text, output, None
+            count += 1
+            if count >= max_rows:
+                break
+
+
 def _iter_cidar(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
     from datasets import load_dataset
 
@@ -261,6 +282,7 @@ _SOURCE_LOADERS: dict[str, dict[str, Any]] = {
         "ar": lambda n: _iter_aya("arb", n),
     },
     "pinzhenchen/alpaca-cleaned-fr": {"fr": _iter_alpaca_fr},
+    "jpacifico/French-Alpaca-dataset-Instruct-110K": {"fr": _iter_french_alpaca_110k},
     "arbml/CIDAR": {"ar": _iter_cidar},
     "ClusterlabAi/InstAr-500k": {"ar": _iter_instar},
 }
