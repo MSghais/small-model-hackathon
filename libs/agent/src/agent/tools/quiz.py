@@ -88,7 +88,7 @@ def create_quiz_html(outline: QuizOutline, path: Path) -> Path:
 <style>
   body {{ font-family: Georgia, serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }}
   h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
-  .instructions {{ margin-bottom 1.5rem; color: #333; }}
+  .instructions {{ margin-bottom: 1.5rem; color: #333; }}
   .question {{ margin-bottom 1.25rem; page-break-inside: avoid; }}
   .question h3 {{ font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }}
   .choices {{ list-style: none; padding-left: 0; margin: 0; }}

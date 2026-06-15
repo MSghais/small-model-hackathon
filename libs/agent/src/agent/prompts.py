@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agent.models import EducationPptxInput, SlideOutline, SlideSpec
+from agent.models import EducationPptxInput, QuizMakerInput, QuizOutline, QuizQuestion, SlideOutline, SlideSpec
 
 
 def education_outline_system(skill_body: str) -> str:
