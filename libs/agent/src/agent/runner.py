@@ -83,6 +83,7 @@ class AgentRunner:
         files: list[Path] | None = None,
         session_id: str | None = None,
         doc_ids: list[str] | None = None,
+        conversation_context: str = "",
         progress: SlideGenerationProgress | None = None,
         skip_preview_images: bool = False,
     ) -> AgentResult:
@@ -99,6 +100,7 @@ class AgentRunner:
             files=files,
             session_id=session_id,
             doc_ids=doc_ids,
+            conversation_context=conversation_context,
             progress=progress,
             skip_preview_images=skip_preview_images,
         ):
@@ -122,6 +124,7 @@ class AgentRunner:
         files: list[Path] | None = None,
         session_id: str | None = None,
         doc_ids: list[str] | None = None,
+        conversation_context: str = "",
         progress: SlideGenerationProgress | None = None,
         skip_preview_images: bool = False,
     ) -> Iterator[SlideGenerationProgress | AgentResult]:
@@ -136,6 +139,7 @@ class AgentRunner:
             files=files or [],
             session_id=session_id or None,
             doc_ids=doc_ids or [],
+            conversation_context=(conversation_context or "").strip(),
         )
 
         trace = TraceRecorder(
@@ -173,6 +177,11 @@ class AgentRunner:
         progress: SlideGenerationProgress | None,
         skip_preview_images: bool,
     ) -> Iterator[SlideGenerationProgress | AgentResult]:
+        if req.conversation_context.strip():
+            trace.log_note(
+                "Conversation grounding",
+                chars=len(req.conversation_context.strip()),
+            )
         if progress is not None:
             progress.begin("load_model", "Load language model")
             yield progress

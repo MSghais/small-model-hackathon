@@ -53,6 +53,12 @@ def education_outline_user(req: EducationPptxInput, *, source_context: str = "")
             "Do not invent citations in the JSON output.\n\n"
             f"{source_context}\n"
         )
+    if req.conversation_context.strip():
+        base += (
+            "\nBase the slide outline on this conversation transcript. "
+            "Prefer topics and facts discussed over general knowledge.\n\n"
+            f"{req.conversation_context.strip()}\n"
+        )
     return base + "\nReturn JSON only."
 
 

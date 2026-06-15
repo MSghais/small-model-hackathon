@@ -182,6 +182,10 @@
               <span class="material-symbols-outlined">chat</span>
               Ask
             </button>
+            <button type="button" id="btn-research-to-slides" class="btn btn-secondary btn-block" disabled>
+              <span class="material-symbols-outlined">present_to_all</span>
+              Generate slides from chat
+            </button>
             <p id="research-chat-status" class="status-text"></p>
             <details class="studio-debug-trace" id="research-trace-details">
               <summary>Agent trace</summary>
@@ -266,6 +270,10 @@
             <button type="button" id="btn-generate" class="btn btn-primary">
               <span class="material-symbols-outlined">auto_awesome</span>
               Generate Slides
+            </button>
+            <button type="button" id="btn-present" class="btn btn-secondary" disabled title="Present fullscreen">
+              <span class="material-symbols-outlined">slideshow</span>
+              Present
             </button>
           </div>
           <p class="status-text slide-demo-tip">Demo tip: 3 slides on GPU hardware for a quick run.</p>
@@ -398,6 +406,10 @@
               <p id="lessons-record-status" class="status-text lessons-record-status"></p>
               <div class="lessons-send-row">
                 <button type="button" id="btn-lessons-send" class="btn btn-primary">Send</button>
+                <button type="button" id="btn-lessons-to-slides" class="btn btn-secondary" disabled>
+                  <span class="material-symbols-outlined">present_to_all</span>
+                  Slides from chat
+                </button>
                 <label class="toggle-row lessons-auto-speak">
                   <span>Auto-speak replies</span>
                   <input id="lessons-auto-speak" type="checkbox" checked />
@@ -454,6 +466,10 @@
             <textarea id="debug-message" class="input" rows="2" placeholder="Hello, model…"></textarea>
           </label>
           <button type="button" id="btn-debug-send" class="btn btn-primary btn-block">Send</button>
+          <button type="button" id="btn-chat-to-slides" class="btn btn-secondary btn-block" disabled>
+            <span class="material-symbols-outlined">present_to_all</span>
+            Generate slides from chat
+          </button>
         </div>
         <details class="studio-debug-trace" id="debug-trace-details">
           <summary>Agent trace</summary>
@@ -493,6 +509,27 @@
       </details>
       <a href="?classic" class="btn btn-ghost btn-block">Open Classic UI</a>
     </aside>
+  </div>
+
+  <div id="presenter-overlay" class="presenter-overlay hidden" aria-hidden="true" role="dialog" aria-label="Slide presenter">
+    <div class="presenter-backdrop" id="presenter-backdrop"></div>
+    <div class="presenter-shell">
+      <div class="presenter-toolbar">
+        <span id="presenter-counter" class="presenter-counter">1 / 1</span>
+        <div class="presenter-toolbar-actions">
+          <button type="button" id="btn-presenter-prev" class="btn btn-ghost btn-icon material-symbols-outlined" aria-label="Previous slide">chevron_left</button>
+          <button type="button" id="btn-presenter-next" class="btn btn-ghost btn-icon material-symbols-outlined" aria-label="Next slide">chevron_right</button>
+          <button type="button" id="btn-presenter-close" class="btn btn-ghost btn-icon material-symbols-outlined" aria-label="Exit presenter">close</button>
+        </div>
+      </div>
+      <div class="presenter-stage">
+        <div id="presenter-slide" class="presenter-slide presenter-fade"></div>
+      </div>
+      <details class="presenter-notes" id="presenter-notes-details">
+        <summary>Speaker notes</summary>
+        <p id="presenter-notes" class="presenter-notes-text"></p>
+      </details>
+    </div>
   </div>
 
   <script type="module" src="/static/studio/studio.js?v={{STUDIO_ASSET_VERSION}}"></script>
