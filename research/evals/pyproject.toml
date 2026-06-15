@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 lm-eval = [
-    "lm-eval[hf]>=0.4.9",
+    "lm-eval[hf,ifeval]>=0.4.9",
 ]
 
 [project.scripts]

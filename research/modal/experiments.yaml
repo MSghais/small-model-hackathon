@@ -39,7 +39,7 @@ finetune:
       min_improve: 0.02
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-teaching-lora
-      private: true
+      private: false
 
   # --- science: factual + explanatory science tutoring ---
   - name: science-lora
@@ -57,7 +57,7 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-science-lora
-      private: true
+      private: false
 
   # --- math: grade-school word problems + instruction-style math solutions ---
   - name: math-lora
@@ -77,7 +77,7 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-math-lora
-      private: true
+      private: false
 
   # --- coding: Python instruction-following code generation ---
   - name: coding-lora
@@ -94,7 +94,7 @@ finetune:
       min_improve: 0.01
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-coding-lora
-      private: true
+      private: false
 
   # --- reasoning: multi-turn chat with reasoning-heavy conversations ---
   - name: reasoning-lora
@@ -115,7 +115,7 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-reasoning-lora
-      private: true
+      private: false
 
   # --- general instructions baseline: no goals/publish -> local-only adapter ---
   - name: alpaca-lora
