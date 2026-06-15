@@ -202,98 +202,182 @@ def _print_summary(rows: list[dict[str, Any]]) -> None:
         )
 
 
+def _pull_artifacts(job_name: str, exp_name: str, dest: str = "models/finetuned") -> None:
+    """Download an adapter and its lm-eval results from the `slm-finetune` Volume."""
+    local_dir = f"{dest}/{job_name}"
+    print(f"--- pulling {job_name} -> {local_dir} ---")
+    subprocess.run(
+        ["modal", "volume", "get", "slm-finetune", job_name, local_dir, "--force"],
+        check=False,
+    )
+
+    results_dir = f"results/lm_eval/{exp_name}"
+    print(f"--- pulling {results_dir} ---")
+    subprocess.run(
+        ["modal", "volume", "get", "slm-finetune", results_dir, results_dir, "--force"],
+        check=False,
+    )
+
+
 @app.local_entrypoint()
 def main(
     train: bool = True,
     eval_only: bool = False,
-    skip_baseline: bool = False,
     parallel: bool = False,
     job: str | None = None,
+    category: str | None = None,
     max_steps: int | None = None,
-    lm_eval_config: str | None = None,
-    baseline_config: str | None = None,
+    publish: bool = True,
+    pull: bool = True,
 ):
     """
-    Orchestrate baseline lm-eval, finetune jobs, and post-train evals.
+    Skill-matrix pipeline: per-profile baselines -> train -> eval -> gate -> publish -> pull.
 
     Examples:
         modal run research/modal/finetune_app.py
-        modal run research/modal/finetune_app.py --job lesson-lora --max-steps 20
-        modal run research/modal/finetune_app.py --eval-only
+        modal run research/modal/finetune_app.py --job math-lora --max-steps 20
+        modal run research/modal/finetune_app.py --category science
+        modal run research/modal/finetune_app.py --eval-only --job math-lora
+        modal run research/modal/finetune_app.py --no-publish --no-pull
     """
-    defaults, prepared = prepare_jobs(job=job, max_steps=max_steps)
+    defaults, prepared = prepare_jobs(job=job, category=category, max_steps=max_steps)
+    if not prepared:
+        raise SystemExit("No matching jobs; check --job/--category and experiments.yaml")
+    preset = defaults.get("preset", "minicpm5-1b")
 
-    eval_cfg = lm_eval_config or defaults.get(
-        "lm_eval_config", "research/evals/configs/lm_eval_smoke.yaml"
-    )
-    base_cfg = baseline_config or defaults.get(
-        "baseline_config", "research/evals/configs/lm_eval_compare_study.yaml"
-    )
+    profiles = sorted({j.get("eval_profile", "compare_study") for j in prepared})
 
-    baseline_result: dict[str, Any] | None = None
-    compare_path: str | None = None
+    baselines_ok: dict[str, bool] = {}
+    if not eval_only:
+        print(f"--- baselines ({', '.join(profiles)}) ---")
+        for profile in profiles:
+            result = run_lm_eval.remote(
+                experiment_name=f"{preset}__baseline__{profile}",
+                config=config_for_profile(profile),
+                preset=preset,
+            )
+            print(json.dumps(result, indent=2))
+            baselines_ok[profile] = bool(result.get("ok"))
 
-    if not eval_only and not skip_baseline:
-        print("--- baseline lm-eval ---")
-        baseline_result = run_lm_eval.remote(
-            experiment_name=BASELINE_EXPERIMENT,
-            config=base_cfg,
-            preset=defaults.get("preset", "minicpm5-1b"),
-        )
-        print(json.dumps(baseline_result, indent=2))
-        if not baseline_result.get("ok"):
-            print("Warning: baseline lm-eval failed; continuing without compare_to")
-        elif baseline_result.get("results_json"):
-            compare_path = baseline_result["results_json"]
-    elif skip_baseline:
-        compare_path = BASELINE_RESULTS_JSON
-        print(f"--- skipping baseline; compare_to {compare_path} ---")
-    elif eval_only:
-        compare_path = BASELINE_RESULTS_JSON
-        print(f"--- eval-only; compare_to {compare_path} if present ---")
-
-    train_results: list[dict[str, Any]] = []
+    train_results: dict[str, dict[str, Any]] = {}
     if train and not eval_only:
-        print(f"--- finetune ({len(prepared)} jobs, parallel={parallel}) ---")
+        print(f"--- finetune ({len(prepared)} job(s), parallel={parallel}) ---")
         if parallel:
-            train_results = list(finetune_one.map(prepared))
+            handles = {
+                j["name"]: finetune_one.with_options(gpu=job_gpu(j)).spawn(j)
+                for j in prepared
+            }
+            for name, handle in handles.items():
+                train_results[name] = handle.get()
+                print(json.dumps(train_results[name], indent=2))
         else:
             for j in prepared:
                 print(f"Training {j['name']}...")
-                train_results.append(finetune_one.remote(j))
+                result = finetune_one.with_options(gpu=job_gpu(j)).remote(j)
+                train_results[j["name"]] = result
+                print(json.dumps(result, indent=2))
 
-        for r in train_results:
-            print(json.dumps(r, indent=2))
-
-    if eval_only and not prepared:
-        raise SystemExit("eval_only requires --job or finetune entries in experiments.yaml")
-
-    eval_targets: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
-    if eval_only:
-        for j in prepared:
-            eval_targets.append((j, None))
-    else:
-        for j, r in zip(prepared, train_results):
-            eval_targets.append((j, r))
-
-    print("--- post-train lm-eval ---")
-    for j, train_payload in eval_targets:
+    print("--- post-train lm-eval / gate / publish ---")
+    summary: list[dict[str, Any]] = []
+    for j in prepared:
         job_name = j["name"]
+        profile = j.get("eval_profile", "compare_study")
+        train_payload = train_results.get(job_name)
         adapter_path = (
-            train_payload["output_dir"]
-            if train_payload
-            else f"{FINETUNE_VOL_PATH}/{job_name}"
+            train_payload["output_dir"] if train_payload else f"{FINETUNE_VOL_PATH}/{job_name}"
         )
-        exp_name = f"{job_name}__modal-lm-eval"
+
+        baseline_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+        compare_to = baseline_path if baselines_ok.get(profile) else None
+
+        exp_name = f"{job_name}__{profile}"
         eval_result = run_lm_eval.remote(
             experiment_name=exp_name,
-            config=eval_cfg,
-            model_path="openbmb/MiniCPM5-1B",
+            config=config_for_profile(profile),
+            model_path=BASE_MODEL_ID,
             adapter_path=adapter_path,
-            compare_to=compare_path,
+            compare_to=compare_to,
         )
         print(json.dumps(eval_result, indent=2))
 
-    print("\nDone. Pull artifacts with:")
-    print(f"  modal volume get slm-finetune lesson-lora ./models/finetuned/lesson-lora")
-    print(f"  modal volume get slm-finetune results/lm_eval ./results/lm_eval")
+        row: dict[str, Any] = {
+            "name": job_name,
+            "category": j.get("category"),
+            "profile": profile,
+        }
+
+        gate_result: dict[str, Any] | None = None
+        if j.get("goals"):
+            if eval_result.get("ok"):
+                gate_result = check_gate.remote(
+                    candidate_results_path=eval_result["results_json"],
+                    baseline_results_path=baseline_path,
+                    goals=j["goals"],
+                )
+                print(json.dumps(gate_result, indent=2))
+            row["gate_passed"] = bool(gate_result and gate_result.get("passed"))
+
+        if j.get("publish"):
+            row["hub_repo"] = j["publish"].get("hub_repo")
+            if publish and gate_result is not None:
+                publish_result = publish_adapter.remote(
+                    job=j,
+                    adapter_dir=adapter_path,
+                    gate_result=gate_result,
+                    candidate_results_path=eval_result["results_json"],
+                    baseline_results_path=baseline_path,
+                )
+                print(json.dumps(publish_result, indent=2))
+                row["published"] = publish_result.get("published")
+
+        summary.append(row)
+
+        if pull:
+            _pull_artifacts(job_name, exp_name)
+
+    _print_summary(summary)
+
+
+@app.local_entrypoint()
+def publish_only(job: str):
+    """Re-run the gate and Hub publish for a job using already-computed results (no train/eval)."""
+    defaults, prepared = prepare_jobs(job=job)
+    j = prepared[0]
+    if not j.get("goals"):
+        raise SystemExit(f"Job {job!r} has no `goals`; nothing to gate on")
+    if not j.get("publish"):
+        raise SystemExit(f"Job {job!r} has no `publish` config")
+
+    preset = defaults.get("preset", "minicpm5-1b")
+    profile = j.get("eval_profile", "compare_study")
+    adapter_path = f"{FINETUNE_VOL_PATH}/{job}"
+    candidate_results_path = f"{LM_EVAL_OUTPUT}/{job}__{profile}/results.json"
+    baseline_results_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+
+    gate_result = check_gate.remote(
+        candidate_results_path=candidate_results_path,
+        baseline_results_path=baseline_results_path,
+        goals=j["goals"],
+    )
+    print(json.dumps(gate_result, indent=2))
+
+    publish_result = publish_adapter.remote(
+        job=j,
+        adapter_dir=adapter_path,
+        gate_result=gate_result,
+        candidate_results_path=candidate_results_path,
+        baseline_results_path=baseline_results_path,
+    )
+    print(json.dumps(publish_result, indent=2))
+
+
+@app.local_entrypoint()
+def pull(job: str | None = None, category: str | None = None, dest: str = "models/finetuned"):
+    """Download adapters and their lm-eval results from the `slm-finetune` Volume."""
+    _, prepared = prepare_jobs(job=job, category=category)
+    if not prepared:
+        raise SystemExit("No matching jobs; pass --job or --category")
+
+    for j in prepared:
+        profile = j.get("eval_profile", "compare_study")
+        _pull_artifacts(j["name"], f"{j['name']}__{profile}", dest)
