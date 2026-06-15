@@ -1125,6 +1125,28 @@ async function initVoicePresets() {
   return initLanguageLessons();
 }
 
+async function selectActiveModel(key) {
+  const data = await callApi("set_active_model", [key]);
+  $("#settings-status").innerHTML = renderMarkdownLite(data.status_markdown || "");
+  if (state.modelChoices) {
+    const active = _app_config_get_runtime_active(data, key);
+    $("#settings-active-model").textContent = `${active.label} (${active.backend})`;
+  }
+  return data;
+}
+
+function _runtimeActiveFromResponse(data, fallbackKey) {
+  const key = data.model_key || fallbackKey || "";
+  const choice = state.modelChoices?.choices?.find((c) => c.key === key);
+  if (choice) {
+    return { label: choice.label, backend: state.modelChoices.active_backend };
+  }
+  return {
+    label: state.modelChoices?.active_label || key,
+    backend: state.modelChoices?.active_backend || "",
+  };
+}
+
 async function initSettings() {
   const data = await callApi("model_choices", []);
   state.modelChoices = data;
@@ -1147,12 +1169,43 @@ async function initSettings() {
     if (select) {
       select.innerHTML = options;
       select.value = data.active_model;
+      select.onchange = () => {
+        const key = select.value;
+        if (debugSelect) debugSelect.value = key;
+        selectActiveModel(key)
+          .then((resp) => {
+            const active = _runtimeActiveFromResponse(resp, key);
+            const choice = data.choices.find((c) => c.key === (resp.model_key || key));
+            $("#settings-active-model").textContent = choice
+              ? `${choice.label} (${data.choices.find((c) => c.key === key) ? data.active_backend : ""})`
+              : `${active.label}`;
+            callApi("model_choices", []).then((fresh) => {
+              state.modelChoices = fresh;
+              $("#settings-active-model").textContent = `${fresh.active_label} (${fresh.active_backend})`;
+            }).catch(() => {});
+          })
+          .catch(() => {});
+      };
     }
     if (debugSelect) {
       debugSelect.innerHTML = options;
       debugSelect.value = data.active_model;
+      debugSelect.onchange = () => {
+        const key = debugSelect.value;
+        if (select) select.value = key;
+        set_runtime_model_key_via_api(key).catch(() => {});
+      };
     }
   }
+}
+
+async function set_runtime_model_key_via_api(key) {
+  const data = await callApi("set_active_model", [key]);
+  $("#settings-status").innerHTML = renderMarkdownLite(data.status_markdown || "");
+  const fresh = await callApi("model_choices", []);
+  state.modelChoices = fresh;
+  $("#settings-active-model").textContent = `${fresh.active_label} (${fresh.active_backend})`;
+  return data;
 }
 
 function openSettingsDrawer() {
