@@ -15,7 +15,8 @@ _DATA = _REPO / "research" / "data"
 _JSON_LEAK = re.compile(r"^\s*[\{\[]|```")
 _ARABIC = re.compile(r"[\u0600-\u06FF]")
 _FRENCH_MARKERS = re.compile(
-    r"\b(le|la|les|un|une|des|est|sont|pour|dans|avec|que|qui|comment|pourquoi)\b",
+    r"[\u00C0-\u024F]|"
+    r"\b(le|la|les|un|une|des|est|sont|pour|dans|avec|que|qui|comment|pourquoi|c'est|ce)\b",
     re.IGNORECASE,
 )
 _VOICE_SUFFIX = "Reply now in 2-4 complete spoken sentences only"

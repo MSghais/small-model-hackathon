@@ -31,8 +31,6 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from echocoach.prompts import (  # noqa: E402
-    TeacherVoiceMode,
-    language_instruction,
     system_prompt_for_mode,
     topic_context_block,
 )

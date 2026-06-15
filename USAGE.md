@@ -2,7 +2,7 @@
 
 How to run the **Lesson Agent** Gradio app locally, deploy to a Hugging Face Space (Gradio SDK + ZeroGPU), and optionally test with Docker later for the [Build Small Hackathon](https://huggingface.co/build-small-hackathon).
 
-The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **Language lessons** for multilingual text + voice tutoring (Cohere Transcribe + Tiny Aya), **EchoCoach** for one-shot pitch analysis in Classic UI, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
+The primary UI is the **Lesson slides** tab (topic → local model outline → downloadable `.pptx`). Use **ResearchMind** for corpus Q&A, **Language lessons** for multilingual text + voice tutoring (OpenBMB + Whisper by default), **EchoCoach** for one-shot pitch analysis in Classic UI, or ground lessons directly from the Lesson tab. The **Chat (debug)** tab tests the underlying model.
 
 ## Prerequisites
 
@@ -146,10 +146,10 @@ Configure presets in [`voice_models.yaml`](voice_models.yaml) or via `.env`:
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `ECHOCOACH_ASR_PRESET` | `cohere-transcribe` | ASR preset key (Space demo); use `whisper-cpp-tiny` on CPU dev |
+| `ECHOCOACH_ASR_PRESET` | `whisper-cpp-base` | ASR preset key (Cohere-free default); use `cohere-transcribe` for Cohere demo |
 | `ECHOCOACH_TTS_PRESET` | `piper-multilingual` | TTS preset key (EchoCoach, default VoiceOut) |
 | `ECHOCOACH_REALTIME_TTS_PRESET` | `vibevoice-realtime-0.5b` | Language lessons streaming TTS (see below) |
-| `ECHOCOACH_COACH_MODEL` | `tiny-aya-global` | Text coach preset (Tiny Aya; from `models.yaml`) |
+| `ECHOCOACH_COACH_MODEL` | `minicpm5-1b-language-lesson-hub` | Text coach preset (OpenBMB + FR/AR LoRA; from `models.yaml`) |
 | `ECHOCOACH_COACH_FALLBACK` | `minicpm5-1b` | Comma-separated fallback presets if primary coach fails to load |
 | `ECHOCOACH_MAX_SECONDS` | `30` | Max recording length |
 
@@ -169,15 +169,25 @@ The **Language lessons** tab is the primary voice learning experience: one page 
 | ----- | ------ |
 | Type a question | Chat bubble in target language |
 | Hold mic / upload audio | Transcript + teacher reply; auto-play TTS when enabled |
-| **Other (text only)** language code | Tiny Aya written lesson (no Piper voice for unsupported codes) |
+| **Other (text only)** language code | Written lesson via coach prompts (no Piper voice for unsupported codes) |
 
-**Stack (Cohere Labs partner demo):** [Cohere Transcribe](https://huggingface.co/CohereLabs/c4ai-transcribe-v2) (14 voice langs) → [Tiny Aya Global / regional](https://huggingface.co/CohereLabs/tiny-aya-global) (70+ text langs) → Piper or VibeVoice Realtime for speech out.
+**Default stack (Cohere-free):** [Whisper.cpp](https://github.com/ggerganov/whisper.cpp) ASR → [MiniCPM5-1B](https://huggingface.co/openbmb/MiniCPM5-1B) + `language-lesson-lora` (French/Arabic) → Piper or VibeVoice Realtime for speech out.
 
-Set Space secrets (GPU recommended):
+Rebuild training JSONL from Hugging Face sources:
 
 ```bash
-ECHOCOACH_ASR_PRESET=cohere-transcribe
-ECHOCOACH_COACH_MODEL=tiny-aya-global
+uv run python research/data/build_language_lesson_chat.py
+modal run research/modal/finetune_app.py --job language-lesson-lora --max-steps 30 --no-publish
+```
+
+Optional **Cohere Labs partner demo:** [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) + [Tiny Aya Global](https://huggingface.co/CohereLabs/tiny-aya-global).
+
+Default `.env` / Space secrets:
+
+```bash
+ECHOCOACH_ASR_PRESET=whisper-cpp-base
+ECHOCOACH_COACH_MODEL=minicpm5-1b-language-lesson-hub
+ECHOCOACH_COACH_FALLBACK=minicpm5-1b
 ECHOCOACH_TTS_PRESET=piper-multilingual
 ECHOCOACH_REALTIME_TTS_PRESET=vibevoice-realtime-0.5b
 ```
