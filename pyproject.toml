@@ -28,6 +28,10 @@ evals = [
 lm-eval = [
     "slm-evals[lm-eval]",
 ]
+modal = [
+    "modal>=0.73.0",
+    "pyyaml>=6.0",
+]
 
 [tool.uv.workspace]
 members = [

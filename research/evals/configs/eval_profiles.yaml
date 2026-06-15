@@ -25,6 +25,25 @@ profiles:
       - arc_challenge
       - hellaswag
 
+  math:
+    tool: slm-lm-eval
+    claim: Better math reasoning
+    description: Grade-school math word problems (GSM8K) + abstract reasoning QA.
+    config: lm_eval_math.yaml
+    tasks:
+      - gsm8k
+      - arc_challenge
+
+  science:
+    tool: slm-lm-eval
+    claim: Better science knowledge
+    description: Science fact recall (SciQ, OpenBookQA) + science reasoning QA.
+    config: lm_eval_science.yaml
+    tasks:
+      - sciq
+      - openbookqa
+      - arc_challenge
+
   understanding:
     tool: slm-lm-eval
     claim: Better language understanding

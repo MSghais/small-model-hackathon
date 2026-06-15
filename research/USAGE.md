@@ -27,6 +27,65 @@ uv sync --group lm-eval
 | `finetune` | `research/finetune.py` | `peft`, `datasets`, `bitsandbytes` (QLoRA) |
 | `evals` | `slm-evals` workspace member | `slm-benchmark` CLI |
 | `lm-eval` | `slm-evals[lm-eval]` | `slm-lm-eval` CLI (GSM8K, ARC, HellaSwag, …) |
+| `modal` | `research/modal/finetune_app.py` | Cloud GPU train + eval via [Modal](https://modal.com/docs/guide) |
+| `modal` | `research/modal/server_app.py` | Long-lived warm GPU worker for human/AI iteration loops |
+
+---
+
+## 0. Modal cloud GPU (`research/modal/`)
+
+Run a **skill-matrix** of QLoRA fine-tunes **without local CUDA**: each job in
+[`modal/experiments.yaml`](modal/experiments.yaml) trains one adapter for a
+category (math, science, coding, reasoning, teaching, instructions), evaluates
+it against a matching `slm-lm-eval` profile vs. a per-profile baseline, checks
+the result against `goals`, and — only if the gate passes — publishes the
+adapter to the Hugging Face Hub. Adapters + results are saved to Modal Volume
+`slm-finetune`.
+
+```bash
+uv sync --group modal
+modal setup
+modal secret create huggingface HF_TOKEN=<token>   # needs write access for Hub publish
+
+# Smoke run for one skill: baseline -> train -> eval -> gate -> publish -> pull
+modal run research/modal/finetune_app.py --job math-lora --max-steps 20
+
+# Whole skill matrix
+modal run research/modal/finetune_app.py
+
+# One category, train+eval only (no Hub push)
+modal run research/modal/finetune_app.py --category science --no-publish
+
+# Re-check the gate and publish an already-evaluated job
+modal run research/modal/finetune_app.py::publish_only --job math-lora
+
+# Pull adapters + lm-eval results without re-running anything
+modal run research/modal/finetune_app.py::pull --category math
+```
+
+Set real values for `defaults.hub_org` and each job's `publish.hub_repo` in
+`experiments.yaml` (placeholder: `your-hf-username`) before publishing — repos
+are created automatically. Jobs with no `goals` (e.g. `alpaca-lora`) are
+trained/evaluated but never gated or published (local-only).
+
+For a multi-hour session on **one warm GPU** (iterative human/AI loop without
+re-downloading weights each run), use `research/modal/server_app.py` instead —
+same skill-matrix pipeline (`--job`/`--category`/`--pipeline`/`--publish-only`)
+on a deployed `GpuWorker`.
+
+Full guide: **[modal/README.md](modal/README.md)** · **Agent loop:** **[modal/SERVER.md](modal/SERVER.md)** · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal Notebooks](https://modal.com/docs/guide/notebooks)
+
+**Iterative loop (one warm GPU, many runs):**
+
+```bash
+modal deploy research/modal/server_app.py
+modal run -d research/modal/server_app.py --hours 6          # keep worker alive
+modal run research/modal/server_app.py --ping                # verify
+modal run research/modal/server_app.py --job lesson-lora --max-steps 20
+modal app stop slm-gpu-worker -y                             # when done
+```
+
+Interactive notebook: upload [`research/notebook/minicpm5-modal-finetune.ipynb`](notebook/minicpm5-modal-finetune.ipynb) at [modal.com/notebooks](https://modal.com/notebooks), attach GPU + Volume `slm-finetune` + Secret `huggingface`.
 
 ---
 
