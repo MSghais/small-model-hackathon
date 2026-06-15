@@ -114,7 +114,7 @@ def test_minicpm_v_gguf_preset_from_repo(monkeypatch):
     assert model.backend == "llama_cpp"
     assert model.multimodal is True
     assert model.model_repo == "openbmb/MiniCPM-V-4.6-gguf"
-    assert model.model_file == "MiniCPM-V-4.6-Q4_K_M.gguf"
+    assert model.model_file == "MiniCPM-V-4_6-Q4_K_M.gguf"
 
 
 def test_resolve_relative_model_path(tmp_path, monkeypatch):

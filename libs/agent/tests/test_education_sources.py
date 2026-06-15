@@ -85,6 +85,18 @@ def test_education_outline_user_includes_source_context():
     assert "chlorophyll" in user
 
 
+def test_education_outline_user_includes_conversation_context():
+    req = EducationPptxInput(
+        topic="Photosynthesis",
+        grade="6",
+        slide_count=3,
+        conversation_context="User: What is photosynthesis?\n\nAssistant: Plants use sunlight.",
+    )
+    user = education_outline_user(req)
+    assert "conversation transcript" in user
+    assert "What is photosynthesis?" in user
+
+
 def test_none_mode_skips_source_summary(research_env):
     runner = AgentRunner()
     result = runner.run_education_pptx(

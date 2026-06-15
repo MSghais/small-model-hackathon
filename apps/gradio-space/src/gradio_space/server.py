@@ -23,7 +23,7 @@ from gradio_space.ui.theme import get_theme, load_css
 _PKG_ROOT = Path(__file__).resolve().parent
 _APP_ROOT = _PKG_ROOT.parents[1]
 _STATIC_DIR = _APP_ROOT / "static" / "studio"
-_STUDIO_ASSET_VERSION = "20260615b"
+_STUDIO_ASSET_VERSION = "20260615c"
 _STUDIO_INDEX_HTML = _STATIC_DIR / "index.html"
 
 

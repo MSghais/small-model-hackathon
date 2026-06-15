@@ -27,6 +27,7 @@ class EducationPptxInput(BaseModel):
     files: list[Path] = Field(default_factory=list)
     session_id: str | None = None
     doc_ids: list[str] = Field(default_factory=list)
+    conversation_context: str = ""
 
 
 class Citation(BaseModel):

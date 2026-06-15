@@ -324,8 +324,12 @@ def evaluate_gate(
     cand_score = _score(cand_tasks, task)
     base_score = _score(base_tasks, task)
 
+    # Tolerance so a score landing exactly on a threshold (e.g. a clean +0.02
+    # improvement stored as 0.0199999996) is not rejected by float epsilon.
+    eps = 1e-9
+
     if goals.get("min_score") is not None:
-        ok = cand_score is not None and cand_score >= goals["min_score"]
+        ok = cand_score is not None and cand_score >= goals["min_score"] - eps
         checks.append({"check": f"{task} >= {goals['min_score']}", "value": cand_score, "ok": ok})
         passed = passed and ok
 
@@ -335,7 +339,7 @@ def evaluate_gate(
             if (cand_score is not None and base_score is not None)
             else None
         )
-        ok = delta is not None and delta >= goals["min_improve"]
+        ok = delta is not None and delta >= goals["min_improve"] - eps
         checks.append(
             {"check": f"{task} improve >= {goals['min_improve']}", "value": delta, "ok": ok}
         )
@@ -346,7 +350,7 @@ def evaluate_gate(
         g_cand = _score(cand_tasks, g_task)
         g_base = _score(base_tasks, g_task)
         regress = g_base - g_cand if (g_cand is not None and g_base is not None) else None
-        ok = regress is not None and regress <= guard["max_regress"]
+        ok = regress is not None and regress <= guard["max_regress"] + eps
         checks.append(
             {"check": f"{g_task} regress <= {guard['max_regress']}", "value": regress, "ok": ok}
         )

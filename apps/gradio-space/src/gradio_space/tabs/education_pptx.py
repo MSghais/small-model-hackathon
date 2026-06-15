@@ -228,8 +228,13 @@ def generate_lesson_slides(
     progress: gr.Progress = gr.Progress(),
     *,
     skip_preview_images: bool = False,
+    conversation_context: str = "",
+    conversation_topic: str = "",
 ):
-    topic = resolve_topic(topic, workspace_topic)
+    if (conversation_context or "").strip():
+        topic = (conversation_topic or topic).strip() or resolve_topic(topic, workspace_topic)
+    else:
+        topic = resolve_topic(topic, workspace_topic)
     session_id = resolve_session(session_id, workspace_session)
     doc_ids = resolve_doc_ids(doc_ids, workspace_doc_ids)
     slide_progress = SlideGenerationProgress(
@@ -271,6 +276,7 @@ def generate_lesson_slides(
             files=files,
             session_id=session_id or None,
             doc_ids=doc_ids or [],
+            conversation_context=conversation_context,
             progress=slide_progress,
             skip_preview_images=skip_preview_images,
         ):

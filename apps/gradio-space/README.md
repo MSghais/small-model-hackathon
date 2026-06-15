@@ -30,6 +30,7 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 - `list_sessions`, `list_documents`, `session_memory`
 - `discover_sources`, `auto_search_ingest`, `ingest_sources`, `ingest_url`, `ingest_files`
 - `research_chat`, `generate_slides` (supports `source_mode`: none / web / rag)
+- `generate_slides_from_conversation` — build a deck from Research, Language lessons, or Chat history
 
 **Voice & coach**
 
@@ -55,7 +56,15 @@ Set `ALLOW_MODEL_SWITCH=true` in `.env` (see [USAGE.md](../../USAGE.md)). The Se
 | `minicpm-v-4.6-gguf` | llama.cpp (Llama Champion track) |
 | `minicpm5-1b` | transformers |
 
-## Demo script (judges) — Language lessons + Cohere stack
+## Demo script (judges) — teaching loop
+
+1. Open `/` — **Small Model Finetuning** project workspace
+2. **Research** — ingest a PDF or URL on your topic → ask 2 RAG questions with citations
+3. Tap **Generate slides from chat** → switch to **Slides** → preview deck → **Present** (fullscreen, arrow keys)
+4. Download **PPTX** and expand **Agent trace**
+5. Optional: **Language lessons** → French voice turn → **Slides from chat** on the same topic
+
+### Language lessons + Cohere stack (voice demo)
 
 **Badge line:** Cohere Labs — Transcribe + Tiny Aya on one local Language lessons page.
 
@@ -64,7 +73,7 @@ Set `ALLOW_MODEL_SWITCH=true` in `.env` (see [USAGE.md](../../USAGE.md)). The Se
 3. Switch to **Spanish**, type a follow-up (text in, text + audio out with **Auto-speak replies** on)
 4. Select **Other (text only)** → enter `hi` → show Tiny Aya Fire-quality written lesson (text only banner)
 5. Toggle **Use indexed sources** after ingesting one PDF in **Research**
-6. Optional: **Generate Slides** from the Slides tab; **Classic UI** (`/classic`) for EchoCoach pitch metrics
+6. Optional: **Classic UI** (`/classic`) for EchoCoach pitch metrics
 
 Space secrets for GPU demo:
 

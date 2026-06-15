@@ -20,7 +20,7 @@ models:
     label: MiniCPM-V 4.6 (GGUF / llama.cpp)
     backend: llama_cpp
     model_repo: openbmb/MiniCPM-V-4.6-gguf
-    model_file: MiniCPM-V-4.6-Q4_K_M.gguf
+    model_file: MiniCPM-V-4_6-Q4_K_M.gguf
     multimodal: true
     n_ctx: 8192
     n_gpu_layers: 0
