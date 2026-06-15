@@ -36,9 +36,12 @@ from typing import Any
 
 import modal
 
-_modal_dir = Path(__file__).resolve().parent
-if str(_modal_dir) not in sys.path:
-    sys.path.insert(0, str(_modal_dir))
+# Make `_common` importable both locally (sibling file) and in the Modal
+# container, where the entrypoint lands at /root but the repo is baked into the
+# image at /repo (see add_local_dir in _common.py).
+for _candidate in (Path(__file__).resolve().parent, Path("/repo/research/modal")):
+    if _candidate.is_dir() and str(_candidate) not in sys.path:
+        sys.path.insert(0, str(_candidate))
 
 from _common import (
     BASE_MODEL_ID,

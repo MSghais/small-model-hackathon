@@ -1,13 +1,15 @@
 # Modal finetune + benchmark
 
-GPU fine-tuning and lm-eval on [Modal](https://modal.com/docs/guide) for `openbmb/MiniCPM5-1B`, wrapping existing [`research/finetune.py`](../finetune.py) and `slm-lm-eval`.
+GPU fine-tuning + benchmarking + Hub publishing on [Modal](https://modal.com/docs/guide) for `openbmb/MiniCPM5-1B`, wrapping existing [`research/finetune.py`](../finetune.py) and `slm-lm-eval`.
 
-Use this when you have no local CUDA but want hackathon-quality train → eval → deploy loops.
+Use this when you have no local CUDA but want a hackathon-quality
+**train → eval → gate → publish** loop for a whole **skill matrix** of QLoRA
+adapters (math, science, coding, reasoning, teaching, instructions).
 
 | Track | What you ship |
 | ----- | ------------- |
-| **Modal** | `modal run` job, Volume artifacts, optional Modal Notebook |
-| **Well-Tuned** | Before/after `lm-eval` on base vs lesson LoRA |
+| **Modal** | `modal run` skill-matrix pipeline, Volume artifacts, optional Modal Notebook |
+| **Well-Tuned** | Per-skill before/after `lm-eval` + gated Hub publish for each LoRA |
 
 ---
 
@@ -15,10 +17,10 @@ Use this when you have no local CUDA but want hackathon-quality train → eval �
 
 ```text
 research/modal/
-├── _common.py         # Shared image, volumes, command builders
-├── finetune_app.py    # One-shot batch pipeline (slm-finetune-benchmark)
-├── server_app.py      # Long-lived GPU worker (slm-gpu-worker)
-├── experiments.yaml   # Dataset job matrix
+├── _common.py         # Shared image, volumes, command builders, gate + publish helpers
+├── finetune_app.py    # One-shot batch pipeline (slm-finetune-benchmark): main, publish_only, pull
+├── server_app.py      # Long-lived GPU worker (slm-gpu-worker): GpuWorker.run_pipeline
+├── experiments.yaml   # Skill matrix: jobs, eval_profile, goals, publish
 ├── README.md          # Full Modal docs (this file)
 └── SERVER.md          # Human + AI agent loop runbook (quick reference)
 ```
@@ -700,30 +702,38 @@ Use **Share** in the notebook editor → **public unlisted link** → **Can view
 ```mermaid
 flowchart LR
   subgraph batch [finetune_app.py — batch]
-    laptop1["modal run finetune_app"] --> train["finetune_one"]
-    laptop1 --> eval["run_lm_eval"]
+    laptop1["modal run finetune_app\n--job/--category"] --> base["run_lm_eval\n(per-profile baseline)"]
+    laptop1 --> train["finetune_one"]
+    train --> eval["run_lm_eval\n(candidate)"]
+    eval --> gate["check_gate\n(goals)"]
+    gate -- passed --> pub["publish_adapter"]
   end
   subgraph worker [server_app.py — warm loop]
-    laptop2["modal run server_app"] --> gpu["GpuWorker A10G"]
-    gpu --> train2["finetune / lm_eval / exec_cmd"]
+    laptop2["modal run server_app\n--job/--category/--pipeline"] --> gpu["GpuWorker A10G"]
+    gpu --> rp["run_pipeline\n(baseline -> train -> eval -> gate -> publish)"]
   end
-  train --> vol["Volume slm-finetune"]
+  base --> vol["Volume slm-finetune"]
+  train --> vol
   eval --> vol
-  train2 --> vol
+  gate --> vol
+  rp --> vol
   gpu --> hfc["Volume hf-cache"]
-  vol --> get["modal volume get"]
-  get --> local["models/finetuned/"]
-  local --> hub["huggingface-cli upload"]
+  pub --> hub["Hugging Face Hub\n(publish.hub_repo)"]
+  rp --> hub
+  vol --> get["modal volume get\n(pull)"]
+  get --> local["models/finetuned/<job>"]
   local --> space["HF Space ACTIVE_MODEL"]
 ```
 
 | Resource | Role |
 | -------- | ---- |
-| App `slm-finetune-benchmark` | One-shot batch pipeline (`finetune_app.py`) |
-| App `slm-gpu-worker` | Long-lived GPU worker (`server_app.py`) |
-| GPU `A10G` | Default for train + eval |
-| Secret `huggingface` | `HF_TOKEN` in workers |
-| [`_common.py`](_common.py) | Shared image, volumes, command builders |
+| App `slm-finetune-benchmark` | One-shot batch pipeline (`finetune_app.py`): `main`, `publish_only`, `pull` |
+| App `slm-gpu-worker` | Long-lived GPU worker (`server_app.py`): `GpuWorker.run_pipeline` |
+| GPU `A10G` (or per-job `gpu:` override) | Default for train + eval |
+| Secret `huggingface` | `HF_TOKEN` for HF downloads + Hub publish |
+| [`_common.py`](_common.py) | Shared image, volumes, command builders, gate (`evaluate_gate`/`check_gate_files`), publish (`publish_adapter_files`, `render_model_card`) |
+| [`experiments.yaml`](experiments.yaml) | Skill matrix: jobs, `eval_profile`, `goals`, `publish` |
+| [`eval_profiles.yaml`](../evals/configs/eval_profiles.yaml) | Maps `eval_profile` → lm-eval config + task list |
 | [`finetune.py`](../finetune.py) | Training logic (unchanged) |
 | `slm-lm-eval` | Academic benchmarks |
 
@@ -737,11 +747,15 @@ flowchart LR
 | Volume empty after run | Job may have failed; `modal volume ls slm-finetune`; ensure writes went to `/vol/finetuned` not `/repo` |
 | `modal volume get` missing files | Call `commit()` completed; for same-container reads use `volume.reload()` |
 | Large file won't download in UI | Use `modal volume get` CLI (16 MB UI limit) |
-| `modal volume get` path wrong | Job name = top-level folder (`lesson-lora`, not `minicpm5-1b-lora`) |
-| Hub upload 403 | Use a write token; create the repo first on huggingface.co |
+| `modal volume get` path wrong | Job name = top-level folder (e.g. `math-lora`, not `minicpm5-1b-lora`) |
+| Gate fails / `published: false, reason: "gate failed"` | Check `gate.checks` in the output; adjust `goals` (`min_score`/`min_improve`/`guard_tasks`), `max_steps`, or dataset, then rerun |
+| `published: false, reason: "no publish config..."` | Job has no `publish:` block in `experiments.yaml` (intentional for local-only jobs like `alpaca-lora`) |
+| `Unknown eval_profile ...` | Check `eval_profile` in `experiments.yaml` matches a key in `research/evals/configs/eval_profiles.yaml` |
+| Hub upload 403 | Use a write `HF_TOKEN`; repos are created automatically (`exist_ok=True`), no need to pre-create |
+| Still publishing to `your-hf-username/...` | Edit `defaults.hub_org` and each job's `publish.hub_repo` in `experiments.yaml` |
 | Space cannot find adapter | Use merged weights or copy adapter into repo `models/finetuned/` |
 | Image build slow | `hf-cache` Volume caches weights across runs |
-| OOM on GPU | `--mode qlora` in `experiments.yaml`; lower `max_len` in finetune |
+| OOM on GPU | `--mode qlora` in `experiments.yaml`; lower `max_len` in finetune; or set a per-job `gpu:` with more VRAM |
 | `scaledown_window` deploy error | Must be 2–3600s (we use 3600); see `_common.py` |
 | `server_app` ping fails | `modal deploy research/modal/server_app.py`; start keep-alive: `modal run -d research/modal/server_app.py` |
 | Jobs hit different containers | Deploy first; use `server_app.py` not `finetune_app.py` for warm loop |
@@ -751,9 +765,10 @@ flowchart LR
 
 ## Hackathon checklist
 
-1. Link or screenshot of Modal app run (`slm-finetune-benchmark` or `slm-gpu-worker`).
-2. `results/lm_eval/*/comparison.md` — base vs lesson LoRA (same YAML config).
-3. Adapter on Volume or Hub + `ACTIVE_MODEL=minicpm5-1b-lesson-lora` on Space.
-4. Optional: Notebook recording of smoke train cell.
+1. Link or screenshot of Modal app run (`slm-finetune-benchmark` or `slm-gpu-worker`), including the `--- summary ---` table (skill, category, gate, published, hub_repo).
+2. `results/lm_eval/<job>__<profile>/comparison.md` — baseline vs candidate per skill.
+3. At least one adapter with `goals` that passed the gate and published to the Hub (model card auto-generated).
+4. Adapter on Volume or Hub + `ACTIVE_MODEL=minicpm5-1b-<skill>-lora` on Space.
+5. Optional: Notebook recording of smoke train cell.
 
 See also: [`SERVER.md`](SERVER.md) · [research/USAGE.md](../USAGE.md) · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal Notebooks](https://modal.com/docs/guide/notebooks) · [Modal CUDA](https://modal.com/docs/guide/cuda)

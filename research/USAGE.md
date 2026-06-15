@@ -34,23 +34,44 @@ uv sync --group lm-eval
 
 ## 0. Modal cloud GPU (`research/modal/`)
 
-Run fine-tuning and lm-eval **without local CUDA**. Wraps the same `finetune.py` and `slm-lm-eval` scripts; saves LoRA adapters to Modal Volume `slm-finetune`.
+Run a **skill-matrix** of QLoRA fine-tunes **without local CUDA**: each job in
+[`modal/experiments.yaml`](modal/experiments.yaml) trains one adapter for a
+category (math, science, coding, reasoning, teaching, instructions), evaluates
+it against a matching `slm-lm-eval` profile vs. a per-profile baseline, checks
+the result against `goals`, and — only if the gate passes — publishes the
+adapter to the Hugging Face Hub. Adapters + results are saved to Modal Volume
+`slm-finetune`.
 
 ```bash
 uv sync --group modal
 modal setup
-modal secret create huggingface HF_TOKEN=<token>
+modal secret create huggingface HF_TOKEN=<token>   # needs write access for Hub publish
 
-# Smoke train on Modal
-modal run research/modal/finetune_app.py --job lesson-lora --max-steps 20
+# Smoke run for one skill: baseline -> train -> eval -> gate -> publish -> pull
+modal run research/modal/finetune_app.py --job math-lora --max-steps 20
 
-# Download adapter to repo path expected by models.yaml (use CLI — files may exceed 16 MB UI limit)
-modal volume get slm-finetune lesson-lora ./models/finetuned/minicpm5-1b-lora
+# Whole skill matrix
+modal run research/modal/finetune_app.py
 
-# Publish to Hugging Face Hub
-huggingface-cli upload your-user/minicpm5-1b-lesson-lora \
-  ./models/finetuned/minicpm5-1b-lora . --repo-type model
+# One category, train+eval only (no Hub push)
+modal run research/modal/finetune_app.py --category science --no-publish
+
+# Re-check the gate and publish an already-evaluated job
+modal run research/modal/finetune_app.py::publish_only --job math-lora
+
+# Pull adapters + lm-eval results without re-running anything
+modal run research/modal/finetune_app.py::pull --category math
 ```
+
+Set real values for `defaults.hub_org` and each job's `publish.hub_repo` in
+`experiments.yaml` (placeholder: `your-hf-username`) before publishing — repos
+are created automatically. Jobs with no `goals` (e.g. `alpaca-lora`) are
+trained/evaluated but never gated or published (local-only).
+
+For a multi-hour session on **one warm GPU** (iterative human/AI loop without
+re-downloading weights each run), use `research/modal/server_app.py` instead —
+same skill-matrix pipeline (`--job`/`--category`/`--pipeline`/`--publish-only`)
+on a deployed `GpuWorker`.
 
 Full guide: **[modal/README.md](modal/README.md)** · **Agent loop:** **[modal/SERVER.md](modal/SERVER.md)** · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal Notebooks](https://modal.com/docs/guide/notebooks)
 
