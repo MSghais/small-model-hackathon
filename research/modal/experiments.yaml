@@ -47,6 +47,8 @@ finetune:
       lora_r: 32
       lora_alpha: 64
       neftune_noise_alpha: 5
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Lesson-planning chat + alpaca replay, r=32 + NEFTune
     eval_profile: instructions
     goals:
@@ -62,6 +64,9 @@ finetune:
     category: science
     dataset: research/data/science-tutor-chat.jsonl
     format: chat
+    args:
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Science tutor Q&A chat data (local)
     eval_profile: science
     goals:
@@ -124,6 +129,9 @@ finetune:
     format: alpaca
     dataset_split: "train[:1000]"
     max_samples: 1000
+    args:
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Python code instruction tuning (Hub, alpaca columns)
     eval_profile: code
     goals:
@@ -147,6 +155,9 @@ finetune:
     dataset_config: all
     dataset_split: "train[:500]"
     max_samples: 500
+    args:
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Multi-turn reasoning/chat subset (Hub)
     eval_profile: reasoning
     goals:
