@@ -10,6 +10,18 @@ python_version: "3.12"
 pinned: false
 license: apache-2.0
 tags:
+  - track:backyard
+  - track:wood
+  - sponsor:openbmb
+  - sponsor:openai
+  - sponsor:nvidia
+  - sponsor:modal
+  - achievement:offgrid
+  - achievement:welltuned
+  - achievement:offbrand
+  - achievement:llama
+  - achievement:sharing
+  - achievement:fieldnotes
   - build-small-hackathon
   - backyard-ai
   - modal
@@ -23,7 +35,10 @@ tags:
   - field-notes
   - well-tuned
   - llama-champion
+
 ---
+
+
 
 # Lesson Agent
 
