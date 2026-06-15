@@ -1,0 +1,53 @@
+{
+  "job": "math-lora",
+  "baseline_results": "/vol/finetuned/results/lm_eval/minicpm5-1b__baseline__math/results.json",
+  "candidate_results": "/vol/finetuned/results/lm_eval/math-lora__math/results.json",
+  "gate": {
+    "passed": true,
+    "checks": [
+      {
+        "check": "gsm8k >= 0.05",
+        "value": 0.4,
+        "ok": true
+      },
+      {
+        "check": "gsm8k improve >= 0.02",
+        "value": 0.07,
+        "ok": true
+      },
+      {
+        "check": "arc_challenge regress <= 0.03",
+        "value": -0.04999999999999999,
+        "ok": true
+      },
+      {
+        "check": "hellaswag regress <= 0.03",
+        "value": 0.0,
+        "ok": true
+      },
+      {
+        "check": "piqa regress <= 0.03",
+        "value": 0.020000000000000018,
+        "ok": true
+      }
+    ],
+    "task": "gsm8k",
+    "candidate_score": 0.4,
+    "baseline_score": 0.33
+  },
+  "publish": {
+    "published": true,
+    "repo_id": "MSGEncrypted/minicpm5-1b-math-lora",
+    "url": "https://huggingface.co/MSGEncrypted/minicpm5-1b-math-lora",
+    "uploads": [
+      {
+        "repo_id": "MSGEncrypted/minicpm5-1b-math-lora",
+        "url": "https://huggingface.co/MSGEncrypted/minicpm5-1b-math-lora"
+      },
+      {
+        "repo_id": "build-small-hackathon/minicpm5-1b-math-lora",
+        "url": "https://huggingface.co/build-small-hackathon/minicpm5-1b-math-lora"
+      }
+    ]
+  }
+}
