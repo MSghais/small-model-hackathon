@@ -8,6 +8,8 @@ claim: Better code generation
 tasks:
   - humaneval
   - mbpp
+  - hellaswag   # general-capability guard (catch regression from skill tuning)
+  - piqa        # general-capability guard
 
 # humaneval/mbpp execute model-generated code; opt in explicitly.
 confirm_run_unsafe_code: true
