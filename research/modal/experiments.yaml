@@ -62,14 +62,20 @@ finetune:
       hub_repo: MSGEncrypted/minicpm5-1b-science-lora
       private: false
 
-  # --- math: grade-school word problems + instruction-style math solutions ---
+  # --- math: GSM8K/MATH natural-language CoT augmentation (MetaMathQA) ---
+  # MetaMathQA's NL chain-of-thought matches GSM8K's 5-shot format far better
+  # than MathInstruct's program-of-thought answers (which regressed gsm8k).
   - name: math-lora
     category: math
-    dataset: TIGER-Lab/MathInstruct
-    format: alpaca
-    dataset_split: "train[:1000]"
-    max_samples: 1000
-    description: Math instruction tuning (Hub, instruction/output columns)
+    dataset: meta-math/MetaMathQA
+    format: prompt
+    columns:
+      prompt: query
+      response: response
+    dataset_split: "train[:3000]"
+    max_samples: 3000
+    max_steps: 150
+    description: GSM8K/MATH NL-CoT augmentation (MetaMathQA, query/response)
     eval_profile: math
     goals:
       task: gsm8k
@@ -77,6 +83,10 @@ finetune:
       min_improve: 0.02
       guard_tasks:
         - task: arc_challenge
+          max_regress: 0.03
+        - task: hellaswag
+          max_regress: 0.03
+        - task: piqa
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-math-lora

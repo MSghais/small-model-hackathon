@@ -146,6 +146,10 @@ def build_finetune_cmd(job: dict[str, Any], out_dir: str) -> list[str]:
         cmd.extend(["--dataset-split", str(job["dataset_split"])])
     if job.get("max_samples") is not None:
         cmd.extend(["--dataset-max-samples", str(int(job["max_samples"]))])
+    # Optional column remap so a dataset's own columns fit the --format
+    # (e.g. MetaMathQA query/response -> prompt format).
+    for field, col in (job.get("columns") or {}).items():
+        cmd.extend([f"--{field}-key", str(col)])
     return cmd
 
 
