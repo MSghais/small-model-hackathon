@@ -8,7 +8,6 @@ from gradio_space.model_loading import (
     model_status,
     reload_model,
     select_and_reload_model,
-    set_runtime_model_key,
 )
 from inference.config import get_app_config
 from researchmind.config import get_config as get_research_config

@@ -27,7 +27,6 @@ from gradio_space.model_loading import (
     model_status,
     reload_model,
     select_and_reload_model,
-    set_runtime_model_key,
 )
 from gradio_space.research_helpers import (
     list_session_choices,

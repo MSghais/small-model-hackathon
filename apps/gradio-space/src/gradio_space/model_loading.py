@@ -19,12 +19,12 @@ def set_runtime_model_key(key: str) -> str:
     global _runtime_model_key, _current_model_key
 
     model = get_model_config(key)
-    if key != get_active_model_key():
+    previous = get_active_model_key()
+    if key != previous:
         reset_backend()
         _current_model_key = None
-        if _runtime_model_key:
-            _load_state.pop(_runtime_model_key, None)
-            _load_errors.pop(_runtime_model_key, None)
+        _load_state.pop(previous, None)
+        _load_errors.pop(previous, None)
     _runtime_model_key = key
     return model.label
 
