@@ -345,31 +345,16 @@ def main(
             raise SystemExit(result.get("exit_code", 1))
         return
 
-    if pipeline:
+    if pipeline or (eval_only and not job):
         job_names = [job] if job else None
         result = worker.run_pipeline.remote(
             job_names=job_names,
             max_steps=max_steps,
+            train=not eval_only,
             eval_only=eval_only,
             skip_baseline=skip_baseline,
             lm_eval_config=lm_eval_config,
             baseline_config=baseline_config,
-        )
-        print(json.dumps(result, indent=2))
-        return
-
-    if job and eval_only:
-        _, prepared = prepare_jobs(job=job, max_steps=max_steps)
-        defaults = load_experiments().get("defaults", {})
-        eval_cfg = lm_eval_config or defaults.get(
-            "lm_eval_config", "research/evals/configs/lm_eval_smoke.yaml"
-        )
-        result = worker.lm_eval.remote(
-            experiment_name=f"{job}__modal-lm-eval",
-            config=eval_cfg,
-            model_path="openbmb/MiniCPM5-1B",
-            adapter_path=f"{FINETUNE_VOL_PATH}/{job}",
-            compare_to=BASELINE_RESULTS_JSON,
         )
         print(json.dumps(result, indent=2))
         return
