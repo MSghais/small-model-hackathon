@@ -20,7 +20,7 @@ models:
     label: Beta GGUF
     backend: llama_cpp
     model_repo: openbmb/MiniCPM-V-4.6-gguf
-    model_file: MiniCPM-V-4.6-Q4_K_M.gguf
+    model_file: MiniCPM-V-4_6-Q4_K_M.gguf
     multimodal: true
 """
     )
