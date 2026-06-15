@@ -436,6 +436,12 @@ body.sidebar-open {
 
 .controls-actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
 
+.slide-demo-tip {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--on-surface-variant);
+}
+
 .region-loading-host,
 .card-ingest,
 .card-chat,
@@ -1779,14 +1785,24 @@ body.sidebar-open {
 
 .workspace[data-view="debug"] {
   grid-template-columns: 1fr;
-  max-width: 640px;
+  max-width: 48rem;
   margin-left: auto;
   margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.workspace[data-view="debug"] .col-debug {
+  width: 100%;
+}
+
+.workspace[data-view="debug"] .coach-debug-card {
+  min-height: calc(100vh - var(--topbar-h) - var(--context-bar-h) - 2rem);
 }
 
 .debug-chat-messages {
-  min-height: 200px;
-  max-height: 320px;
+  min-height: 280px;
+  max-height: min(480px, 50vh);
 }
 
 .lessons-rail-card .field + .field {

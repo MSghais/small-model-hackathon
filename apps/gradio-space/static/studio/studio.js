@@ -1651,24 +1651,8 @@ function bindUi() {
   });
 
   $("#btn-export").addEventListener("click", () => {
-    const downloads = state.downloads;
-    if (!downloads) return;
-    const menu = [
-      { label: "PPTX", path: downloads.pptx },
-      { label: "DOCX", path: downloads.docx },
-      { label: "HTML", path: downloads.html },
-    ].filter((item) => item.path);
-    if (!menu.length) return;
-    if (menu.length === 1) {
-      window.open(fileUrl(menu[0].path), "_blank");
-      return;
-    }
-    const choice = prompt(
-      `Download format:\n${menu.map((item, i) => `${i + 1}. ${item.label}`).join("\n")}\n\nEnter 1–${menu.length} (default PPTX):`,
-      "1"
-    );
-    const idx = Math.max(0, Math.min(menu.length - 1, parseInt(choice, 10) - 1 || 0));
-    window.open(fileUrl(menu[idx].path), "_blank");
+    const p = state.downloads?.pptx;
+    if (p) window.open(fileUrl(p), "_blank");
   });
 
   $("#btn-new-session").addEventListener("click", () => {
