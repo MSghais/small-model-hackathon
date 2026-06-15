@@ -19,10 +19,10 @@ todos:
     status: completed
   - id: modal-notebook
     content: Create research/notebook/minicpm5-modal-finetune.ipynb for interactive OpenBMB MiniCPM5-1B demo
-    status: in_progress
+    status: completed
   - id: docs-deps
     content: Add research/modal/README.md, modal dependency group in pyproject.toml, HF_TOKEN note in .env.example
-    status: pending
+    status: completed
 isProject: false
 ---
 

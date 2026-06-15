@@ -27,6 +27,31 @@ uv sync --group lm-eval
 | `finetune` | `research/finetune.py` | `peft`, `datasets`, `bitsandbytes` (QLoRA) |
 | `evals` | `slm-evals` workspace member | `slm-benchmark` CLI |
 | `lm-eval` | `slm-evals[lm-eval]` | `slm-lm-eval` CLI (GSM8K, ARC, HellaSwag, …) |
+| `modal` | `research/modal/finetune_app.py` | Cloud GPU train + eval via [Modal](https://modal.com/docs/guide) |
+
+---
+
+## 0. Modal cloud GPU (`research/modal/`)
+
+Run fine-tuning and lm-eval **without local CUDA**. Wraps the same `finetune.py` and `slm-lm-eval` scripts; saves LoRA adapters to Modal Volume `slm-finetune`.
+
+```bash
+uv sync --group modal
+modal setup
+modal secret create huggingface HF_TOKEN=<token>
+
+# Smoke train on Modal
+modal run research/modal/finetune_app.py --job lesson-lora --max-steps 20
+
+# Download adapter to repo path expected by models.yaml
+modal volume get slm-finetune lesson-lora ./models/finetuned/minicpm5-1b-lora
+
+# Publish to Hugging Face Hub
+huggingface-cli upload your-user/minicpm5-1b-lesson-lora \
+  ./models/finetuned/minicpm5-1b-lora . --repo-type model
+```
+
+Full guide (Volume layout, merge, Space deploy): **[modal/README.md](modal/README.md)**.
 
 ---
 
