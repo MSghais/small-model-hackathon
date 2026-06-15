@@ -9,6 +9,16 @@ app_file: app.py
 python_version: "3.12"
 pinned: false
 license: apache-2.0
+tags:
+  - build-small-hackathon
+  - backyard-ai
+  - tiny-titan
+  - best-agent
+  - best-demo
+  - openbmb
+  - sharing-is-caring
+  - off-the-grid
+  - off-brand
 ---
 
 # Lesson Agent
