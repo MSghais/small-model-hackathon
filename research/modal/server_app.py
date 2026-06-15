@@ -44,7 +44,6 @@ for _candidate in (Path(__file__).resolve().parent, Path("/repo/research/modal")
         sys.path.insert(0, str(_candidate))
 
 from _common import (  # noqa: E402
-    BASE_MODEL_ID,
     DEFAULT_GPU,
     DEFAULT_KEEPALIVE_HOURS,
     DEFAULT_SCALEDOWN_WINDOW,
@@ -52,22 +51,31 @@ from _common import (  # noqa: E402
     FINETUNE_VOL_PATH,
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
-    baseline_is_cached,
+    baseline_experiment_name,
+    baseline_profiles_for_jobs,
     build_finetune_cmd,
     build_lm_eval_cmd,
     check_gate_files,
+    check_publish_gate_files,
     commit_volumes,
     config_for_profile,
+    discover_cached_baselines,
+    eval_paths,
     finetune_vol,
+    general_eval_profile,
+    general_goals_for_job,
     hf_cache_vol,
     hf_secret,
     image,
     job_plan_rows,
     parse_json_object,
     prepare_jobs,
+    profiles_needing_baseline_run,
+    resolve_base_model_id,
     split_csv,
     publish_adapter_files,
     pull_artifacts,
+    reload_finetune_volume,
     reload_volumes,
     repo_env,
 )
@@ -177,7 +185,9 @@ class GpuWorker:
         """Run slm-lm-eval on base model or finetuned checkpoint."""
         # Pick up adapters committed by another container (e.g. a separate
         # eval-only invocation) — the warm container's mount may predate them.
-        reload_volumes()
+        # Only finetune_vol is needed here; reloading hf-cache can fail when
+        # hf-xet keeps log files open on the warm container's HF cache mount.
+        reload_finetune_volume()
 
         if adapter_path:
             adapter_dir = Path(adapter_path)
@@ -241,8 +251,20 @@ class GpuWorker:
         candidate_results_path: str,
         baseline_results_path: str | None,
         goals: dict[str, Any],
+        general_candidate_results_path: str | None = None,
+        general_baseline_results_path: str | None = None,
+        general_goals: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Check a candidate's lm-eval results against `goals` (Hub publish gate)."""
+        """Check skill + general lm-eval results against publish goals."""
+        if general_goals:
+            return check_publish_gate_files(
+                skill_candidate_path=candidate_results_path,
+                skill_baseline_path=baseline_results_path,
+                skill_goals=goals,
+                general_candidate_path=general_candidate_results_path,
+                general_baseline_path=general_baseline_results_path,
+                general_goals=general_goals,
+            )
         return check_gate_files(
             candidate_results_path=candidate_results_path,
             baseline_results_path=baseline_results_path,
@@ -313,40 +335,38 @@ class GpuWorker:
             raise ValueError("No jobs matched the requested filters")
 
         preset = defaults.get("preset", "minicpm5-1b")
-        profile_names = sorted({j.get("eval_profile", "compare_study") for j in prepared})
+        profile_names = baseline_profiles_for_jobs(prepared, defaults)
         plan = job_plan_rows(prepared)
         if plan_only:
             return {"preset": preset, "jobs": plan}
 
-        baselines_ok: dict[str, bool] = {}
-        if not eval_only and not skip_baseline:
-            for profile in profile_names:
-                exp = f"{preset}__baseline__{profile}"
-                cfg_path = config_for_profile(profile)
-                if baseline_is_cached(
-                    exp,
-                    cfg_path,
-                    tasks=eval_tasks,
-                    limit=eval_limit,
-                    num_fewshot=eval_num_fewshot,
-                    seed=eval_seed,
-                ):
-                    print(f"baseline {exp}: reusing cached results (config unchanged)")
-                    baselines_ok[profile] = True
-                    continue
-                result = self.lm_eval.local(
-                    experiment_name=exp,
-                    config=cfg_path,
-                    preset=preset,
-                    tasks=eval_tasks,
-                    limit=eval_limit,
-                    num_fewshot=eval_num_fewshot,
-                    batch_size=eval_batch_size,
-                    device=eval_device,
-                    dtype=eval_dtype,
-                    seed=eval_seed,
-                )
-                baselines_ok[profile] = bool(result.get("ok"))
+        baselines_ok = discover_cached_baselines(
+            profile_names,
+            preset=preset,
+            eval_tasks=eval_tasks,
+            eval_limit=eval_limit,
+            eval_num_fewshot=eval_num_fewshot,
+            eval_seed=eval_seed,
+        )
+        missing_baselines = profiles_needing_baseline_run(
+            profile_names, baselines_ok, skip_baseline=skip_baseline
+        )
+        for profile in missing_baselines:
+            exp = baseline_experiment_name(preset, profile)
+            cfg_path = config_for_profile(profile)
+            result = self.lm_eval.local(
+                experiment_name=exp,
+                config=cfg_path,
+                preset=preset,
+                tasks=eval_tasks,
+                limit=eval_limit,
+                num_fewshot=eval_num_fewshot,
+                batch_size=eval_batch_size,
+                device=eval_device,
+                dtype=eval_dtype,
+                seed=eval_seed,
+            )
+            baselines_ok[profile] = bool(result.get("ok"))
 
         train_results: dict[str, dict[str, Any]] = {}
         if train and not eval_only:
@@ -354,6 +374,7 @@ class GpuWorker:
                 train_results[j["name"]] = self.finetune.local(j)
 
         rows: list[dict[str, Any]] = []
+        gen_profile = general_eval_profile(defaults)
         for j in prepared:
             job_name = j["name"]
             profile = j.get("eval_profile", "compare_study")
@@ -364,14 +385,15 @@ class GpuWorker:
                 else f"{FINETUNE_VOL_PATH}/{job_name}"
             )
 
-            baseline_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+            baseline_path = f"{LM_EVAL_OUTPUT}/{baseline_experiment_name(preset, profile)}/results.json"
             compare_to = baseline_path if baselines_ok.get(profile) else None
+            base_model_id = resolve_base_model_id(j, defaults)
 
             exp_name = f"{job_name}__{profile}"
             eval_result = self.lm_eval.local(
                 experiment_name=exp_name,
                 config=config_for_profile(profile),
-                model_path=BASE_MODEL_ID,
+                model_path=base_model_id,
                 adapter_path=adapter_path,
                 compare_to=compare_to,
                 tasks=eval_tasks,
@@ -383,21 +405,60 @@ class GpuWorker:
                 seed=eval_seed,
             )
 
+            general_goals = general_goals_for_job(j, defaults)
+            general_eval_result: dict[str, Any] | None = None
+            general_candidate_path: str | None = None
+            general_baseline_path: str | None = None
+            if general_goals:
+                general_baseline_path = (
+                    f"{LM_EVAL_OUTPUT}/{baseline_experiment_name(preset, gen_profile)}/results.json"
+                )
+                gen_compare_to = (
+                    general_baseline_path if baselines_ok.get(gen_profile) else None
+                )
+                gen_exp_name = f"{job_name}__{gen_profile}"
+                general_eval_result = self.lm_eval.local(
+                    experiment_name=gen_exp_name,
+                    config=config_for_profile(gen_profile),
+                    model_path=base_model_id,
+                    adapter_path=adapter_path,
+                    compare_to=gen_compare_to,
+                    tasks=eval_tasks,
+                    limit=eval_limit,
+                    num_fewshot=eval_num_fewshot,
+                    batch_size=eval_batch_size,
+                    device=eval_device,
+                    dtype=eval_dtype,
+                    seed=eval_seed,
+                )
+                general_candidate_path = general_eval_result["results_json"]
+
             row: dict[str, Any] = {
                 "name": job_name,
                 "category": j.get("category"),
                 "profile": profile,
+                "general_profile": gen_profile if general_goals else None,
                 "plan": next((p for p in plan if p["name"] == job_name), None),
                 "eval": eval_result,
             }
+            if general_eval_result:
+                row["general_eval"] = general_eval_result
 
             gate_result: dict[str, Any] | None = None
             if j.get("goals"):
-                if eval_result.get("ok"):
+                skill_ok = bool(eval_result.get("ok"))
+                general_ok = (
+                    not general_goals
+                    or bool(general_eval_result and general_eval_result.get("ok"))
+                )
+                if skill_ok and general_ok:
                     gate_result = self.check_gate.local(
                         candidate_results_path=eval_result["results_json"],
                         baseline_results_path=baseline_path,
                         goals=j["goals"],
+                        general_candidate_results_path=general_candidate_path,
+                        general_baseline_results_path=general_baseline_path,
+                        general_goals=general_goals,
                     )
                 row["gate"] = gate_result
 
@@ -515,14 +576,26 @@ def main(
 
         preset = defaults.get("preset", "minicpm5-1b")
         profile = j.get("eval_profile", "compare_study")
+        gen_profile = general_eval_profile(defaults)
+        general_goals = general_goals_for_job(j, defaults)
         adapter_path = f"{FINETUNE_VOL_PATH}/{job}"
-        candidate_results_path = f"{LM_EVAL_OUTPUT}/{job}__{profile}/results.json"
-        baseline_results_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+        candidate_results_path, baseline_results_path, _ = eval_paths(
+            job_name=job, preset=preset, profile=profile
+        )
+        general_candidate_path = None
+        general_baseline_path = None
+        if general_goals:
+            general_candidate_path, general_baseline_path, _ = eval_paths(
+                job_name=job, preset=preset, profile=gen_profile
+            )
 
         gate_result = worker.check_gate.remote(
             candidate_results_path=candidate_results_path,
             baseline_results_path=baseline_results_path,
             goals=j["goals"],
+            general_candidate_results_path=general_candidate_path,
+            general_baseline_results_path=general_baseline_path,
+            general_goals=general_goals,
         )
         print(json.dumps(gate_result, indent=2))
 
@@ -570,6 +643,12 @@ def main(
         if pull:
             for row in result.get("jobs", []):
                 pull_artifacts(row["name"], f"{row['name']}__{row['profile']}")
+                if row.get("general_profile"):
+                    pull_artifacts(
+                        row["name"],
+                        f"{row['name']}__{row['general_profile']}",
+                        dest="models/finetuned",
+                    )
         return
 
     if serve:

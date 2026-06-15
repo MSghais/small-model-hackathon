@@ -5,6 +5,10 @@
 # checks the result against `goals`, and — only if the gate passes —
 # publishes the adapter to `publish.hub_repo` on the Hugging Face Hub.
 #
+# Baselines are always the unfine-tuned base model (`defaults.preset` →
+# models.yaml model_id, e.g. openbmb/MiniCPM5-1B), stored as
+# results/lm_eval/<preset>__baseline__<profile>/ and reused across jobs.
+#
 # Smoke limits (max_steps, max_samples, eval `limit` in the profile configs)
 # keep hackathon runs affordable; bump them for full runs.
 #
@@ -27,6 +31,22 @@ defaults:
   max_steps: 100
   # Hugging Face namespace for published adapters.
   hub_org: MSGEncrypted
+  # Second eval pass for publish gates: balanced general SLM mix (limit 100).
+  general_eval_profile: compare_study
+  general_goals:
+    guard_tasks:
+      - task: arc_easy
+        max_regress: 0.03
+      - task: arc_challenge
+        max_regress: 0.03
+      - task: hellaswag
+        max_regress: 0.03
+      - task: piqa
+        max_regress: 0.03
+      - task: boolq
+        max_regress: 0.03
+      - task: gsm8k
+        max_regress: 0.03
 
 finetune:
   # --- teaching: lesson-planning agent chat data (Well-Tuned primary) ---
@@ -62,14 +82,27 @@ finetune:
       private: false
 
   # --- science: factual + explanatory science tutoring ---
+  # 10 local science-tutor chats overfit easily on their own; mix in alpaca
+  # replay + NEFTune + bigger LoRA rank (same recipe as teaching/math/language)
+  # so sciq recall improves instead of regressing from narrow chat-format drift.
   - name: science-lora
     category: science
-    dataset: research/data/science-tutor-chat.jsonl
-    format: chat
+    max_steps: 150
+    mix:
+      - dataset: research/data/science-tutor-chat.jsonl
+        format: chat
+        weight: 16                    # ~10 samples -> ~160 examples
+      - dataset: tatsu-lab/alpaca      # general replay: protect sciq/arc_challenge
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
     args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
       early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
       val_split: 0.05
-    description: Science tutor Q&A chat data (local)
+    description: Science tutor Q&A chat + alpaca replay, r=32 + NEFTune
     eval_profile: science
     goals:
       task: sciq

@@ -60,7 +60,7 @@ uv sync --group modal   # local orchestration only
 ## Run training + benchmarks
 
 All commands from **repo root**. `finetune_app.py` runs the full **skill-matrix
-pipeline**: per-profile baseline lm-eval → finetune each job's QLoRA adapter →
+pipeline**: per-profile **base-model** baseline lm-eval (no adapter) → finetune each job's QLoRA adapter →
 post-train lm-eval vs. that baseline → check `goals` (gate) → publish to the
 Hugging Face Hub if the gate passes → pull adapter + results to your laptop.
 
@@ -119,7 +119,7 @@ for the `goals`/`publish` schema.
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
 | `--train` / `--no-train` | train on | Run finetune jobs |
-| `--eval-only` | off | Skip train + baselines; eval existing Volume checkpoints |
+| `--eval-only` | off | Skip train; eval existing Volume checkpoints (still runs missing base-model baselines) |
 | `--parallel` | off | `finetune_one.spawn()` per job instead of sequential |
 | `--job` | all jobs | Run one job name from `experiments.yaml` |
 | `--category` | all categories | Run all jobs with this `category` |
@@ -208,7 +208,7 @@ Task flags (`--job`, `--category`, `--cmd`, `--pipeline`, `--eval-only`, `--publ
 | `--category` | — | Run the skill-matrix pipeline for all jobs in a category |
 | `--pipeline` | off | Run the skill-matrix pipeline for all jobs |
 | `--max-steps` | from YAML | Override training steps |
-| `--eval-only` | off | Pipeline eval/gate/publish path only (skip baselines + train) |
+| `--eval-only` | off | Pipeline eval/gate/publish only (skip train; still runs missing base-model baselines) |
 | `--publish` / `--no-publish` | publish on | Push to `publish.hub_repo` if the gate passes |
 | `--publish-only` | off | Re-check the gate against existing results and publish (requires `--job`) |
 | `--pull` / `--no-pull` | pull on | `modal volume get` adapter + results after the pipeline |
@@ -469,6 +469,11 @@ goals:
       max_regress: 0.03
 ```
 
+Publishable jobs also run a **general** eval (`defaults.general_eval_profile`, default
+`compare_study`: arc_easy, arc_challenge, hellaswag, piqa, boolq, gsm8k) and must pass
+`defaults.general_goals` regression guards so skill tuning does not wash out general
+capability. The publish gate requires **both** skill `goals` and `general_goals` to pass.
+
 A job with no `goals` (e.g. `alpaca-lora`) is never gated and never published —
 it's local-only (still trained, evaluated, and pulled to your laptop).
 
@@ -482,10 +487,13 @@ publish:
 
 ### What happens on a passing gate
 
-1. `run_lm_eval` writes `results/lm_eval/<job>__<profile>/results.json`.
-2. `check_gate` compares it against `results/lm_eval/<preset>__baseline__<profile>/results.json`
-   using the `goals` above → `{"passed": bool, "checks": [...]}`.
-3. If `passed` and `publish` is set, `publish_adapter`:
+1. `run_lm_eval` writes skill results to `results/lm_eval/<job>__<profile>/results.json`.
+2. For publishable jobs, a second run writes general results to
+   `results/lm_eval/<job>__<general_eval_profile>/results.json`.
+3. `check_gate` compares skill results against `results/lm_eval/<preset>__baseline__<profile>/results.json`
+   and general results against `results/lm_eval/<preset>__baseline__<general_eval_profile>/results.json`
+   using `goals` + `general_goals` → `{"passed": bool, "skill": {...}, "general": {...}, "checks": [...]}`.
+4. If `passed` and `publish` is set, `publish_adapter`:
    - renders a model card (`README.md`) into the adapter directory — base model,
      gate checks table, full lm-eval baseline-vs-candidate-vs-delta table,
      training stats, and a PEFT load snippet
