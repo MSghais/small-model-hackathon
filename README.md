@@ -21,6 +21,7 @@ tags:
   - off-brand
   - field-notes
   - well-tuned
+  - llama-champion
 ---
 
 # Lesson Agent
