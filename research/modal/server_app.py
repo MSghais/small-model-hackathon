@@ -11,11 +11,14 @@ Default: keep a GPU worker alive for several hours (blocks local terminal):
 Detached keep-alive (local terminal free):
     modal run -d research/modal/server_app.py --hours 6
 
-Run experiments on the warm worker (separate terminal, same container when deployed):
-    modal run research/modal/server_app.py --job lesson-lora --max-steps 20
-    modal run research/modal/server_app.py --eval-only --job lesson-lora
+Run the skill-matrix pipeline on the warm worker (separate terminal, same
+container when deployed) — per-profile baselines -> finetune -> eval -> gate -> publish:
+    modal run research/modal/server_app.py --job math-lora --max-steps 20
+    modal run research/modal/server_app.py --category science
+    modal run research/modal/server_app.py --pipeline --no-publish
+    modal run research/modal/server_app.py --eval-only --job math-lora
+    modal run research/modal/server_app.py --publish-only --job math-lora
     modal run research/modal/server_app.py --cmd "uv run python research/finetune.py --help"
-    modal run research/modal/server_app.py --pipeline --job lesson-lora --max-steps 20
 
 Stop deployed app:
     modal app stop slm-gpu-worker

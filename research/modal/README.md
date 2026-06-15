@@ -57,43 +57,87 @@ uv sync --group modal   # local orchestration only
 
 ## Run training + benchmarks
 
-All commands from **repo root**.
+All commands from **repo root**. `finetune_app.py` runs the full **skill-matrix
+pipeline**: per-profile baseline lm-eval → finetune each job's QLoRA adapter →
+post-train lm-eval vs. that baseline → check `goals` (gate) → publish to the
+Hugging Face Hub if the gate passes → pull adapter + results to your laptop.
 
 ```bash
-# Full sweep: baseline lm-eval → 3 dataset jobs → post-train lm-eval
+# Full sweep: every job in experiments.yaml
 modal run research/modal/finetune_app.py
 
-# Smoke one job (cheap)
-modal run research/modal/finetune_app.py --job lesson-lora --max-steps 20
+# One skill (cheap smoke run)
+modal run research/modal/finetune_app.py --job math-lora --max-steps 20
 
-# Re-run lm-eval only (adapter already on Volume)
-modal run research/modal/finetune_app.py --eval-only --job lesson-lora
+# One category (e.g. all "science" jobs)
+modal run research/modal/finetune_app.py --category science
 
-# Train/eval jobs in parallel (3 GPUs — higher cost)
+# Re-run lm-eval (+ gate + publish) only — adapter already on Volume
+modal run research/modal/finetune_app.py --eval-only --job math-lora
+
+# Train + eval but skip the Hub push and the local download
+modal run research/modal/finetune_app.py --no-publish --no-pull
+
+# Train/eval jobs in parallel (one GPU per job — higher cost)
 modal run research/modal/finetune_app.py --parallel
+
+# Re-run just the gate + Hub publish for an already-evaluated job
+modal run research/modal/finetune_app.py::publish_only --job math-lora
+
+# Pull adapters + lm-eval results for a category without re-running anything
+modal run research/modal/finetune_app.py::pull --category math
 ```
 
-Jobs live in [`experiments.yaml`](experiments.yaml):
+Jobs live in [`experiments.yaml`](experiments.yaml) — a **skill matrix**, one
+QLoRA adapter per category, each evaluated against the matching
+`eval_profile` from [`research/evals/configs/eval_profiles.yaml`](../evals/configs/eval_profiles.yaml):
 
-| Job | Dataset | Format |
-| --- | ------- | ------ |
-| `lesson-lora` | `research/data/education-lesson-chat.jsonl` | `chat` |
-| `alpaca-lora` | `tatsu-lab/alpaca` | `alpaca` |
-| `smoltalk-lora` | `HuggingFaceTB/smoltalk` | `chat` |
+| Job | Category | Dataset (format) | Eval profile | `goals` task | Publish |
+| --- | -------- | ----------------- | ------------ | ------------- | ------- |
+| `teaching-lora` | teaching | `research/data/education-lesson-chat.jsonl` (`chat`) | `instructions` | `ifeval` | ✅ |
+| `science-lora` | science | `research/data/science-tutor-chat.jsonl` (`chat`) | `science` | `sciq` (+ `arc_challenge` guard) | ✅ |
+| `math-lora` | math | `TIGER-Lab/MathInstruct` (`alpaca`) | `math` | `gsm8k` (+ `arc_challenge` guard) | ✅ |
+| `coding-lora` | coding | `iamtarun/python_code_instructions_18k_alpaca` (`alpaca`) | `code` | `mbpp` | ✅ |
+| `reasoning-lora` | reasoning | `HuggingFaceTB/smoltalk` (`chat`) | `reasoning` | `gsm8k` (+ `hellaswag` guard) | ✅ |
+| `alpaca-lora` | instructions | `tatsu-lab/alpaca` (`alpaca`) | `instructions` | — (no `goals`) | local-only |
 
-Edit `defaults.max_steps` or per-job `max_samples` in `experiments.yaml` to balance cost vs quality.
+Before publishing, replace `defaults.hub_org` and each job's `publish.hub_repo`
+in `experiments.yaml` with your Hugging Face username/org (defaults to the
+placeholder `your-hf-username`).
+
+Edit `defaults.max_steps`, per-job `gpu`, or per-job `max_samples` /
+`dataset_split` in `experiments.yaml` to balance cost vs quality. See
+[Benchmark gate & Hugging Face Hub publish](#benchmark-gate--hugging-face-hub-publish)
+for the `goals`/`publish` schema.
 
 ### CLI flags (`finetune_app.py`)
+
+`main` (default entrypoint — full pipeline):
 
 | Flag | Default | Meaning |
 | ---- | ------- | ------- |
 | `--train` / `--no-train` | train on | Run finetune jobs |
-| `--eval-only` | off | Skip train; eval existing Volume checkpoints |
-| `--parallel` | off | `finetune_one.map()` instead of sequential |
+| `--eval-only` | off | Skip train + baselines; eval existing Volume checkpoints |
+| `--parallel` | off | `finetune_one.spawn()` per job instead of sequential |
 | `--job` | all jobs | Run one job name from `experiments.yaml` |
+| `--category` | all categories | Run all jobs with this `category` |
 | `--max-steps` | from YAML | Override training steps |
-| `--lm-eval-config` | smoke YAML | Post-train eval config |
-| `--baseline-config` | compare-study YAML | Baseline eval config |
+| `--publish` / `--no-publish` | publish on | Push to `publish.hub_repo` if the gate passes |
+| `--pull` / `--no-pull` | pull on | `modal volume get` the adapter + lm-eval results after each job |
+
+`publish_only` (separate entrypoint — `::publish_only`):
+
+| Flag | Default | Meaning |
+| ---- | ------- | ------- |
+| `--job` | required | Re-check the gate against existing results and publish if it passes |
+
+`pull` (separate entrypoint — `::pull`):
+
+| Flag | Default | Meaning |
+| ---- | ------- | ------- |
+| `--job` | — | Pull one job's adapter + results |
+| `--category` | — | Pull all jobs in a category |
+| `--dest` | `models/finetuned` | Local destination directory |
 
 ---
 
