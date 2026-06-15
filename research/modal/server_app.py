@@ -38,8 +38,7 @@ if str(_modal_dir) not in sys.path:
     sys.path.insert(0, str(_modal_dir))
 
 from _common import (
-    BASELINE_EXPERIMENT,
-    BASELINE_RESULTS_JSON,
+    BASE_MODEL_ID,
     DEFAULT_GPU,
     DEFAULT_KEEPALIVE_HOURS,
     DEFAULT_SCALEDOWN_WINDOW,
@@ -50,13 +49,17 @@ from _common import (
     apply_defaults,
     build_finetune_cmd,
     build_lm_eval_cmd,
+    check_gate_files,
     commit_volumes,
+    config_for_profile,
     finetune_vol,
     hf_cache_vol,
     hf_secret,
     image,
     load_experiments,
     prepare_jobs,
+    publish_adapter_files,
+    pull_artifacts,
     reload_volumes,
     repo_env,
 )
@@ -198,18 +201,51 @@ class GpuWorker:
         }
 
     @modal.method()
+    def check_gate(
+        self,
+        *,
+        candidate_results_path: str,
+        baseline_results_path: str | None,
+        goals: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Check a candidate's lm-eval results against `goals` (Hub publish gate)."""
+        return check_gate_files(
+            candidate_results_path=candidate_results_path,
+            baseline_results_path=baseline_results_path,
+            goals=goals,
+        )
+
+    @modal.method()
+    def publish_adapter(
+        self,
+        *,
+        job: dict[str, Any],
+        adapter_dir: str,
+        gate_result: dict[str, Any],
+        candidate_results_path: str,
+        baseline_results_path: str | None,
+    ) -> dict[str, Any]:
+        """Write a model card and push the adapter to the Hub, but only if the gate passed."""
+        return publish_adapter_files(
+            job=job,
+            adapter_dir=adapter_dir,
+            gate_result=gate_result,
+            candidate_results_path=candidate_results_path,
+            baseline_results_path=baseline_results_path,
+        )
+
+    @modal.method()
     def run_pipeline(
         self,
         *,
         job_names: list[str] | None = None,
+        category: str | None = None,
         max_steps: int | None = None,
         train: bool = True,
         eval_only: bool = False,
-        skip_baseline: bool = False,
-        lm_eval_config: str | None = None,
-        baseline_config: str | None = None,
+        publish: bool = True,
     ) -> dict[str, Any]:
-        """Baseline lm-eval → finetune → post-train lm-eval (same container)."""
+        """Per-profile baselines -> finetune -> eval -> gate -> publish (same container)."""
         spec = load_experiments()
         defaults = spec.get("defaults", {})
         jobs = spec.get("finetune", [])
@@ -218,14 +254,14 @@ class GpuWorker:
             jobs = [j for j in jobs if j.get("name") in job_names]
             if not jobs:
                 raise ValueError(f"No matching jobs in experiments.yaml: {job_names}")
+        if category:
+            jobs = [j for j in jobs if j.get("category") == category]
+            if not jobs:
+                raise ValueError(f"No jobs with category {category!r}")
+        if not jobs:
+            raise ValueError("No jobs matched job_names/category")
 
-        eval_cfg = lm_eval_config or defaults.get(
-            "lm_eval_config", "research/evals/configs/lm_eval_smoke.yaml"
-        )
-        base_cfg = baseline_config or defaults.get(
-            "baseline_config", "research/evals/configs/lm_eval_compare_study.yaml"
-        )
-
+        preset = defaults.get("preset", "minicpm5-1b")
         prepared: list[dict[str, Any]] = []
         for raw in jobs:
             merged = apply_defaults(raw, defaults)
@@ -233,60 +269,75 @@ class GpuWorker:
                 merged["max_steps"] = max_steps
             prepared.append(merged)
 
-        baseline_result: dict[str, Any] | None = None
-        compare_path: str | None = None
+        profiles = sorted({j.get("eval_profile", "compare_study") for j in prepared})
 
-        if not eval_only and not skip_baseline:
-            baseline_result = self.lm_eval.local(
-                experiment_name=BASELINE_EXPERIMENT,
-                config=base_cfg,
-                preset=defaults.get("preset", "minicpm5-1b"),
-            )
-            if baseline_result.get("ok") and baseline_result.get("results_json"):
-                compare_path = baseline_result["results_json"]
-        elif skip_baseline or eval_only:
-            compare_path = BASELINE_RESULTS_JSON
+        baselines_ok: dict[str, bool] = {}
+        if not eval_only:
+            for profile in profiles:
+                result = self.lm_eval.local(
+                    experiment_name=f"{preset}__baseline__{profile}",
+                    config=config_for_profile(profile),
+                    preset=preset,
+                )
+                baselines_ok[profile] = bool(result.get("ok"))
 
-        train_results: list[dict[str, Any]] = []
+        train_results: dict[str, dict[str, Any]] = {}
         if train and not eval_only:
             for j in prepared:
-                train_results.append(self.finetune.local(j))
+                train_results[j["name"]] = self.finetune.local(j)
 
-        if eval_only and not prepared:
-            raise ValueError("eval_only requires job names or finetune entries in YAML")
-
-        eval_results: list[dict[str, Any]] = []
-        eval_targets: list[tuple[dict[str, Any], dict[str, Any] | None]] = []
-        if eval_only:
-            for j in prepared:
-                eval_targets.append((j, None))
-        else:
-            for j, r in zip(prepared, train_results):
-                eval_targets.append((j, r))
-
-        for j, train_payload in eval_targets:
+        rows: list[dict[str, Any]] = []
+        for j in prepared:
             job_name = j["name"]
+            profile = j.get("eval_profile", "compare_study")
+            train_payload = train_results.get(job_name)
             adapter_path = (
                 train_payload["output_dir"]
                 if train_payload
                 else f"{FINETUNE_VOL_PATH}/{job_name}"
             )
-            exp_name = f"{job_name}__modal-lm-eval"
-            eval_results.append(
-                self.lm_eval.local(
-                    experiment_name=exp_name,
-                    config=eval_cfg,
-                    model_path="openbmb/MiniCPM5-1B",
-                    adapter_path=adapter_path,
-                    compare_to=compare_path,
-                )
+
+            baseline_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+            compare_to = baseline_path if baselines_ok.get(profile) else None
+
+            exp_name = f"{job_name}__{profile}"
+            eval_result = self.lm_eval.local(
+                experiment_name=exp_name,
+                config=config_for_profile(profile),
+                model_path=BASE_MODEL_ID,
+                adapter_path=adapter_path,
+                compare_to=compare_to,
             )
 
-        return {
-            "baseline": baseline_result,
-            "train": train_results,
-            "eval": eval_results,
-        }
+            row: dict[str, Any] = {
+                "name": job_name,
+                "category": j.get("category"),
+                "profile": profile,
+                "eval": eval_result,
+            }
+
+            gate_result: dict[str, Any] | None = None
+            if j.get("goals"):
+                if eval_result.get("ok"):
+                    gate_result = self.check_gate.local(
+                        candidate_results_path=eval_result["results_json"],
+                        baseline_results_path=baseline_path,
+                        goals=j["goals"],
+                    )
+                row["gate"] = gate_result
+
+            if j.get("publish") and publish and gate_result is not None:
+                row["publish"] = self.publish_adapter.local(
+                    job=j,
+                    adapter_dir=adapter_path,
+                    gate_result=gate_result,
+                    candidate_results_path=eval_result["results_json"],
+                    baseline_results_path=baseline_path,
+                )
+
+            rows.append(row)
+
+        return {"jobs": rows}
 
 
 def _worker() -> GpuWorker:
