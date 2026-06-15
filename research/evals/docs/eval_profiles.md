@@ -51,6 +51,8 @@ Use **one profile per claim**. Do not compare training loss to lm-eval accuracy.
 | Better language understanding | `understanding` | `slm-lm-eval` | `boolq`, `piqa`, `copa`, `rte` |
 | Better code generation | `code` | `slm-lm-eval` | `humaneval`, `mbpp` |
 | Better instruction following | `instructions` | `slm-lm-eval` | `ifeval` |
+| Better French / translation | `french` | `slm-lm-eval` | `french_bench_xnli`, `belebele_fra_Latn`, `wmt14-en-fr`, … |
+| Better multilingual understanding | `multilingual` | `slm-lm-eval` | `xnli`, `xcopa`, `xwinograd` |
 | General ~1B SLM baseline | `general_slm` | `slm-lm-eval` | 6-task mix (full splits) |
 | Baseline vs finetune study | `compare_study` | `slm-lm-eval` | Same 6 tasks, limit 100 |
 | Tool use / function calling | `agentic_tool_use` | `slm-benchmark` | `bfcl`, `tau_bench` |
@@ -72,6 +74,8 @@ Use **one profile per claim**. Do not compare training loss to lm-eval accuracy.
 | `understanding` | `lm_eval_understanding.yaml` |
 | `code` | `lm_eval_code.yaml` |
 | `instructions` | `lm_eval_instructions.yaml` |
+| `french` | `lm_eval_french.yaml` |
+| `multilingual` | `lm_eval_multilingual.yaml` |
 | `general_slm` | `lm_eval_minicpm5.yaml` |
 | `compare_study` | `lm_eval_compare_study.yaml` |
 

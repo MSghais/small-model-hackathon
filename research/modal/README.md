@@ -101,6 +101,8 @@ QLoRA adapter per category, each evaluated against the matching
 | `math-lora` | math | `TIGER-Lab/MathInstruct` (`alpaca`) | `math` | `gsm8k` (+ `arc_challenge` guard) | ✅ |
 | `coding-lora` | coding | `iamtarun/python_code_instructions_18k_alpaca` (`alpaca`) | `code` | `mbpp` | ✅ |
 | `reasoning-lora` | reasoning | `HuggingFaceTB/smoltalk` (`chat`) | `reasoning` | `gsm8k` (+ `hellaswag` guard) | ✅ |
+| `language-lesson-lora` | language | `language-lesson-fr/ar.jsonl` (`chat`) | `multilingual` | `xnli` (+ `hellaswag` guard) | ✅ |
+| `french-lora` | french | `FrancophonIA/english_french` (`prompt`) + FR chat | `french` | `french_bench_xnli` (+ `hellaswag` guard) | ✅ |
 | `alpaca-lora` | instructions | `tatsu-lab/alpaca` (`alpaca`) | `instructions` | — (no `goals`) | local-only |
 
 Before publishing, replace `defaults.hub_org` and each job's `publish.hub_repo`

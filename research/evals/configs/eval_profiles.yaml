@@ -72,6 +72,59 @@ profiles:
     tasks:
       - ifeval
 
+  medical:
+    tool: slm-lm-eval
+    claim: Better medical knowledge
+    description: Clinical Q&A — PubMedQA + MedMCQA + MedQA (USMLE) with arc guard.
+    config: lm_eval_medical.yaml
+    tasks:
+      - pubmedqa
+      - medmcqa
+      - medqa_4options
+      - arc_challenge
+
+  multilingual:
+    tool: slm-lm-eval
+    claim: Better multilingual understanding
+    description: Cross-lingual NLI / commonsense / coreference (XNLI, XCOPA, XWinograd).
+    config: lm_eval_multilingual.yaml
+    tasks:
+      - xnli
+      - xcopa
+      - xwinograd
+
+  commonsense:
+    tool: slm-lm-eval
+    claim: Better commonsense reasoning
+    description: Everyday-knowledge MCQ + coreference + physical commonsense.
+    config: lm_eval_commonsense.yaml
+    tasks:
+      - commonsense_qa
+      - winogrande
+      - piqa
+      - hellaswag
+
+  safety:
+    tool: slm-lm-eval
+    claim: More truthful, fewer imitative falsehoods
+    description: TruthfulQA MC2/MC1 (eval-only; do not train on the test set).
+    config: lm_eval_safety.yaml
+    tasks:
+      - truthfulqa_mc2
+      - truthfulqa_mc1
+      - arc_easy
+
+  french:
+    tool: slm-lm-eval
+    claim: Better French understanding and translation
+    description: Official FrenchBench MC tasks + WMT14 EN→FR (CroissantLLM benchmark suite).
+    config: lm_eval_french.yaml
+    tasks:
+      - french_bench_xnli
+      - belebele_fra_Latn
+      - french_bench_boolqa
+      - wmt14-en-fr
+
   general_slm:
     tool: slm-lm-eval
     claim: General ~1B SLM baseline

@@ -1,0 +1,20 @@
+# Commonsense profile — everyday reasoning, coreference, causal commonsense
+# Run: slm-lm-eval --profile commonsense --preset minicpm5-1b --experiment-name commonsense-baseline
+
+profile: commonsense
+claim: Better commonsense reasoning
+
+tasks:
+  - commonsense_qa  # 5-way everyday-knowledge MCQ (gate task)
+  - winogrande      # pronoun-resolution commonsense
+  - piqa            # physical commonsense (general-capability guard)
+  - hellaswag       # grounded commonsense guard
+
+num_fewshot: 0
+limit: 200
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval

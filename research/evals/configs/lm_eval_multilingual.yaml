@@ -1,0 +1,20 @@
+# Multilingual profile — cross-lingual NLI / commonsense / coreference
+# Pairs with the FR/AR language-lesson adapter. Run:
+#   slm-lm-eval --profile multilingual --preset minicpm5-1b --experiment-name multilingual-baseline
+
+profile: multilingual
+claim: Better multilingual understanding
+
+tasks:
+  - xnli       # cross-lingual natural-language inference (15 langs incl. fr/ar)
+  - xcopa      # cross-lingual causal commonsense
+  - xwinograd  # cross-lingual coreference (Winograd schema)
+
+num_fewshot: 0
+limit: 100
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval

@@ -43,9 +43,11 @@ MAX_ASSISTANT_CHARS = 600
 EVAL_HOLDOUT_RATIO = 0.05
 
 DEFAULT_FR_SOURCES = (
+    "FrancophonIA/english_french",
     "angeluriot/french_instruct",
     "CohereLabs/aya_dataset",
     "pinzhenchen/alpaca-cleaned-fr",
+    "jpacifico/French-Alpaca-dataset-Instruct-110K",
 )
 DEFAULT_AR_SOURCES = (
     "arbml/CIDAR",
@@ -54,9 +56,11 @@ DEFAULT_AR_SOURCES = (
 )
 
 SOURCE_CAPS: dict[str, dict[str, int]] = {
+    "FrancophonIA/english_french": {"fr": 4000},
     "angeluriot/french_instruct": {"fr": 8000},
     "CohereLabs/aya_dataset": {"fr": 3000, "ar": 3000},
     "pinzhenchen/alpaca-cleaned-fr": {"fr": 2000},
+    "jpacifico/French-Alpaca-dataset-Instruct-110K": {"fr": 4000},
     "arbml/CIDAR": {"ar": 8000},
     "ClusterlabAi/InstAr-500k": {"ar": 5000},
 }
@@ -138,6 +142,23 @@ def _load_seeds(path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]
     return fr_rows, ar_rows
 
 
+def _iter_english_french(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
+    """EN→FR parallel sentences — user asks in English, coach replies in French."""
+    from datasets import load_dataset
+
+    ds = load_dataset("FrancophonIA/english_french", split="train", streaming=True)
+    count = 0
+    for row in ds:
+        english = (row.get("english") or "").strip()
+        french = (row.get("french") or "").strip()
+        if english and _assistant_ok(french):
+            user = f"Translate the following to French:\n{english}"
+            yield user, french, None
+            count += 1
+            if count >= max_rows:
+                break
+
+
 def _iter_french_instruct(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
     from datasets import load_dataset
 
@@ -197,6 +218,25 @@ def _iter_alpaca_fr(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
                 break
 
 
+def _iter_french_alpaca_110k(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
+    from datasets import load_dataset
+
+    ds = load_dataset(
+        "jpacifico/French-Alpaca-dataset-Instruct-110K", split="train", streaming=True
+    )
+    count = 0
+    for row in ds:
+        instruction = (row.get("instruction") or "").strip()
+        inp = (row.get("input") or "").strip()
+        output = (row.get("output") or "").strip()
+        user_text = f"{instruction}\n{inp}".strip() if inp else instruction
+        if user_text and _assistant_ok(output):
+            yield user_text, output, None
+            count += 1
+            if count >= max_rows:
+                break
+
+
 def _iter_cidar(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
     from datasets import load_dataset
 
@@ -235,12 +275,14 @@ def _iter_instar(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
 
 
 _SOURCE_LOADERS: dict[str, dict[str, Any]] = {
+    "FrancophonIA/english_french": {"fr": _iter_english_french},
     "angeluriot/french_instruct": {"fr": _iter_french_instruct},
     "CohereLabs/aya_dataset": {
         "fr": lambda n: _iter_aya("fra", n),
         "ar": lambda n: _iter_aya("arb", n),
     },
     "pinzhenchen/alpaca-cleaned-fr": {"fr": _iter_alpaca_fr},
+    "jpacifico/French-Alpaca-dataset-Instruct-110K": {"fr": _iter_french_alpaca_110k},
     "arbml/CIDAR": {"ar": _iter_cidar},
     "ClusterlabAi/InstAr-500k": {"ar": _iter_instar},
 }

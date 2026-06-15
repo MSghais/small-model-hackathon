@@ -471,12 +471,13 @@ def save_training_results(
     return path
 
 
-def to_prompt_response(example, fmt, tokenizer, keys=None):
+def to_prompt_response(example, fmt, tokenizer, keys=None, prompt_prefix=None):
     """Normalize any supported format into a single training string,
     returning (full_text, prompt_text). prompt_text is None for raw text.
 
     `keys` optionally remaps a dataset's column names onto the format's
-    expected fields (e.g. {"prompt": "query"} for MetaMathQA)."""
+    expected fields (e.g. {"prompt": "query"} for MetaMathQA).
+    `prompt_prefix` prepends fixed instruction text to prompt-format user turns."""
     keys = keys or {}
     if fmt == "text":
         return example[keys.get("text", "text")], None
@@ -491,6 +492,8 @@ def to_prompt_response(example, fmt, tokenizer, keys=None):
 
     elif fmt == "prompt":
         prompt = example.get(keys.get("prompt", "prompt"), "")
+        if prompt_prefix:
+            prompt = f"{prompt_prefix}{prompt}"
         rkey = keys.get("response")
         resp = example.get(rkey, "") if rkey else example.get(
             "completion", example.get("response", ""))
@@ -517,9 +520,10 @@ def to_prompt_response(example, fmt, tokenizer, keys=None):
     return full, prompt_only
 
 
-def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt, keys=None):
+def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt, keys=None, prompt_prefix=None):
     def fn(example):
-        full, prompt = to_prompt_response(example, fmt, tokenizer, keys)
+        full, prompt = to_prompt_response(
+            example, fmt, tokenizer, keys, prompt_prefix=prompt_prefix)
         ids = tokenizer(full, truncation=True, max_length=max_len,
                         add_special_tokens=(fmt == "text"))["input_ids"]
         labels = list(ids)
@@ -593,7 +597,9 @@ def build_training_dataset(args, tokenizer):
         raw = raw.shuffle(seed=args.seed)
         keys = spec.get("columns") or {}
         max_len = spec.get("max_len", args.max_len)
-        tokenize = build_tokenize_fn(tokenizer, fmt, max_len, args.mask_prompt, keys)
+        prefix = spec.get("prompt_prefix")
+        tokenize = build_tokenize_fn(
+            tokenizer, fmt, max_len, args.mask_prompt, keys, prompt_prefix=prefix)
         tok = raw.map(tokenize, remove_columns=raw.column_names,
                       desc=f"tokenizing {dataset}")
         tok = tok.filter(lambda e: len(e["input_ids"]) > 1)

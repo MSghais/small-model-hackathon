@@ -1,0 +1,22 @@
+# Safety / truthfulness profile — resist imitative falsehoods
+# EVAL-ONLY: do NOT fine-tune on TruthfulQA (it is the test set — contamination).
+# Improve it indirectly via high-quality helpful/honest instruction data, then
+# measure here. Run:
+#   slm-lm-eval --profile safety --preset minicpm5-1b --experiment-name safety-baseline
+
+profile: safety
+claim: More truthful, fewer imitative falsehoods
+
+tasks:
+  - truthfulqa_mc2  # multi-true MC truthfulness (primary)
+  - truthfulqa_mc1  # single-true MC truthfulness
+  - arc_easy        # general-capability guard
+
+num_fewshot: 0
+limit: 200
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval

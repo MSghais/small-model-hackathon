@@ -1,0 +1,21 @@
+# French profile — official FrenchBench (CroissantLLM) + EN→FR translation
+# Pairs with french-lora (FrancophonIA/english_french). Run:
+#   slm-lm-eval --profile french --preset minicpm5-1b --experiment-name french-baseline
+
+profile: french
+claim: Better French understanding and translation
+
+tasks:
+  - french_bench_xnli      # French NLI (multiple choice; FrenchBench official)
+  - belebele_fra_Latn      # French reading comprehension (FLORES-200 based)
+  - french_bench_boolqa    # French boolean QA
+  - wmt14-en-fr            # WMT14 English→French translation (BLEU)
+
+num_fewshot: 0
+limit: 100
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval
