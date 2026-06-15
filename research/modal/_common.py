@@ -429,6 +429,16 @@ def render_model_card(
     base_tasks = (baseline or {}).get("results", {})
     base_model = (training_payload or {}).get("model") or BASE_MODEL_ID
 
+    # A job is either a single dataset (`dataset`/`format`) or a `mix:` of sources.
+    if job.get("mix"):
+        dataset_desc = " + ".join(
+            f"`{s.get('dataset', '?')}`" for s in job["mix"]
+        )
+        format_desc = "mix"
+    else:
+        dataset_desc = f"`{job.get('dataset', '?')}`"
+        format_desc = job.get("format", "?")
+
     lines = [
         "---",
         "library_name: peft",
@@ -445,7 +455,7 @@ def render_model_card(
         f"# {job['name']}",
         "",
         f"QLoRA adapter for **{job.get('category', 'general')}**, fine-tuned from "
-        f"`{base_model}` on `{job['dataset']}` (format: `{job['format']}`).",
+        f"`{base_model}` on {dataset_desc} (format: `{format_desc}`).",
         "",
         "Trained, evaluated, and gated on [Modal](https://modal.com/docs/guide) via "
         "`research/modal/` (app `slm-finetune-benchmark`).",
