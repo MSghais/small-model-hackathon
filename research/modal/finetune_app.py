@@ -18,8 +18,19 @@ from typing import Any
 import modal
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-EXPERIMENTS_PATH = Path(__file__).resolve().parent / "experiments.yaml"
+_file = Path(__file__).resolve()
+try:
+    _LOCAL_REPO_ROOT = _file.parents[2]
+except IndexError:
+    _LOCAL_REPO_ROOT = Path("/repo")
+
+if (_file.parent / "experiments.yaml").is_file():
+    EXPERIMENTS_PATH = _file.parent / "experiments.yaml"
+else:
+    EXPERIMENTS_PATH = Path("/repo/research/modal/experiments.yaml")
+
+# Local image build copies this tree into the container at /repo.
+REPO_ROOT = _LOCAL_REPO_ROOT
 
 APP_NAME = "slm-finetune-benchmark"
 HF_CACHE_PATH = "/root/.cache/huggingface"
