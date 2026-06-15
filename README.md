@@ -29,6 +29,8 @@ A local skill-based agent helps a teacher you know turn a **topic + grade level*
 
 See **[USAGE.md](USAGE.md)** for local run, Gradio SDK / ZeroGPU Space deployment, and Docker (later).
 
+**Demo video:** [https://www.youtube.com/watch?v=bwtOiZvJ-7k](https://www.youtube.com/watch?v=bwtOiZvJ-7k)
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/)
@@ -110,7 +112,7 @@ A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `s
 
 - **Track:** Backyard AI — lesson slide builder for a teacher you know
 - Space live under build-small-hackathon
-- Demo video: real user enters topic → download `.pptx` → show agent trace
+- Demo video: [YouTube](https://www.youtube.com/watch?v=bwtOiZvJ-7k) — real user enters topic → download `.pptx` → show agent trace
 - Social post published
 - Submission by **June 15, 2026**
 
