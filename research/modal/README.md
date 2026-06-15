@@ -170,14 +170,21 @@ modal run -d research/modal/server_app.py --hours 6
 **Terminal 2 — run experiments on the warm GPU** (repeat as often as you like):
 
 ```bash
-# Smoke finetune
-modal run research/modal/server_app.py --job lesson-lora --max-steps 20
+# Full skill-matrix pipeline for one job on the warm container:
+# per-profile baseline → train → eval → gate → publish → pull
+modal run research/modal/server_app.py --job math-lora --max-steps 20
 
-# Full pipeline on same container: baseline lm-eval → train → post-train eval
-modal run research/modal/server_app.py --pipeline --job lesson-lora --max-steps 20
+# All jobs in a category
+modal run research/modal/server_app.py --category science
 
-# Re-eval an existing adapter on Volume
-modal run research/modal/server_app.py --eval-only --job lesson-lora
+# Whole matrix, but skip the Hub push
+modal run research/modal/server_app.py --pipeline --no-publish
+
+# Re-eval (+ gate + publish) an existing adapter on Volume
+modal run research/modal/server_app.py --eval-only --job math-lora
+
+# Re-check the gate and publish using already-computed results
+modal run research/modal/server_app.py --publish-only --job math-lora
 
 # Arbitrary command in /repo (same env as finetune.py)
 modal run research/modal/server_app.py --cmd "uv run python research/finetune.py --help"
@@ -186,7 +193,7 @@ modal run research/modal/server_app.py --cmd "uv run python research/finetune.py
 modal run research/modal/server_app.py --ping
 ```
 
-Task flags (`--job`, `--cmd`, `--pipeline`, `--eval-only`, `--ping`) automatically disable the default keep-alive mode.
+Task flags (`--job`, `--category`, `--cmd`, `--pipeline`, `--eval-only`, `--publish-only`, `--ping`) automatically disable the default keep-alive mode.
 
 ### CLI flags (`server_app.py`)
 
@@ -195,15 +202,16 @@ Task flags (`--job`, `--cmd`, `--pipeline`, `--eval-only`, `--ping`) automatical
 | *(none)* | `serve=True` | Keep `GpuWorker` alive (`keep_alive`) |
 | `--hours` | `4` | Keep-alive duration |
 | `--no-serve` | — | Skip keep-alive (auto when any task flag is set) |
-| `--job` | — | Run one finetune job from `experiments.yaml` |
+| `--job` | — | Run the skill-matrix pipeline for one job |
+| `--category` | — | Run the skill-matrix pipeline for all jobs in a category |
+| `--pipeline` | off | Run the skill-matrix pipeline for all jobs |
 | `--max-steps` | from YAML | Override training steps |
-| `--pipeline` | off | Baseline → train → eval in one container |
-| `--eval-only` | off | Pipeline eval path only (all jobs if no `--job`) |
-| `--skip-baseline` | off | Skip baseline lm-eval in pipeline |
+| `--eval-only` | off | Pipeline eval/gate/publish path only (skip baselines + train) |
+| `--publish` / `--no-publish` | publish on | Push to `publish.hub_repo` if the gate passes |
+| `--publish-only` | off | Re-check the gate against existing results and publish (requires `--job`) |
+| `--pull` / `--no-pull` | pull on | `modal volume get` adapter + results after the pipeline |
 | `--cmd` | — | Shell command (parsed with `shlex`) |
 | `--ping` | off | Return worker status JSON |
-| `--lm-eval-config` | smoke YAML | Override eval config |
-| `--baseline-config` | compare-study YAML | Override baseline config |
 
 ### `GpuWorker` methods (for notebooks / Python callers)
 
@@ -216,13 +224,21 @@ Worker = modal.Cls.from_name("slm-gpu-worker", "GpuWorker")
 w = Worker()
 
 w.ping.remote()
-w.finetune.remote({"name": "lesson-lora", "dataset": "...", "format": "chat", "max_steps": 20})
-w.lm_eval.remote(experiment_name="lesson-lora__modal-lm-eval", config="...", adapter_path="/vol/finetuned/lesson-lora")
+w.finetune.remote({"name": "math-lora", "dataset": "...", "format": "alpaca", "max_steps": 20})
+w.lm_eval.remote(experiment_name="math-lora__math", config="research/evals/configs/lm_eval_math.yaml", adapter_path="/vol/finetuned/math-lora")
 w.exec_cmd.remote(["uv", "run", "python", "research/finetune.py", "--help"])
-w.run_pipeline.remote(job_names=["lesson-lora"], max_steps=20)
+w.run_pipeline.remote(job_names=["math-lora"], max_steps=20)
+
+# Gate + publish (only pushes to the Hub if gate_result["passed"])
+gate = w.check_gate.remote(
+    candidate_results_path="/vol/finetuned/results/lm_eval/math-lora__math/results.json",
+    baseline_results_path="/vol/finetuned/results/lm_eval/minicpm5-1b__baseline__math/results.json",
+    goals={"task": "gsm8k", "min_score": 0.05, "min_improve": 0.02},
+)
+w.publish_adapter.remote(job=..., adapter_dir="/vol/finetuned/math-lora", gate_result=gate, ...)
 ```
 
-Inside the class, `run_pipeline` chains `finetune` + `lm_eval` via `.local()` so everything runs in the **same** container without extra cold starts.
+Inside the class, `run_pipeline` chains `lm_eval` (baselines) → `finetune` → `lm_eval` (candidate) → `check_gate` → `publish_adapter` via `.local()`, so everything runs in the **same** container without extra cold starts.
 
 ### Persistence (what survives between commands)
 
@@ -250,11 +266,12 @@ For an AI agent iterating on finetune hyperparameters or eval configs:
 
 1. Ensure worker is up: `modal run research/modal/server_app.py --ping` → `{"status": "ok"}`.
 2. If ping fails, human or agent runs `modal deploy research/modal/server_app.py` then `modal run -d research/modal/server_app.py --hours 6`.
-3. Agent runs smoke train: `--job lesson-lora --max-steps 5`.
-4. Agent runs eval: `--eval-only --job lesson-lora`.
-5. Agent reads results: `modal volume get slm-finetune results/lm_eval/lesson-lora__modal-lm-eval ./results/lm_eval/lesson-lora__modal-lm-eval` or `modal volume ls slm-finetune`.
-6. Agent adjusts `experiments.yaml` or passes `--max-steps` / `--lm-eval-config`, repeats from step 3.
-7. When done: `modal app stop slm-gpu-worker` (optional, stops GPU billing from warm pool).
+3. Agent runs smoke train+eval+gate (no publish yet): `--job math-lora --max-steps 5 --no-publish`.
+4. Agent re-evals without retraining: `--eval-only --job math-lora`.
+5. Agent reads results: `modal volume get slm-finetune results/lm_eval/math-lora__math ./results/lm_eval/math-lora__math` or `modal volume ls slm-finetune`.
+6. Agent adjusts `experiments.yaml`'s `goals`/`max_steps`/`max_samples`, repeats from step 3.
+7. Once the gate passes and `hub_org`/`hub_repo` are real: `--publish-only --job math-lora`, or just drop `--no-publish`.
+8. When done: `modal app stop slm-gpu-worker` (optional, stops GPU billing from warm pool).
 
 See [`SERVER.md`](SERVER.md) for a structured checklist and error recovery table.
 
@@ -283,21 +300,36 @@ Training writes under `/vol/finetuned/...` (the mount), not `/repo/models/...`. 
 
 ### Per-job adapter layout
 
-Training job `lesson-lora` writes to Volume path `lesson-lora/`:
+Each finetune job writes to a Volume path named after the job (e.g. `math-lora/`).
+lm-eval results live under `results/lm_eval/`, named
+`<job_name>__<eval_profile>` for candidates and `<preset>__baseline__<eval_profile>`
+for the shared per-profile baselines:
 
 ```text
 slm-finetune (Volume)
-├── lesson-lora/
+├── math-lora/
 │   ├── adapter_config.json
 │   ├── adapter_model.safetensors   # or adapter_model.bin
 │   ├── tokenizer files…
-│   └── training_results.json
+│   ├── training_results.json
+│   └── README.md                   # model card, written by publish_adapter
+├── science-lora/
+├── coding-lora/
+├── reasoning-lora/
+├── teaching-lora/
 ├── alpaca-lora/
-├── smoltalk-lora/
 └── results/lm_eval/
-    ├── minicpm5-1b__modal-baseline/
-    └── lesson-lora__modal-lm-eval/
+    ├── minicpm5-1b__baseline__math/        # shared by all "math" profile jobs
+    ├── minicpm5-1b__baseline__science/
+    ├── minicpm5-1b__baseline__instructions/
+    ├── math-lora__math/
+    ├── science-lora__science/
+    └── ...
 ```
+
+Because `eval_profile` is shared across jobs (e.g. `teaching-lora` and
+`alpaca-lora` both use `instructions`), the `instructions` baseline is computed
+once per pipeline run and reused for both jobs' gates.
 
 ---
 
@@ -417,9 +449,69 @@ Then use preset `minicpm5-1b-lesson-merged` or `--model ./models/finetuned/minic
 
 ---
 
-## Deploy to Hugging Face Hub
+## Benchmark gate & Hugging Face Hub publish
 
-You can publish **LoRA adapter only** (small, loads on top of `openbmb/MiniCPM5-1B`) or **merged full weights** (larger, self-contained).
+`finetune_app.py` / `server_app.py` publish adapters to the Hub **automatically**,
+but only when a job's lm-eval results pass its `goals`. This is the
+"only ship it if it's actually better" gate.
+
+### `goals` schema (per job in `experiments.yaml`)
+
+```yaml
+goals:
+  task: gsm8k          # lm-eval task name, scored via primary_metric() (same as summary.md)
+  min_score: 0.05      # candidate score must be >= this
+  min_improve: 0.02    # candidate - baseline must be >= this (baseline = per-profile baseline run)
+  guard_tasks:          # optional regression guards — must NOT regress more than max_regress
+    - task: arc_challenge
+      max_regress: 0.03
+```
+
+A job with no `goals` (e.g. `alpaca-lora`) is never gated and never published —
+it's local-only (still trained, evaluated, and pulled to your laptop).
+
+### `publish` schema (per job)
+
+```yaml
+publish:
+  hub_repo: your-hf-username/minicpm5-1b-math-lora
+  private: true   # set false for a public model repo
+```
+
+### What happens on a passing gate
+
+1. `run_lm_eval` writes `results/lm_eval/<job>__<profile>/results.json`.
+2. `check_gate` compares it against `results/lm_eval/<preset>__baseline__<profile>/results.json`
+   using the `goals` above → `{"passed": bool, "checks": [...]}`.
+3. If `passed` and `publish` is set, `publish_adapter`:
+   - renders a model card (`README.md`) into the adapter directory — base model,
+     gate checks table, full lm-eval baseline-vs-candidate-vs-delta table,
+     training stats, and a PEFT load snippet
+   - `huggingface_hub.HfApi().create_repo(..., exist_ok=True)` +
+     `upload_folder(...)` to `publish.hub_repo`
+
+If the gate fails, nothing is pushed — rerun with different `max_steps` /
+dataset / `goals`, then `modal run research/modal/finetune_app.py::publish_only --job <name>`
+once it passes (re-checks the gate against the latest results before publishing).
+
+### Setup
+
+```bash
+huggingface-cli login
+# or: export HF_TOKEN=hf_...   (needs write access; same token as `modal secret create huggingface`)
+```
+
+Set real values for `defaults.hub_org` and each job's `publish.hub_repo` in
+`experiments.yaml` before running with `--publish` (the default). Repos are
+created automatically (`exist_ok=True`) — no need to pre-create them on huggingface.co.
+
+---
+
+## Manual Hugging Face Hub publish (fallback)
+
+Use this if you'd rather download an adapter and push it yourself — e.g. for
+**merged full weights**, or adapters trained before the gate/publish pipeline
+existed.
 
 ### Prerequisites
 
