@@ -31,6 +31,8 @@ See **[USAGE.md](USAGE.md)** for local run, Gradio SDK / ZeroGPU Space deploymen
 
 **Demo video:** [https://www.youtube.com/watch?v=bwtOiZvJ-7k](https://www.youtube.com/watch?v=bwtOiZvJ-7k)
 
+**Blog post:** [Small Models, Bounded Jobs](https://huggingface.co/blog/build-small-hackathon/lessonagent-opennotebook) — Hugging Face Build Small Hackathon write-up
+
 **X post:** [https://x.com/MSG_Encrypted/status/2066570320861921748](https://x.com/MSG_Encrypted/status/2066570320861921748)
 
 ## Prerequisites
@@ -175,6 +177,7 @@ A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `s
 
 - Space live under build-small-hackathon
 - Demo video: [YouTube](https://www.youtube.com/watch?v=bwtOiZvJ-7k) — real user enters topic → download `.pptx` → show agent trace
+- Blog post: [Small Models, Bounded Jobs](https://huggingface.co/blog/build-small-hackathon/lessonagent-opennotebook)
 - Social post published: [X](https://x.com/MSG_Encrypted/status/2066570320861921748)
 - Submission by **June 15, 2026**
 
