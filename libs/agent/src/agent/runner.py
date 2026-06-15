@@ -17,6 +17,9 @@ from researchmind.retrieve import retrieve
 from agent.models import (
     Citation,
     EducationPptxInput,
+    QuizMakerInput,
+    QuizOutline,
+    QuizQuestion,
     ResearchChatInput,
     ResearchChatResult,
     ResearchDiscoverResult,
@@ -25,17 +28,25 @@ from agent.models import (
     SlideSpec,
 )
 from agent.preview import outline_to_html, render_slide_images
-from agent.progress import SlideGenerationProgress
+from agent.progress import QuizGenerationProgress, SlideGenerationProgress
 from agent.prompts import (
     education_outline_repair,
     education_outline_retry_user,
     education_outline_system,
     education_outline_user,
     fallback_outline,
+    fallback_quiz,
     outline_json_example,
     outline_looks_like_schema_echo,
     outline_max_tokens,
     outline_to_markdown,
+    quiz_json_example,
+    quiz_max_tokens,
+    quiz_outline_repair,
+    quiz_outline_retry_user,
+    quiz_outline_system,
+    quiz_outline_user,
+    quiz_to_markdown,
 )
 from agent.skills import SkillRegistry
 from agent.tools.docx import create_docx, create_html_export
@@ -43,7 +54,10 @@ from agent.tools_registry import ToolRegistry
 from agent.trace import TraceRecorder
 
 EDUCATION_PPTX_SKILL = "education-pptx"
+QUIZ_MAKER_SKILL = "quiz-maker"
 RESEARCH_MIND_SKILL = "research-mind"
+
+LessonSourceInput = EducationPptxInput | QuizMakerInput
 
 
 @dataclass
@@ -57,6 +71,18 @@ class AgentResult:
     trace: TraceRecorder
     trace_path: str
     outline: SlideOutline
+    source_summary: str = ""
+
+
+@dataclass
+class QuizAgentResult:
+    markdown_preview: str
+    html_preview: str
+    docx_path: str
+    html_export_path: str
+    trace: TraceRecorder
+    trace_path: str
+    outline: QuizOutline
     source_summary: str = ""
 
 
@@ -322,9 +348,217 @@ class AgentRunner:
             source_summary=source_summary,
         )
 
+    def run_quiz_maker(
+        self,
+        *,
+        topic: str,
+        grade: str,
+        question_count: int = 5,
+        model_key: str,
+        backend: InferenceBackend,
+        source_mode: Literal["none", "web", "rag"] = "none",
+        search_workflow: Literal["two_step", "auto"] = "two_step",
+        urls: list[str] | None = None,
+        files: list[Path] | None = None,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
+        conversation_context: str = "",
+        progress: QuizGenerationProgress | None = None,
+    ) -> QuizAgentResult:
+        result: QuizAgentResult | None = None
+        for item in self.iter_quiz_maker(
+            topic=topic,
+            grade=grade,
+            question_count=question_count,
+            model_key=model_key,
+            backend=backend,
+            source_mode=source_mode,
+            search_workflow=search_workflow,
+            urls=urls,
+            files=files,
+            session_id=session_id,
+            doc_ids=doc_ids,
+            conversation_context=conversation_context,
+            progress=progress,
+        ):
+            if isinstance(item, QuizAgentResult):
+                result = item
+        if result is None:
+            raise RuntimeError("Quiz generation did not return a result")
+        return result
+
+    def iter_quiz_maker(
+        self,
+        *,
+        topic: str,
+        grade: str,
+        question_count: int = 5,
+        model_key: str,
+        backend: InferenceBackend,
+        source_mode: Literal["none", "web", "rag"] = "none",
+        search_workflow: Literal["two_step", "auto"] = "two_step",
+        urls: list[str] | None = None,
+        files: list[Path] | None = None,
+        session_id: str | None = None,
+        doc_ids: list[str] | None = None,
+        conversation_context: str = "",
+        progress: QuizGenerationProgress | None = None,
+    ) -> Iterator[QuizGenerationProgress | QuizAgentResult]:
+        skill = self._skills.get(QUIZ_MAKER_SKILL)
+        req = QuizMakerInput(
+            topic=topic.strip(),
+            grade=grade,
+            question_count=question_count,
+            source_mode=source_mode,
+            search_workflow=search_workflow,
+            urls=urls or [],
+            files=files or [],
+            session_id=session_id,
+            doc_ids=doc_ids or [],
+            conversation_context=(conversation_context or "").strip(),
+        )
+
+        trace = TraceRecorder(
+            skill=skill.name,
+            model=model_key,
+            user_input=req.model_dump(mode="json"),
+        )
+
+        try:
+            yield from self._iter_quiz_maker_steps(
+                req=req,
+                skill=skill,
+                model_key=model_key,
+                backend=backend,
+                trace=trace,
+                progress=progress,
+            )
+        except Exception as exc:
+            trace.log_note("Run failed", error=str(exc))
+            try:
+                trace.save()
+            except OSError:
+                pass
+            raise
+
+    def _iter_quiz_maker_steps(
+        self,
+        *,
+        req: QuizMakerInput,
+        skill: Any,
+        model_key: str,
+        backend: InferenceBackend,
+        trace: TraceRecorder,
+        progress: QuizGenerationProgress | None,
+    ) -> Iterator[QuizGenerationProgress | QuizAgentResult]:
+        if req.conversation_context.strip():
+            trace.log_note(
+                "Conversation grounding",
+                chars=len(req.conversation_context.strip()),
+            )
+        if progress is not None:
+            progress.begin("load_model", "Load language model")
+            yield progress
+        load_started = monotonic()
+        backend.load()
+        load_ms = int((monotonic() - load_started) * 1000)
+        trace.log_step("load_model", "Load language model", duration_ms=load_ms)
+
+        if progress is not None:
+            progress.begin(
+                "gather_sources",
+                "Gather lesson sources",
+                detail=req.source_mode,
+            )
+            yield progress
+        source_started = monotonic()
+        source_context, source_summary, active_session = self._gather_lesson_source_context(
+            req, backend, model_key, trace
+        )
+        source_ms = int((monotonic() - source_started) * 1000)
+        trace.log_step(
+            "gather_sources",
+            "Gather lesson sources",
+            duration_ms=source_ms,
+            source_mode=req.source_mode,
+        )
+        if active_session:
+            req = req.model_copy(update={"session_id": active_session})
+        if progress is not None:
+            yield progress
+
+        if progress is not None:
+            progress.begin(
+                "generate_outline",
+                "Generate quiz outline",
+                detail=f"{req.question_count} questions · grade {req.grade}",
+            )
+            yield progress
+        outline_started = monotonic()
+        outline = self._generate_quiz_outline(
+            skill, req, backend, trace, source_context=source_context, progress=progress
+        )
+        outline_ms = int((monotonic() - outline_started) * 1000)
+        trace.log_step(
+            "generate_outline",
+            "Generate quiz outline",
+            duration_ms=outline_ms,
+            question_count=len(outline.questions),
+        )
+        for step in trace.steps:
+            if step.get("type") == "note" and step.get("phase") == "outline_fallback":
+                note = str(step.get("message") or "")
+                source_summary = f"{source_summary}\n\n_{note}_".strip() if source_summary else f"_{note}_"
+
+        if progress is not None:
+            yield progress
+
+        if progress is not None:
+            progress.begin("create_exports", "Build DOCX and HTML quiz exports")
+            yield progress
+        export_started = monotonic()
+        tool = self._tools.get("create_quiz")
+        export_paths = tool.handler(outline, run_id=trace.run_id)
+        trace.log_tool(
+            "create_quiz",
+            {"title": outline.title, "question_count": len(outline.questions)},
+            json.dumps(export_paths),
+        )
+        docx_path = export_paths["docx"]
+        html_export_path = export_paths["html"]
+        export_ms = int((monotonic() - export_started) * 1000)
+        trace.log_step(
+            "create_exports",
+            "Build DOCX and HTML quiz exports",
+            duration_ms=export_ms,
+        )
+
+        trace.set_artifact(docx_path)
+
+        markdown = quiz_to_markdown(outline)
+        html_preview_path = Path(html_export_path)
+        html_preview = html_preview_path.read_text(encoding="utf-8")
+
+        if progress is not None:
+            progress.finish()
+            yield progress
+
+        trace_path = trace.save()
+
+        yield QuizAgentResult(
+            markdown_preview=markdown,
+            html_preview=html_preview,
+            docx_path=docx_path,
+            html_export_path=html_export_path,
+            trace=trace,
+            trace_path=str(trace_path),
+            outline=outline,
+            source_summary=source_summary,
+        )
+
     def _gather_lesson_source_context(
         self,
-        req: EducationPptxInput,
+        req: LessonSourceInput,
         backend: InferenceBackend,
         model_key: str,
         trace: TraceRecorder,
@@ -519,6 +753,194 @@ class AgentRunner:
             )
         return fallback_outline(req)
 
+    def _generate_quiz_outline(
+        self,
+        skill: Any,
+        req: QuizMakerInput,
+        backend: InferenceBackend,
+        trace: TraceRecorder,
+        *,
+        source_context: str = "",
+        progress: QuizGenerationProgress | None = None,
+    ) -> QuizOutline:
+        system = quiz_outline_system(skill.body)
+        user = quiz_outline_user(req, source_context=source_context)
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        prompt_text = system + "\n\n" + user
+        token_budget = quiz_max_tokens(req.question_count)
+
+        raw = self._normalize_outline_llm_text(
+            backend.chat(messages, max_tokens=token_budget, temperature=0.0)
+        )
+        trace.log_llm(prompt_text, raw)
+
+        if not raw:
+            trace.log_note(
+                "Empty quiz outline response; retrying with JSON example",
+                phase="outline_retry",
+            )
+            example = quiz_json_example(req.question_count)
+            retry_user = quiz_outline_retry_user(req, example_json=example)
+            retry_messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": retry_user},
+            ]
+            retry_prompt = system + "\n\n" + retry_user
+            raw = self._normalize_outline_llm_text(
+                backend.chat(retry_messages, max_tokens=token_budget, temperature=0.0)
+            )
+            trace.log_llm(retry_prompt, raw)
+
+        outline, parse_error = self._parse_quiz_outline_or_error(
+            raw, req.question_count, trace
+        )
+        if outline is not None:
+            return outline
+
+        if progress is not None:
+            progress.begin(
+                "repair_outline",
+                "Repair quiz JSON",
+                detail=(parse_error or "invalid JSON")[:80],
+            )
+        repair_started = monotonic()
+        repair_user = quiz_outline_repair(
+            raw,
+            parse_error or "invalid JSON",
+            expected_questions=req.question_count,
+        )
+        repair_messages = messages + [
+            {"role": "assistant", "content": raw},
+            {"role": "user", "content": repair_user},
+        ]
+        repaired = self._normalize_outline_llm_text(
+            backend.chat(
+                repair_messages,
+                max_tokens=min(768, token_budget),
+                temperature=0.0,
+            )
+        )
+        trace.log_llm(repair_user, repaired)
+        outline, repair_error = self._parse_quiz_outline_or_error(
+            repaired, req.question_count, trace
+        )
+        repair_ms = int((monotonic() - repair_started) * 1000)
+        if outline is not None:
+            trace.log_step(
+                "repair_outline",
+                "Repair quiz JSON",
+                duration_ms=repair_ms,
+            )
+            return outline
+
+        trace.log_step(
+            "repair_outline",
+            "Repair quiz JSON",
+            duration_ms=repair_ms,
+            error=repair_error or parse_error,
+        )
+        trace.log_note(
+            "Model quiz outline invalid after repair; using template questions.",
+            phase="outline_fallback",
+        )
+        if progress is not None:
+            progress.begin(
+                "fallback_outline",
+                "Use template quiz",
+                detail=(repair_error or parse_error or "invalid JSON")[:80],
+            )
+        return fallback_quiz(req)
+
+    def _parse_quiz_outline_or_error(
+        self,
+        raw: str,
+        expected_questions: int,
+        trace: TraceRecorder | None,
+    ) -> tuple[QuizOutline | None, str]:
+        if not raw.strip():
+            return None, "Model returned empty output (no JSON)"
+        try:
+            return self._parse_quiz_outline(raw, expected_questions, trace), ""
+        except (json.JSONDecodeError, ValueError) as exc:
+            return None, str(exc)
+
+    def _parse_quiz_outline(
+        self,
+        raw: str,
+        expected_questions: int,
+        trace: TraceRecorder | None = None,
+    ) -> QuizOutline:
+        data = self._sanitize_quiz_data(self._extract_json(raw))
+        outline = QuizOutline.model_validate(data)
+        original_count = len(outline.questions)
+        outline = self._normalize_question_count(outline, expected_questions)
+        if trace and original_count != expected_questions:
+            trace.log_note(
+                "Adjusted question count to match request",
+                requested=expected_questions,
+                model_returned=original_count,
+                final=len(outline.questions),
+            )
+        return outline
+
+    @staticmethod
+    def _sanitize_quiz_data(data: dict[str, Any]) -> dict[str, Any]:
+        title = str(data.get("title") or "Quiz").strip() or "Quiz"
+        instructions = str(data.get("instructions") or "").strip()
+        questions_in = data.get("questions") or []
+        questions_out: list[dict[str, Any]] = []
+        for index, question in enumerate(questions_in):
+            if not isinstance(question, dict):
+                continue
+            prompt = str(question.get("prompt") or f"Question {index + 1}?").strip()
+            choices_raw = question.get("choices") or []
+            if isinstance(choices_raw, str):
+                choices_raw = [choices_raw]
+            choices = [str(c).strip() for c in choices_raw if str(c).strip()]
+            while len(choices) < 4:
+                choices.append(f"Option {len(choices) + 1}")
+            choices = choices[:4]
+            correct_index = int(question.get("correct_index", 0))
+            correct_index = max(0, min(3, correct_index))
+            questions_out.append(
+                {
+                    "prompt": prompt or f"Question {index + 1}?",
+                    "choices": choices,
+                    "correct_index": correct_index,
+                    "explanation": str(question.get("explanation") or ""),
+                }
+            )
+        if not questions_out:
+            questions_out.append(
+                {
+                    "prompt": "Sample question?",
+                    "choices": ["Answer A", "Answer B", "Answer C", "Answer D"],
+                    "correct_index": 0,
+                    "explanation": "",
+                }
+            )
+        return {"title": title, "instructions": instructions, "questions": questions_out}
+
+    @staticmethod
+    def _normalize_question_count(outline: QuizOutline, expected: int) -> QuizOutline:
+        questions = list(outline.questions)
+        if len(questions) > expected:
+            questions = questions[:expected]
+        while len(questions) < expected:
+            number = len(questions) + 1
+            questions.append(
+                QuizQuestion(
+                    prompt=f"Additional question {number} about {outline.title}?",
+                    choices=["Correct", "Distractor A", "Distractor B", "Distractor C"],
+                    correct_index=0,
+                    explanation="",
+                )
+            )
+        return outline.model_copy(update={"questions": questions})
+
     def _parse_outline_or_error(
         self,
         raw: str,
@@ -675,7 +1097,7 @@ class AgentRunner:
     def _lesson_doc_ids(
         store: Any,
         session_id: str | None,
-        req: EducationPptxInput,
+        req: LessonSourceInput,
         ingest: ResearchIngestResult | None,
     ) -> list[str]:
         if req.doc_ids:
@@ -711,7 +1133,7 @@ class AgentRunner:
     def _lesson_retrieve_scope(
         store: Any,
         session_id: str | None,
-        req: EducationPptxInput,
+        req: LessonSourceInput,
         ingest: ResearchIngestResult | None,
     ) -> tuple[str | None, list[str] | None]:
         from researchmind.scope import resolve_retrieve_scope

@@ -4,8 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from agent.models import SlideOutline
+from agent.models import QuizOutline, SlideOutline
 from agent.tools.pptx import create_pptx
+from agent.tools.quiz import create_quiz
 from agent.tools.research_tools import (
     tool_extract_and_index,
     tool_research_answer,
@@ -29,6 +30,11 @@ class ToolRegistry:
             "create_pptx",
             "Create a PowerPoint file from a validated SlideOutline",
             self._handle_create_pptx,
+        )
+        self.register(
+            "create_quiz",
+            "Create DOCX and HTML quiz exports from a validated QuizOutline",
+            self._handle_create_quiz,
         )
         self.register(
             "suggest_urls",
@@ -72,3 +78,14 @@ class ToolRegistry:
     def _handle_create_pptx(self, outline: SlideOutline, run_id: str | None = None) -> str:
         path = create_pptx(outline, run_id=run_id)
         return str(path)
+
+    def _handle_create_quiz(
+        self,
+        outline: QuizOutline,
+        run_id: str | None = None,
+    ) -> dict[str, str]:
+        from agent.tools.pptx import get_outputs_dir
+
+        output_dir = get_outputs_dir() / (run_id or "quiz")
+        paths = create_quiz(outline, output_dir, stem="quiz")
+        return {fmt: str(path) for fmt, path in paths.items()}

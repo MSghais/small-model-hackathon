@@ -35,10 +35,10 @@ class QuizMakerInput(BaseModel):
     grade: str
     question_count: int = Field(ge=5, le=10, default=5)
     source_mode: Literal["none", "web", "rag"] = "none"
-    search_workflow: str = "auto"
+    search_workflow: Literal["two_step", "auto"] = "two_step"
     urls: list[str] = Field(default_factory=list)
-    files: list[str] = Field(default_factory=list)
-    session_id: str = ""
+    files: list[Path] = Field(default_factory=list)
+    session_id: str | None = None
     doc_ids: list[str] = Field(default_factory=list)
     conversation_context: str = ""
 

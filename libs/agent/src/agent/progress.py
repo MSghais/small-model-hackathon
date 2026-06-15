@@ -204,3 +204,62 @@ class SlideGenerationProgress:
         fraction = min(self._completed_weight / total_weight, 0.98)
         desc = label if not detail else f"{label} — {detail}"
         self.on_update(fraction, desc)
+
+
+@dataclass
+class QuizGenerationProgress(SlideGenerationProgress):
+    """Quiz generation progress tracker (same steps, quiz-specific banner text)."""
+
+    def format_log_html(
+        self,
+        *,
+        running: bool = False,
+        footer_html: str = "",
+    ) -> str:
+        elapsed = self.elapsed_s()
+        eta = self.estimate_remaining_s() if running else None
+        banner = (
+            '<div class="slide-gen-log-banner running">Generating quiz…</div>'
+            if running
+            else '<div class="slide-gen-log-banner done">Quiz generation complete</div>'
+        )
+        eta_html = (
+            f'<div class="slide-gen-log-meta">Est. remaining: ~{int(eta)}s</div>'
+            if eta is not None and running
+            else ""
+        )
+        steps_html: list[str] = []
+        for step in self.steps:
+            done = step.ended_at is not None
+            status = "done" if done else "active"
+            icon = "✓" if done else "●"
+            duration = (
+                f' <span class="slide-gen-log-dur">({step.duration_s:.1f}s)</span>'
+                if step.duration_s is not None
+                else ""
+            )
+            detail = (
+                f' <span class="slide-gen-log-detail">— {escape(step.detail)}</span>'
+                if step.detail
+                else ""
+            )
+            steps_html.append(
+                f'<li class="slide-gen-log-step {status}">'
+                f'<span class="slide-gen-log-icon">{icon}</span>'
+                f'<span class="slide-gen-log-label">{escape(step.label)}</span>'
+                f"{duration}{detail}</li>"
+            )
+        steps_block = (
+            f'<ol class="slide-gen-log-steps">{"".join(steps_html)}</ol>'
+            if steps_html
+            else '<p class="slide-gen-log-empty">Waiting for first step…</p>'
+        )
+        return (
+            f'<div class="slide-gen-log">'
+            f"{banner}"
+            f'<div class="slide-gen-log-meta">Elapsed: {elapsed:.1f}s</div>'
+            f"{eta_html}"
+            f"{steps_block}"
+            f"{footer_html}"
+            f"</div>"
+        )
