@@ -438,6 +438,7 @@ def save_training_results(
         "dataset": args.dataset,
         "dataset_config": args.dataset_config,
         "dataset_split": args.dataset_split,
+        "mix": json.loads(args.mix_json) if args.mix_json else None,
         "format": args.format,
         "mode": args.mode,
         "output_dir": out_dir,
@@ -938,28 +939,23 @@ def main():
     if _training_uses_cuda(args):
         print(f"GPU after model load: {_gpu_memory_summary()}")
 
-    ds = load_raw_dataset(
-        args.dataset,
-        config=args.dataset_config,
-        split=args.dataset_split,
-        max_samples=args.dataset_max_samples,
-    )
-    ds = ds.shuffle(seed=args.seed)
-    col_keys = {k: v for k, v in {
-        "prompt": args.prompt_key, "response": args.response_key,
-        "instruction": args.instruction_key, "input": args.input_key,
-        "output": args.output_key,
-    }.items() if v}
-    tokenize = build_tokenize_fn(tokenizer, args.format, args.max_len,
-                                 args.mask_prompt, col_keys)
-    ds = ds.map(tokenize, remove_columns=ds.column_names, desc="tokenizing")
-    ds = ds.filter(lambda e: len(e["input_ids"]) > 1)
+    ds = build_training_dataset(args, tokenizer)
 
     if args.val_split > 0:
         split = ds.train_test_split(test_size=args.val_split, seed=args.seed)
         train_ds, eval_ds = split["train"], split["test"]
     else:
         train_ds, eval_ds = ds, None
+
+    # Default eval cadence to the run length so short (max_steps) runs still
+    # evaluate mid-training instead of only at the end.
+    eval_steps = args.eval_steps
+    if eval_steps is None:
+        eval_steps = max(1, args.max_steps // 5) if args.max_steps > 0 else 200
+
+    use_best = args.early_stopping_patience > 0 and eval_ds is not None
+    # load_best_model_at_end needs save_steps aligned to eval_steps.
+    save_steps = eval_steps if use_best else args.save_steps
 
     targs = TrainingArguments(
         output_dir=args.out,
@@ -969,21 +965,33 @@ def main():
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=lr,
-        lr_scheduler_type="cosine",
+        lr_scheduler_type=args.lr_scheduler,
         warmup_ratio=args.warmup_ratio,
-        weight_decay=0.01,
-        logging_steps=10,
+        weight_decay=args.weight_decay,
+        max_grad_norm=args.max_grad_norm,
+        logging_steps=args.logging_steps,
         eval_strategy="steps" if eval_ds is not None else "no",
-        eval_steps=200,
+        eval_steps=eval_steps,
         save_strategy="steps",
-        save_steps=500,
-        save_total_limit=2,
+        save_steps=save_steps,
+        save_total_limit=args.save_total_limit,
+        load_best_model_at_end=use_best,
+        metric_for_best_model="eval_loss" if use_best else None,
+        greater_is_better=False if use_best else None,
         bf16=bf16_ok,
         fp16=(not bf16_ok and _training_uses_cuda(args)),
         gradient_checkpointing=args.gradient_checkpointing,
-        report_to="none",
+        neftune_noise_alpha=args.neftune_noise_alpha,
+        report_to=args.report_to,
         seed=args.seed,
     )
+
+    callbacks = []
+    if use_best:
+        from transformers import EarlyStoppingCallback
+        callbacks.append(
+            EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience)
+        )
 
     trainer = Trainer(
         model=model,
@@ -991,6 +999,7 @@ def main():
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         data_collator=CausalCollator(tokenizer),
+        callbacks=callbacks,
     )
 
     train_result = trainer.train(resume_from_checkpoint=args.resume)
