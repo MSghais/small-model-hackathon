@@ -85,6 +85,7 @@ app = modal.App(APP_NAME, image=image)
     timeout=DEFAULT_WORKER_TIMEOUT,
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     min_containers=1,
+    max_containers=1,  # single warm container; serialize work, never sprawl
 )
 class GpuWorker:
     """Single warm GPU container for sequential finetune / lm-eval / shell commands."""
@@ -165,6 +166,10 @@ class GpuWorker:
         compare_to: str | None = None,
     ) -> dict[str, Any]:
         """Run slm-lm-eval on base model or finetuned checkpoint."""
+        # Pick up adapters committed by another container (e.g. a separate
+        # eval-only invocation) — the warm container's mount may predate them.
+        reload_volumes()
+
         if adapter_path:
             adapter_dir = Path(adapter_path)
             adapter_cfg = adapter_dir / "adapter_config.json"

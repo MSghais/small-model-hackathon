@@ -58,6 +58,37 @@ The header in Classic includes a link back to Studio UI.
 
 The model loads on the **first Generate** (Lesson slides) or chat message. Agent traces are written to `outputs/traces/`. After code changes, restart the process to pick up updates.
 
+### Switching models locally (transformers ↔ llama.cpp)
+
+For local dev you can switch presets at runtime without restarting:
+
+```bash
+# .env
+ALLOW_MODEL_SWITCH=true
+ACTIVE_MODEL=minicpm-v-4.6          # startup default (transformers)
+```
+
+| UI | Where to switch |
+|----|-----------------|
+| **Classic** (`/classic`) | **Settings** accordion → Model preset dropdown (reloads on change) |
+| **Classic** Chat tab | Model preset dropdown (syncs app-wide) |
+| **Studio** (`/`) | Settings drawer → Model preset; Debug tab has the same list |
+
+| Goal | Preset key |
+|------|------------|
+| MiniCPM-V 4.6 transformers (full VLM) | `minicpm-v-4.6` |
+| MiniCPM-V 4.6 llama.cpp / Llama Champion | `minicpm-v-4.6-gguf` |
+| MiniCPM5 1B text | `minicpm5-1b` |
+| Lesson LoRA (transformers only) | `minicpm5-1b-lesson-lora` |
+
+Prefetch the GGUF weights (optional):
+
+```bash
+uv run python scripts/download_model.py --preset minicpm-v-4.6-gguf
+```
+
+On Hugging Face Space, keep `ALLOW_MODEL_SWITCH=false` and pin one preset via `ACTIVE_MODEL`.
+
 ### Lesson slides — research sources
 
 The **Lesson slides** tab can ground outlines on external sources before building the deck:

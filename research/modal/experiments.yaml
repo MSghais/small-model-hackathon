@@ -62,14 +62,32 @@ finetune:
       hub_repo: MSGEncrypted/minicpm5-1b-science-lora
       private: false
 
-  # --- math: grade-school word problems + instruction-style math solutions ---
+  # --- math: GSM8K/MATH natural-language CoT augmentation (MetaMathQA) ---
+  # MetaMathQA's NL chain-of-thought matches GSM8K's 5-shot format far better
+  # than MathInstruct's program-of-thought answers (which regressed gsm8k).
+  # The `mix:` adds a general-data replay slice (alpaca) so skill tuning does
+  # not regress the arc/hellaswag/piqa guards. `args:` flows any
+  # research/finetune.py hyperparameter straight through.
   - name: math-lora
     category: math
-    dataset: TIGER-Lab/MathInstruct
-    format: alpaca
-    dataset_split: "train[:1000]"
-    max_samples: 1000
-    description: Math instruction tuning (Hub, instruction/output columns)
+    max_steps: 150
+    mix:
+      - dataset: meta-math/MetaMathQA
+        format: prompt
+        columns:
+          prompt: query
+          response: response
+        dataset_split: "train[:3000]"
+        max_samples: 3000
+      - dataset: tatsu-lab/alpaca          # general replay: protect guard tasks
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+    description: GSM8K/MATH NL-CoT (MetaMathQA) + alpaca replay, r=32 + NEFTune
     eval_profile: math
     goals:
       task: gsm8k
@@ -77,6 +95,10 @@ finetune:
       min_improve: 0.02
       guard_tasks:
         - task: arc_challenge
+          max_regress: 0.03
+        - task: hellaswag
+          max_regress: 0.03
+        - task: piqa
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-math-lora
@@ -95,6 +117,11 @@ finetune:
       task: mbpp
       min_score: 0.05
       min_improve: 0.01
+      guard_tasks:
+        - task: hellaswag
+          max_regress: 0.03
+        - task: piqa
+          max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-coding-lora
       private: false

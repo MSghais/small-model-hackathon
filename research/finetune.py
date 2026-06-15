@@ -92,7 +92,6 @@ from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    DataCollatorForLanguageModeling,
     Trainer,
     TrainingArguments,
 )
@@ -248,11 +247,35 @@ def parse_args():
         help="Cap examples after loading (useful for Hub smoke tests)",
     )
     p.add_argument(
+        "--mix-json",
+        type=str,
+        default=os.environ.get("FINETUNE_MIX_JSON"),
+        help=(
+            "JSON list of dataset source specs to mix/replay; overrides "
+            "--dataset/--format. Each spec: "
+            '{"dataset":..,"format":..,"columns":{..},"dataset_config":..,'
+            '"dataset_split":..,"max_samples":..,"max_len":..,"weight":..}'
+        ),
+    )
+    p.add_argument(
         "--format",
         type=str,
         default=os.environ.get("FINETUNE_FORMAT", "chat"),
         choices=["alpaca", "chat", "prompt", "text"],
     )
+    # Column-name overrides: let a dataset's own columns map onto a --format
+    # without preprocessing (e.g. MetaMathQA query/response -> prompt format,
+    # orca-math question/answer -> prompt format).
+    p.add_argument("--prompt-key", default=None,
+                   help="column to use as the prompt (prompt format)")
+    p.add_argument("--response-key", default=None,
+                   help="column to use as the response (prompt format)")
+    p.add_argument("--instruction-key", default=None,
+                   help="column to use as instruction (alpaca format)")
+    p.add_argument("--input-key", default=None,
+                   help="column to use as optional input (alpaca format)")
+    p.add_argument("--output-key", default=None,
+                   help="column to use as output (alpaca format)")
     p.add_argument("--mode", type=str, default="lora",
                    choices=["full", "lora", "qlora"])
     p.add_argument(
@@ -273,6 +296,22 @@ def parse_args():
     p.add_argument("--mask_prompt", action="store_true", default=True,
                    help="compute loss only on the response tokens")
     p.add_argument("--no_mask_prompt", dest="mask_prompt", action="store_false")
+    # training schedule / regularization (previously hardcoded)
+    p.add_argument("--lr_scheduler", type=str, default="cosine",
+                   help="LR scheduler type: cosine, linear, constant, ...")
+    p.add_argument("--weight_decay", type=float, default=0.01)
+    p.add_argument("--max_grad_norm", type=float, default=1.0)
+    p.add_argument("--logging_steps", type=int, default=10)
+    p.add_argument("--eval_steps", type=int, default=None,
+                   help="eval every N steps (default: max_steps//5, else 200)")
+    p.add_argument("--save_steps", type=int, default=500)
+    p.add_argument("--save_total_limit", type=int, default=2)
+    p.add_argument("--early_stopping_patience", type=int, default=0,
+                   help=">0 enables early stopping + load_best_model_at_end on eval_loss")
+    p.add_argument("--neftune_noise_alpha", type=float, default=None,
+                   help="NEFTune noise alpha (e.g. 5) — quick instruction-tuning gain")
+    p.add_argument("--report_to", type=str, default="none",
+                   help="trainer reporting: none, wandb, tensorboard, ...")
     # lora hparams
     p.add_argument("--lora_r", type=int, default=16)
     p.add_argument("--lora_alpha", type=int, default=32)
@@ -398,6 +437,7 @@ def save_training_results(
         "dataset": args.dataset,
         "dataset_config": args.dataset_config,
         "dataset_split": args.dataset_split,
+        "mix": json.loads(args.mix_json) if args.mix_json else None,
         "format": args.format,
         "mode": args.mode,
         "output_dir": out_dir,
@@ -431,23 +471,29 @@ def save_training_results(
     return path
 
 
-def to_prompt_response(example, fmt, tokenizer):
+def to_prompt_response(example, fmt, tokenizer, keys=None):
     """Normalize any supported format into a single training string,
-    returning (full_text, prompt_text). prompt_text is None for raw text."""
+    returning (full_text, prompt_text). prompt_text is None for raw text.
+
+    `keys` optionally remaps a dataset's column names onto the format's
+    expected fields (e.g. {"prompt": "query"} for MetaMathQA)."""
+    keys = keys or {}
     if fmt == "text":
-        return example["text"], None
+        return example[keys.get("text", "text")], None
 
     if fmt == "alpaca":
-        instr = example.get("instruction", "")
-        inp = example.get("input", "") or ""
-        out = example.get("output", "")
+        instr = example.get(keys.get("instruction", "instruction"), "")
+        inp = example.get(keys.get("input", "input"), "") or ""
+        out = example.get(keys.get("output", "output"), "")
         user = instr if not inp else f"{instr}\n\n{inp}"
         messages = [{"role": "user", "content": user},
                     {"role": "assistant", "content": out}]
 
     elif fmt == "prompt":
-        prompt = example.get("prompt", "")
-        resp = example.get("completion", example.get("response", ""))
+        prompt = example.get(keys.get("prompt", "prompt"), "")
+        rkey = keys.get("response")
+        resp = example.get(rkey, "") if rkey else example.get(
+            "completion", example.get("response", ""))
         messages = [{"role": "user", "content": prompt},
                     {"role": "assistant", "content": resp}]
 
@@ -471,9 +517,9 @@ def to_prompt_response(example, fmt, tokenizer):
     return full, prompt_only
 
 
-def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt):
+def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt, keys=None):
     def fn(example):
-        full, prompt = to_prompt_response(example, fmt, tokenizer)
+        full, prompt = to_prompt_response(example, fmt, tokenizer, keys)
         ids = tokenizer(full, truncation=True, max_length=max_len,
                         add_special_tokens=(fmt == "text"))["input_ids"]
         labels = list(ids)
@@ -483,6 +529,82 @@ def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt):
             labels[:p_len] = [IGNORE_INDEX] * p_len     # no loss on prompt
         return {"input_ids": ids, "labels": labels}
     return fn
+
+
+def _source_specs(args) -> list[dict]:
+    """Return the list of dataset source specs to train on.
+
+    With --mix-json, parse the JSON list verbatim. Otherwise synthesize a
+    single source from the top-level --dataset/--format/--*-key args."""
+    if args.mix_json:
+        specs = json.loads(args.mix_json)
+        if not isinstance(specs, list) or not specs:
+            raise SystemExit("--mix-json must be a non-empty JSON list of source specs")
+        return specs
+    return [{
+        "dataset": args.dataset,
+        "format": args.format,
+        "dataset_config": args.dataset_config,
+        "dataset_split": args.dataset_split,
+        "max_samples": args.dataset_max_samples,
+        "columns": {k: v for k, v in {
+            "prompt": args.prompt_key, "response": args.response_key,
+            "instruction": args.instruction_key, "input": args.input_key,
+            "output": args.output_key,
+        }.items() if v},
+    }]
+
+
+def _apply_weight(ds, weight):
+    """Up-sample (weight > 1, with repeats) or sub-sample (weight < 1) a source."""
+    if not weight or weight == 1.0 or len(ds) == 0:
+        return ds
+    target = max(0, int(round(len(ds) * float(weight))))
+    if target == 0:
+        return ds.select([])
+    n = len(ds)
+    return ds.select([i % n for i in range(target)])  # repeats when target > n
+
+
+def build_training_dataset(args, tokenizer):
+    """Load, tokenize, weight and concatenate every source into one dataset.
+
+    Each source carries its own format / columns / split / max_len so a skill
+    dataset can be mixed with a general-data replay slice in one run."""
+    from datasets import concatenate_datasets
+
+    specs = _source_specs(args)
+    multi = len(specs) > 1
+    if multi:
+        print(f"Mixing {len(specs)} dataset source(s):")
+
+    parts = []
+    for i, spec in enumerate(specs):
+        dataset = spec.get("dataset")
+        if not dataset:
+            raise SystemExit(f"mix source #{i} is missing 'dataset'")
+        fmt = spec.get("format", args.format)
+        raw = load_raw_dataset(
+            dataset,
+            config=spec.get("dataset_config"),
+            split=spec.get("dataset_split", "train"),
+            max_samples=spec.get("max_samples"),
+        )
+        raw = raw.shuffle(seed=args.seed)
+        keys = spec.get("columns") or {}
+        max_len = spec.get("max_len", args.max_len)
+        tokenize = build_tokenize_fn(tokenizer, fmt, max_len, args.mask_prompt, keys)
+        tok = raw.map(tokenize, remove_columns=raw.column_names,
+                      desc=f"tokenizing {dataset}")
+        tok = tok.filter(lambda e: len(e["input_ids"]) > 1)
+        tok = _apply_weight(tok, spec.get("weight"))
+        if multi:
+            wnote = f" (weight {spec['weight']})" if spec.get("weight") else ""
+            print(f"  - {dataset} [{fmt}] -> {len(tok)} examples{wnote}")
+        parts.append(tok)
+
+    ds = parts[0] if len(parts) == 1 else concatenate_datasets(parts)
+    return ds.shuffle(seed=args.seed)
 
 
 class CausalCollator:
@@ -795,7 +917,10 @@ def main():
     print(f"Base model: {args.model}")
     if preset_key:
         print(f"Preset: {preset_key}")
-    print(f"Dataset: {args.dataset}")
+    if args.mix_json:
+        print(f"Dataset mix: {len(json.loads(args.mix_json))} source(s)")
+    else:
+        print(f"Dataset: {args.dataset}")
     print(f"Output: {args.out}")
     print(f"Device: {args.device}")
 
@@ -813,23 +938,23 @@ def main():
     if _training_uses_cuda(args):
         print(f"GPU after model load: {_gpu_memory_summary()}")
 
-    ds = load_raw_dataset(
-        args.dataset,
-        config=args.dataset_config,
-        split=args.dataset_split,
-        max_samples=args.dataset_max_samples,
-    )
-    ds = ds.shuffle(seed=args.seed)
-    tokenize = build_tokenize_fn(tokenizer, args.format, args.max_len,
-                                 args.mask_prompt)
-    ds = ds.map(tokenize, remove_columns=ds.column_names, desc="tokenizing")
-    ds = ds.filter(lambda e: len(e["input_ids"]) > 1)
+    ds = build_training_dataset(args, tokenizer)
 
     if args.val_split > 0:
         split = ds.train_test_split(test_size=args.val_split, seed=args.seed)
         train_ds, eval_ds = split["train"], split["test"]
     else:
         train_ds, eval_ds = ds, None
+
+    # Default eval cadence to the run length so short (max_steps) runs still
+    # evaluate mid-training instead of only at the end.
+    eval_steps = args.eval_steps
+    if eval_steps is None:
+        eval_steps = max(1, args.max_steps // 5) if args.max_steps > 0 else 200
+
+    use_best = args.early_stopping_patience > 0 and eval_ds is not None
+    # load_best_model_at_end needs save_steps aligned to eval_steps.
+    save_steps = eval_steps if use_best else args.save_steps
 
     targs = TrainingArguments(
         output_dir=args.out,
@@ -839,21 +964,33 @@ def main():
         per_device_eval_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=lr,
-        lr_scheduler_type="cosine",
+        lr_scheduler_type=args.lr_scheduler,
         warmup_ratio=args.warmup_ratio,
-        weight_decay=0.01,
-        logging_steps=10,
+        weight_decay=args.weight_decay,
+        max_grad_norm=args.max_grad_norm,
+        logging_steps=args.logging_steps,
         eval_strategy="steps" if eval_ds is not None else "no",
-        eval_steps=200,
+        eval_steps=eval_steps,
         save_strategy="steps",
-        save_steps=500,
-        save_total_limit=2,
+        save_steps=save_steps,
+        save_total_limit=args.save_total_limit,
+        load_best_model_at_end=use_best,
+        metric_for_best_model="eval_loss" if use_best else None,
+        greater_is_better=False if use_best else None,
         bf16=bf16_ok,
         fp16=(not bf16_ok and _training_uses_cuda(args)),
         gradient_checkpointing=args.gradient_checkpointing,
-        report_to="none",
+        neftune_noise_alpha=args.neftune_noise_alpha,
+        report_to=args.report_to,
         seed=args.seed,
     )
+
+    callbacks = []
+    if use_best:
+        from transformers import EarlyStoppingCallback
+        callbacks.append(
+            EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience)
+        )
 
     trainer = Trainer(
         model=model,
@@ -861,6 +998,7 @@ def main():
         train_dataset=train_ds,
         eval_dataset=eval_ds,
         data_collator=CausalCollator(tokenizer),
+        callbacks=callbacks,
     )
 
     train_result = trainer.train(resume_from_checkpoint=args.resume)
@@ -894,7 +1032,7 @@ def main():
         eval_metrics=eval_metrics,
     )
     m = json.loads(results_path.read_text())["metrics"]
-    print(f"\n--- scores ---")
+    print("\n--- scores ---")
     print(f"loss_score   = {m['loss_score']}  (lower is better)")
     print(f"result_score = {m['result_score']}  (0–100, higher is better)")
     print(f"Saved to {results_path}")

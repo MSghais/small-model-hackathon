@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +52,17 @@ _METRIC_PRIORITY = (
     "f1,none",
     "bleu,none",
 )
+
+# lm-eval tasks that execute model-generated code (pass@k). lm-eval refuses to
+# run them unless confirm_run_unsafe_code=True, and the HF `evaluate` code_eval
+# metric additionally requires HF_ALLOW_CODE_EVAL=1.
+_CODE_EXEC_TASK_PREFIXES = ("humaneval", "mbpp")
+
+
+def _requires_code_execution(tasks: list[str], override: bool | None) -> bool:
+    if override is not None:
+        return bool(override)
+    return any(str(t).lower().startswith(_CODE_EXEC_TASK_PREFIXES) for t in tasks)
 
 
 def parse_args() -> argparse.Namespace:
@@ -347,6 +359,19 @@ def main() -> int:
 
     _ensure_lm_eval_models_registered()
 
+    confirm_unsafe_code = _requires_code_execution(
+        cfg["tasks"], cfg.get("confirm_run_unsafe_code")
+    )
+    if confirm_unsafe_code:
+        # Required by the HF `evaluate` code_eval metric to compute pass@k.
+        os.environ.setdefault("HF_ALLOW_CODE_EVAL", "1")
+        print(
+            "Enabling code execution for tasks "
+            f"{[t for t in cfg['tasks'] if str(t).lower().startswith(_CODE_EXEC_TASK_PREFIXES)]} "
+            "(confirm_run_unsafe_code=True, HF_ALLOW_CODE_EVAL=1)",
+            file=sys.stderr,
+        )
+
     seed = int(cfg.get("seed", 42))
     model_args = dict(spec.model_args)
     eval_device = cfg.get("device")
@@ -367,6 +392,7 @@ def main() -> int:
         numpy_random_seed=seed,
         torch_random_seed=seed,
         fewshot_random_seed=seed,
+        confirm_run_unsafe_code=confirm_unsafe_code,
         log_samples=False,
     )
 

@@ -7,6 +7,8 @@ claim: Better math reasoning
 tasks:
   - gsm8k
   - arc_challenge
+  - hellaswag   # general-capability guard (catch regression from skill tuning)
+  - piqa        # general-capability guard
 
 num_fewshot: 5
 limit: 100

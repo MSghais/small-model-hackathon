@@ -3,7 +3,12 @@ from __future__ import annotations
 import gradio as gr
 
 from echocoach.config import get_echo_coach_config
-from gradio_space.model_loading import model_status, reload_model
+from gradio_space.model_loading import (
+    get_active_model_key,
+    model_status,
+    reload_model,
+    select_and_reload_model,
+)
 from inference.config import get_app_config
 from researchmind.config import get_config as get_research_config
 
@@ -39,11 +44,17 @@ def _paths_summary() -> str:
 def build_settings_panel() -> tuple[gr.Dropdown | None, gr.Markdown, gr.Button]:
     """Build settings accordion contents. Returns (model_dropdown or None, status_md, reload_btn)."""
     model_dropdown: gr.Dropdown | None = None
+    active_key = get_active_model_key()
 
     if _app_config.allow_model_switch and len(_app_config.models) > 1:
+        active = _app_config.get_model(active_key)
+        gr.Markdown(
+            f"**Runtime model:** `{active.key}` — {active.label}  \n"
+            f"**Backend:** `{active.backend}`"
+        )
         model_dropdown = gr.Dropdown(
             choices=_app_config.model_choices(),
-            value=_app_config.active_model,
+            value=active_key,
             label="Model preset",
         )
     else:
@@ -53,7 +64,7 @@ def build_settings_panel() -> tuple[gr.Dropdown | None, gr.Markdown, gr.Button]:
             f"**Backend:** `{active.backend}`"
         )
 
-    status_md = gr.Markdown(value=model_status(_app_config.active_model))
+    status_md = gr.Markdown(value=model_status(active_key))
     gr.Markdown("#### Voice stack")
     gr.Markdown(_voice_stack_summary())
     with gr.Accordion("Paths & files", open=False):
@@ -62,13 +73,17 @@ def build_settings_panel() -> tuple[gr.Dropdown | None, gr.Markdown, gr.Button]:
     reload_btn = gr.Button("Reload model", variant="secondary", size="sm")
 
     if model_dropdown is not None:
-        model_dropdown.change(fn=model_status, inputs=model_dropdown, outputs=status_md)
+        model_dropdown.change(
+            fn=select_and_reload_model,
+            inputs=model_dropdown,
+            outputs=status_md,
+        )
 
     if model_dropdown is not None:
         reload_btn.click(fn=reload_model, inputs=[model_dropdown], outputs=status_md)
     else:
         reload_btn.click(
-            fn=lambda: reload_model(_app_config.active_model),
+            fn=lambda: reload_model(get_active_model_key()),
             outputs=status_md,
         )
 

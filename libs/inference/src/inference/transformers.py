@@ -72,16 +72,26 @@ class TransformersBackend:
             )
 
         if self._config.adapter_path:
+            import re
             from pathlib import Path
 
             from peft import PeftModel
 
-            adapter = Path(self._config.adapter_path)
-            if not adapter.is_dir():
+            adapter = self._config.adapter_path
+            adapter_dir = Path(adapter)
+            if adapter_dir.is_dir():
+                # Local adapter (e.g. pulled from the Modal Volume).
+                adapter_src = str(adapter_dir)
+            elif re.fullmatch(r"[\w.-]+/[\w.-]+", adapter):
+                # Hugging Face Hub repo id (e.g. the Modal-published adapter) —
+                # PeftModel fetches it remotely; no manual pull required.
+                adapter_src = adapter
+            else:
                 raise FileNotFoundError(
-                    f"LoRA adapter not found for preset {self._config.key!r}: {adapter}"
+                    f"LoRA adapter not found for preset {self._config.key!r}: "
+                    f"{adapter} (expected a local dir or a Hub repo id 'org/name')"
                 )
-            self._model = PeftModel.from_pretrained(self._model, str(adapter))
+            self._model = PeftModel.from_pretrained(self._model, adapter_src)
 
         if plan.device == "cpu":
             assert self._model is not None

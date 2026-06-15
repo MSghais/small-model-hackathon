@@ -26,9 +26,21 @@ function toggleTheme() {
 applyTheme(getPreferredTheme());
 
 function appOrigin() {
-  const { protocol, hostname } = window.location;
-  const secureProto = protocol === "http:" ? "https:" : protocol;
-  return `${secureProto}//${hostname}`;
+  const { protocol, hostname, port } = window.location;
+  if (protocol === "https:") {
+    return window.location.origin;
+  }
+  const isLocal =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "0.0.0.0";
+  if (isLocal) {
+    return window.location.origin;
+  }
+  // HF Spaces: TLS terminates at the edge; Gradio client must use https.
+  const portSuffix = port ? `:${port}` : "";
+  return `https://${hostname}${portSuffix}`;
 }
 
 const SLIDE_PIPELINE_STEPS = [
@@ -1125,6 +1137,15 @@ async function initVoicePresets() {
   return initLanguageLessons();
 }
 
+async function selectActiveModel(key) {
+  const data = await callApi("set_active_model", [key]);
+  $("#settings-status").innerHTML = renderMarkdownLite(data.status_markdown || "");
+  const fresh = await callApi("model_choices", []);
+  state.modelChoices = fresh;
+  $("#settings-active-model").textContent = `${fresh.active_label} (${fresh.active_backend})`;
+  return data;
+}
+
 async function initSettings() {
   const data = await callApi("model_choices", []);
   state.modelChoices = data;
@@ -1147,10 +1168,20 @@ async function initSettings() {
     if (select) {
       select.innerHTML = options;
       select.value = data.active_model;
+      select.onchange = () => {
+        const key = select.value;
+        if (debugSelect) debugSelect.value = key;
+        selectActiveModel(key).catch(() => {});
+      };
     }
     if (debugSelect) {
       debugSelect.innerHTML = options;
       debugSelect.value = data.active_model;
+      debugSelect.onchange = () => {
+        const key = debugSelect.value;
+        if (select) select.value = key;
+        selectActiveModel(key).catch(() => {});
+      };
     }
   }
 }

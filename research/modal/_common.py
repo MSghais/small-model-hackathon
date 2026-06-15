@@ -75,7 +75,12 @@ image = (
         ],
     )
     .run_commands(
-        "cd /repo && uv sync --frozen --group finetune --group lm-eval --no-dev"
+        "cd /repo && uv sync --frozen --group finetune --group lm-eval --no-dev",
+        # lm-eval's ifeval task (instructions profile) needs these, declared via
+        # the lm-eval[ifeval] extra but not activated into the project venv by the
+        # frozen group sync. Install the lock-pinned versions into /repo/.venv so
+        # `uv run slm-lm-eval` can import them.
+        "cd /repo && uv pip install langdetect==1.0.9 immutabledict==4.3.1",
     )
 )
 
@@ -114,6 +119,35 @@ def apply_defaults(job: dict[str, Any], defaults: dict[str, Any]) -> dict[str, A
     return {**defaults, **job}
 
 
+# Scalar hyperparameters an experiments.yaml job (or its nested `args:` block)
+# may set; each maps 1:1 onto a research/finetune.py flag so any run is tunable
+# from config without code changes.
+_FINETUNE_FLAGS: dict[str, str] = {
+    "model": "--model",
+    "lr": "--lr",
+    "batch_size": "--batch_size",
+    "grad_accum": "--grad_accum",
+    "max_len": "--max_len",
+    "warmup_ratio": "--warmup_ratio",
+    "weight_decay": "--weight_decay",
+    "max_grad_norm": "--max_grad_norm",
+    "lr_scheduler": "--lr_scheduler",
+    "logging_steps": "--logging_steps",
+    "eval_steps": "--eval_steps",
+    "save_steps": "--save_steps",
+    "save_total_limit": "--save_total_limit",
+    "early_stopping_patience": "--early_stopping_patience",
+    "neftune_noise_alpha": "--neftune_noise_alpha",
+    "report_to": "--report_to",
+    "seed": "--seed",
+    "lora_r": "--lora_r",
+    "lora_alpha": "--lora_alpha",
+    "lora_dropout": "--lora_dropout",
+    "lora_targets": "--lora_targets",
+    "val_split": "--val_split",
+}
+
+
 def build_finetune_cmd(job: dict[str, Any], out_dir: str) -> list[str]:
     cmd = [
         "uv",
@@ -124,23 +158,43 @@ def build_finetune_cmd(job: dict[str, Any], out_dir: str) -> list[str]:
         job.get("preset", "minicpm5-1b"),
         "--mode",
         job.get("mode", "lora"),
-        "--dataset",
-        job["dataset"],
-        "--format",
-        job["format"],
         "--out",
         out_dir,
     ]
+    # Dataset: a `mix:` list (skill data + general replay) takes precedence over
+    # a single --dataset/--format source.
+    if job.get("mix"):
+        cmd.extend(["--mix-json", json.dumps(job["mix"])])
+    else:
+        cmd.extend(["--dataset", job["dataset"], "--format", job["format"]])
+        if job.get("dataset_config"):
+            cmd.extend(["--dataset-config", job["dataset_config"]])
+        if job.get("dataset_split"):
+            cmd.extend(["--dataset-split", str(job["dataset_split"])])
+        if job.get("max_samples") is not None:
+            cmd.extend(["--dataset-max-samples", str(int(job["max_samples"]))])
+        # Optional column remap so a dataset's own columns fit the --format
+        # (e.g. MetaMathQA query/response -> prompt format).
+        for field, col in (job.get("columns") or {}).items():
+            cmd.extend([f"--{field}-key", str(col)])
+
     if job.get("max_steps") is not None:
         cmd.extend(["--max_steps", str(int(job["max_steps"]))])
     if job.get("epochs") is not None:
         cmd.extend(["--epochs", str(job["epochs"])])
-    if job.get("dataset_config"):
-        cmd.extend(["--dataset-config", job["dataset_config"]])
-    if job.get("dataset_split"):
-        cmd.extend(["--dataset-split", str(job["dataset_split"])])
-    if job.get("max_samples") is not None:
-        cmd.extend(["--dataset-max-samples", str(int(job["max_samples"]))])
+    if job.get("mask_prompt") is False:
+        cmd.append("--no_mask_prompt")
+
+    # Scalar hyperparameters: top-level keys plus an optional nested `args:` block.
+    overrides = {k: job[k] for k in _FINETUNE_FLAGS if k in job}
+    overrides.update(job.get("args") or {})
+    for key, value in overrides.items():
+        flag = _FINETUNE_FLAGS.get(key, f"--{key}")
+        if isinstance(value, bool):
+            if value:
+                cmd.append(flag)
+        else:
+            cmd.extend([flag, str(value)])
     return cmd
 
 
@@ -313,21 +367,28 @@ def evaluate_gate(
 
 def pull_artifacts(job_name: str, exp_name: str, dest: str = "models/finetuned") -> None:
     """Download an adapter and its lm-eval results from the `slm-finetune` Volume (run locally)."""
+    import shutil
     import subprocess
 
-    local_dir = f"{dest}/{job_name}"
-    print(f"--- pulling {job_name} -> {local_dir} ---")
-    subprocess.run(
-        ["modal", "volume", "get", "slm-finetune", job_name, local_dir, "--force"],
-        check=False,
-    )
+    def _get(remote: str, parent: str) -> None:
+        # For a folder REMOTE_PATH, `modal volume get` expects the *parent*
+        # directory as the destination and recreates the folder inside it.
+        # Passing the full target path (parent/<name>) raises
+        # "[Errno 21] Is a directory". Clear the target first for a clean pull.
+        name = remote.rsplit("/", 1)[-1]
+        shutil.rmtree(Path(parent) / name, ignore_errors=True)
+        Path(parent).mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["modal", "volume", "get", "slm-finetune", remote, f"{parent}/", "--force"],
+            check=False,
+        )
 
-    results_dir = f"results/lm_eval/{exp_name}"
-    print(f"--- pulling {results_dir} ---")
-    subprocess.run(
-        ["modal", "volume", "get", "slm-finetune", results_dir, results_dir, "--force"],
-        check=False,
-    )
+    print(f"--- pulling {job_name} -> {dest}/{job_name} ---")
+    _get(job_name, dest)
+
+    exp_dir = f"results/lm_eval/{exp_name}"
+    print(f"--- pulling {exp_dir} ---")
+    _get(exp_dir, "results/lm_eval")
 
 
 def check_gate_files(
