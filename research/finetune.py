@@ -92,7 +92,6 @@ from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    DataCollatorForLanguageModeling,
     Trainer,
     TrainingArguments,
 )
@@ -1033,7 +1032,7 @@ def main():
         eval_metrics=eval_metrics,
     )
     m = json.loads(results_path.read_text())["metrics"]
-    print(f"\n--- scores ---")
+    print("\n--- scores ---")
     print(f"loss_score   = {m['loss_score']}  (lower is better)")
     print(f"result_score = {m['result_score']}  (0–100, higher is better)")
     print(f"Saved to {results_path}")

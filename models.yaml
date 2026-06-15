@@ -76,6 +76,24 @@ models:
     model_id: ./models/finetuned/minicpm5-1b-lora-merged
     trust_remote_code: true
 
+  # Well-Tuned track: base MiniCPM5-1B + a Modal-published LoRA adapter pulled
+  # straight from the Hub (no local files needed). These point at the repos the
+  # finetune pipeline publishes once a job clears its lm-eval gate
+  # (research/modal/experiments.yaml -> publish.hub_repo).
+  minicpm5-1b-teaching-hub:
+    label: MiniCPM5 1B teaching LoRA (Hub, fine-tuned)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    adapter_path: MSGEncrypted/minicpm5-1b-teaching-lora
+    trust_remote_code: true
+
+  minicpm5-1b-math-hub:
+    label: MiniCPM5 1B math LoRA (Hub, fine-tuned)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    adapter_path: MSGEncrypted/minicpm5-1b-math-lora
+    trust_remote_code: true
+
   tiny-aya-global:
     label: Tiny Aya Global 3.3B (multilingual coach)
     backend: transformers
