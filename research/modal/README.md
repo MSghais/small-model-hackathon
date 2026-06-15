@@ -477,7 +477,7 @@ it's local-only (still trained, evaluated, and pulled to your laptop).
 ```yaml
 publish:
   hub_repo: your-hf-username/minicpm5-1b-math-lora
-  private: true   # set false for a public model repo
+  private: false  # public so judges can verify the Well-Tuned badge; set true to keep it hidden
 ```
 
 ### What happens on a passing gate
