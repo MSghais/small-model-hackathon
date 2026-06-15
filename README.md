@@ -12,7 +12,7 @@ license: apache-2.0
 tags:
   - build-small-hackathon
   - backyard-ai
-  - modal    
+  - modal
   - tiny-titan
   - best-agent
   - best-demo
