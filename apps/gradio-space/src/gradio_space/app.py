@@ -69,7 +69,7 @@ def build_demo() -> gr.Blocks:
                 build_echo_coach_tab()
             with gr.Tab("TeacherVoice"):
                 build_teacher_voice_tab(workspace)
-            with gr.Tab("Chat (debug)"):
+            with gr.Tab("Chat"):
                 build_chat_tab(workspace)
 
     return demo
