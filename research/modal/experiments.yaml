@@ -249,6 +249,87 @@ finetune:
         - build-small-hackathon/minicpm5-1b-reasoning-lora
       private: false
 
+  # --- medical: clinical Q&A (MedQA/Meadow) + alpaca replay ---
+  # New vertical. Same overfit-guard recipe as teaching/science: a focused
+  # skill dataset up-weighted, alpaca replay + NEFTune + r=32 so PubMedQA/MedMCQA
+  # improve without regressing the arc_challenge general-knowledge guard.
+  - name: medical-lora
+    category: medical
+    max_steps: 200
+    mix:
+      - dataset: medalpaca/medical_meadow_medqa   # USMLE-style QA, alpaca columns
+        format: alpaca
+        dataset_split: "train[:2000]"
+        max_samples: 2000
+      - dataset: tatsu-lab/alpaca                  # general replay: protect guards
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+      early_stopping_patience: 2
+      val_split: 0.05
+    description: Medical QA (medalpaca Meadow MedQA) + alpaca replay, r=32 + NEFTune
+    eval_profile: medical
+    goals:
+      task: pubmedqa
+      min_score: 0.45
+      min_improve: 0.02
+      guard_tasks:
+        - task: arc_challenge
+          max_regress: 0.03
+    publish:
+      hub_repo: MSGEncrypted/minicpm5-1b-medical-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-medical-lora
+      private: false
+
+  # --- tool-use: function/tool-calling (xLAM) ---
+  # New vertical that closes the loop with the existing BFCL agentic benchmark.
+  # The publish gate guards general ability (lm-eval has no function-call task);
+  # the *skill* metric is the BFCL/tau-bench suite run via slm-benchmark:
+  #   uv run --package slm-evals slm-benchmark --model <adapter> --benchmarks bfcl --max-samples 50
+  - name: tool-use-lora
+    category: tool_use
+    max_steps: 200
+    mix:
+      - dataset: Salesforce/xlam-function-calling-60k
+        format: prompt
+        columns:
+          prompt: query
+          response: answers           # JSON function-call(s) the model must emit
+        dataset_split: "train[:3000]"
+        max_samples: 3000
+      - dataset: tatsu-lab/alpaca       # general replay: protect guards
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+      early_stopping_patience: 2
+      val_split: 0.05
+    description: >
+      Function/tool-calling (Salesforce xLAM) + alpaca replay. Skill metric is the
+      BFCL agentic suite (slm-benchmark); lm-eval gate only guards general ability.
+    eval_profile: compare_study
+    goals:
+      task: arc_easy
+      min_improve: 0.0
+      guard_tasks:
+        - task: hellaswag
+          max_regress: 0.03
+        - task: piqa
+          max_regress: 0.03
+    publish:
+      hub_repo: MSGEncrypted/minicpm5-1b-tool-use-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-tool-use-lora
+      private: false
+
   # --- general instructions baseline: no goals/publish -> local-only adapter ---
   - name: alpaca-lora
     category: instructions
