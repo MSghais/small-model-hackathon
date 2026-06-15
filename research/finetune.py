@@ -253,6 +253,19 @@ def parse_args():
         default=os.environ.get("FINETUNE_FORMAT", "chat"),
         choices=["alpaca", "chat", "prompt", "text"],
     )
+    # Column-name overrides: let a dataset's own columns map onto a --format
+    # without preprocessing (e.g. MetaMathQA query/response -> prompt format,
+    # orca-math question/answer -> prompt format).
+    p.add_argument("--prompt-key", default=None,
+                   help="column to use as the prompt (prompt format)")
+    p.add_argument("--response-key", default=None,
+                   help="column to use as the response (prompt format)")
+    p.add_argument("--instruction-key", default=None,
+                   help="column to use as instruction (alpaca format)")
+    p.add_argument("--input-key", default=None,
+                   help="column to use as optional input (alpaca format)")
+    p.add_argument("--output-key", default=None,
+                   help="column to use as output (alpaca format)")
     p.add_argument("--mode", type=str, default="lora",
                    choices=["full", "lora", "qlora"])
     p.add_argument(
@@ -431,23 +444,29 @@ def save_training_results(
     return path
 
 
-def to_prompt_response(example, fmt, tokenizer):
+def to_prompt_response(example, fmt, tokenizer, keys=None):
     """Normalize any supported format into a single training string,
-    returning (full_text, prompt_text). prompt_text is None for raw text."""
+    returning (full_text, prompt_text). prompt_text is None for raw text.
+
+    `keys` optionally remaps a dataset's column names onto the format's
+    expected fields (e.g. {"prompt": "query"} for MetaMathQA)."""
+    keys = keys or {}
     if fmt == "text":
-        return example["text"], None
+        return example[keys.get("text", "text")], None
 
     if fmt == "alpaca":
-        instr = example.get("instruction", "")
-        inp = example.get("input", "") or ""
-        out = example.get("output", "")
+        instr = example.get(keys.get("instruction", "instruction"), "")
+        inp = example.get(keys.get("input", "input"), "") or ""
+        out = example.get(keys.get("output", "output"), "")
         user = instr if not inp else f"{instr}\n\n{inp}"
         messages = [{"role": "user", "content": user},
                     {"role": "assistant", "content": out}]
 
     elif fmt == "prompt":
-        prompt = example.get("prompt", "")
-        resp = example.get("completion", example.get("response", ""))
+        prompt = example.get(keys.get("prompt", "prompt"), "")
+        rkey = keys.get("response")
+        resp = example.get(rkey, "") if rkey else example.get(
+            "completion", example.get("response", ""))
         messages = [{"role": "user", "content": prompt},
                     {"role": "assistant", "content": resp}]
 
@@ -471,9 +490,9 @@ def to_prompt_response(example, fmt, tokenizer):
     return full, prompt_only
 
 
-def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt):
+def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt, keys=None):
     def fn(example):
-        full, prompt = to_prompt_response(example, fmt, tokenizer)
+        full, prompt = to_prompt_response(example, fmt, tokenizer, keys)
         ids = tokenizer(full, truncation=True, max_length=max_len,
                         add_special_tokens=(fmt == "text"))["input_ids"]
         labels = list(ids)
@@ -820,8 +839,13 @@ def main():
         max_samples=args.dataset_max_samples,
     )
     ds = ds.shuffle(seed=args.seed)
+    col_keys = {k: v for k, v in {
+        "prompt": args.prompt_key, "response": args.response_key,
+        "instruction": args.instruction_key, "input": args.input_key,
+        "output": args.output_key,
+    }.items() if v}
     tokenize = build_tokenize_fn(tokenizer, args.format, args.max_len,
-                                 args.mask_prompt)
+                                 args.mask_prompt, col_keys)
     ds = ds.map(tokenize, remove_columns=ds.column_names, desc="tokenizing")
     ds = ds.filter(lambda e: len(e["input_ids"]) > 1)
 
