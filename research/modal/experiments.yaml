@@ -105,6 +105,11 @@ finetune:
       task: mbpp
       min_score: 0.05
       min_improve: 0.01
+      guard_tasks:
+        - task: hellaswag
+          max_regress: 0.03
+        - task: piqa
+          max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-coding-lora
       private: false
