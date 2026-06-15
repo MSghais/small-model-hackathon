@@ -64,7 +64,19 @@ def test_quiz_to_markdown_includes_answers():
                 choices=["4", "3", "5", "6"],
                 correct_index=0,
                 explanation="Basic addition.",
-            )
+            ),
+            QuizQuestion(
+                prompt="3+3?",
+                choices=["6", "5", "7", "8"],
+                correct_index=0,
+                explanation="Also addition.",
+            ),
+            QuizQuestion(
+                prompt="1+1?",
+                choices=["2", "1", "3", "4"],
+                correct_index=0,
+                explanation="Easy.",
+            ),
         ],
     )
     md = quiz_to_markdown(outline)
