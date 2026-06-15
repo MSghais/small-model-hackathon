@@ -51,8 +51,7 @@ image = (
         ],
     )
     .run_commands(
-        "cd /repo && uv sync --frozen --package inference --package slm-evals "
-        "--group finetune --group lm-eval --no-dev"
+        "cd /repo && uv sync --frozen --group finetune --group lm-eval --no-dev"
     )
 )
 
