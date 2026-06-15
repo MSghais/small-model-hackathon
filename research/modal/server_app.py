@@ -53,6 +53,7 @@ from _common import (
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
     apply_defaults,
+    baseline_is_cached,
     build_finetune_cmd,
     build_lm_eval_cmd,
     check_gate_files,

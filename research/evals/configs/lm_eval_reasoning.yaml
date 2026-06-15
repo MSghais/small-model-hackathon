@@ -10,8 +10,8 @@ tasks:
   - arc_challenge
   - hellaswag
 
-num_fewshot: 5
-limit: 100
+num_fewshot: null   # per-task canonical fewshot (gsm8k 5-shot, MC tasks 0-shot)
+limit: 200           # larger sample -> tighter stderr for gate decisions
 seed: 42
 batch_size: auto
 device: auto

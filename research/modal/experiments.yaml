@@ -30,11 +30,24 @@ defaults:
 
 finetune:
   # --- teaching: lesson-planning agent chat data (Well-Tuned primary) ---
+  # 8 local lesson chats overfit easily; mix in alpaca replay + NEFTune so
+  # IFEval clears without washing out the lesson skill signal.
   - name: teaching-lora
     category: teaching
-    dataset: research/data/education-lesson-chat.jsonl
-    format: chat
-    description: Lesson-planning agent chat data (local)
+    max_steps: 150
+    mix:
+      - dataset: research/data/education-lesson-chat.jsonl
+        format: chat
+        weight: 20                    # ~8 samples → ~160 examples
+      - dataset: tatsu-lab/alpaca      # instruction-following replay for ifeval
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+    description: Lesson-planning chat + alpaca replay, r=32 + NEFTune
     eval_profile: instructions
     goals:
       task: ifeval
