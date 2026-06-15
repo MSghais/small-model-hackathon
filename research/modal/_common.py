@@ -291,6 +291,31 @@ def primary_metric(task_metrics: dict[str, Any]) -> tuple[str, float] | None:
     return None
 
 
+def baseline_is_cached(experiment_name: str, config_path: str) -> bool:
+    """True if a baseline results.json exists AND its run_meta still matches the
+    profile config's tasks/limit/num_fewshot. Config changes (e.g. new guard
+    tasks or a higher limit) therefore correctly force a fresh baseline."""
+    results = Path(LM_EVAL_OUTPUT) / experiment_name / "results.json"
+    if not results.is_file():
+        return False
+    candidates = [Path(config_path)]
+    if not Path(config_path).is_absolute():
+        candidates += [REPO_ROOT / config_path, Path("/repo") / config_path]
+    cfg_file = next((p for p in candidates if p.is_file()), None)
+    if cfg_file is None:
+        return False
+    try:
+        meta = json.loads(results.read_text()).get("run_meta", {})
+        cfg = yaml.safe_load(cfg_file.read_text()) or {}
+    except Exception:
+        return False
+    return (
+        sorted(meta.get("tasks") or []) == sorted(cfg.get("tasks") or [])
+        and meta.get("limit") == cfg.get("limit")
+        and meta.get("num_fewshot") == cfg.get("num_fewshot", 0)
+    )
+
+
 def evaluate_gate(
     *,
     candidate: dict[str, Any],
