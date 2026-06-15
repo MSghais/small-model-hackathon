@@ -165,6 +165,10 @@ class GpuWorker:
         compare_to: str | None = None,
     ) -> dict[str, Any]:
         """Run slm-lm-eval on base model or finetuned checkpoint."""
+        # Pick up adapters committed by another container (e.g. a separate
+        # eval-only invocation) — the warm container's mount may predate them.
+        reload_volumes()
+
         if adapter_path:
             adapter_dir = Path(adapter_path)
             adapter_cfg = adapter_dir / "adapter_config.json"

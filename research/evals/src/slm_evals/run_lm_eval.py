@@ -359,6 +359,19 @@ def main() -> int:
 
     _ensure_lm_eval_models_registered()
 
+    confirm_unsafe_code = _requires_code_execution(
+        cfg["tasks"], cfg.get("confirm_run_unsafe_code")
+    )
+    if confirm_unsafe_code:
+        # Required by the HF `evaluate` code_eval metric to compute pass@k.
+        os.environ.setdefault("HF_ALLOW_CODE_EVAL", "1")
+        print(
+            "Enabling code execution for tasks "
+            f"{[t for t in cfg['tasks'] if str(t).lower().startswith(_CODE_EXEC_TASK_PREFIXES)]} "
+            "(confirm_run_unsafe_code=True, HF_ALLOW_CODE_EVAL=1)",
+            file=sys.stderr,
+        )
+
     seed = int(cfg.get("seed", 42))
     model_args = dict(spec.model_args)
     eval_device = cfg.get("device")
@@ -379,6 +392,7 @@ def main() -> int:
         numpy_random_seed=seed,
         torch_random_seed=seed,
         fewshot_random_seed=seed,
+        confirm_run_unsafe_code=confirm_unsafe_code,
         log_samples=False,
     )
 
