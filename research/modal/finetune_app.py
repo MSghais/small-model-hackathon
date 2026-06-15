@@ -40,12 +40,17 @@ from _common import (  # noqa: E402
     FINETUNE_VOL_PATH,
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
+    baseline_profiles_for_jobs,
     build_finetune_cmd,
     build_lm_eval_cmd,
     check_gate_files,
+    check_publish_gate_files,
     commit_volumes,
     config_for_profile,
+    eval_paths,
     finetune_vol,
+    general_eval_profile,
+    general_goals_for_job,
     hf_cache_vol,
     hf_secret,
     image,
@@ -184,9 +189,21 @@ def check_gate(
     candidate_results_path: str,
     baseline_results_path: str | None,
     goals: dict[str, Any],
+    general_candidate_results_path: str | None = None,
+    general_baseline_results_path: str | None = None,
+    general_goals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Check a candidate's lm-eval results against `goals` (Hub publish gate)."""
+    """Check skill + general lm-eval results against publish goals."""
     reload_finetune_volume()
+    if general_goals:
+        return check_publish_gate_files(
+            skill_candidate_path=candidate_results_path,
+            skill_baseline_path=baseline_results_path,
+            skill_goals=goals,
+            general_candidate_path=general_candidate_results_path,
+            general_baseline_path=general_baseline_results_path,
+            general_goals=general_goals,
+        )
     return check_gate_files(
         candidate_results_path=candidate_results_path,
         baseline_results_path=baseline_results_path,
@@ -326,6 +343,7 @@ def main(
 
     print("--- post-train lm-eval / gate / publish ---")
     summary: list[dict[str, Any]] = []
+    gen_profile = general_eval_profile(defaults)
     for j in prepared:
         job_name = j["name"]
         profile = j.get("eval_profile", "compare_study")
@@ -354,20 +372,58 @@ def main(
         )
         print(json.dumps(eval_result, indent=2))
 
+        general_goals = general_goals_for_job(j, defaults)
+        general_eval_result: dict[str, Any] | None = None
+        general_candidate_path: str | None = None
+        general_baseline_path: str | None = None
+        if general_goals:
+            general_baseline_path = (
+                f"{LM_EVAL_OUTPUT}/{preset}__baseline__{gen_profile}/results.json"
+            )
+            gen_compare_to = (
+                general_baseline_path if baselines_ok.get(gen_profile) else None
+            )
+            gen_exp_name = f"{job_name}__{gen_profile}"
+            general_eval_result = run_lm_eval.remote(
+                experiment_name=gen_exp_name,
+                config=config_for_profile(gen_profile),
+                model_path=BASE_MODEL_ID,
+                adapter_path=adapter_path,
+                compare_to=gen_compare_to,
+                tasks=split_csv(eval_tasks),
+                limit=eval_limit,
+                num_fewshot=eval_num_fewshot,
+                batch_size=eval_batch_size,
+                device=eval_device,
+                dtype=eval_dtype,
+                seed=eval_seed,
+            )
+            print(json.dumps(general_eval_result, indent=2))
+            general_candidate_path = general_eval_result["results_json"]
+
         row: dict[str, Any] = {
             "name": job_name,
             "category": j.get("category"),
             "profile": profile,
+            "general_profile": gen_profile if general_goals else None,
             "plan": next((p for p in plan_rows if p["name"] == job_name), None),
         }
 
         gate_result: dict[str, Any] | None = None
         if j.get("goals"):
-            if eval_result.get("ok"):
+            skill_ok = bool(eval_result.get("ok"))
+            general_ok = (
+                not general_goals
+                or bool(general_eval_result and general_eval_result.get("ok"))
+            )
+            if skill_ok and general_ok:
                 gate_result = check_gate.remote(
                     candidate_results_path=eval_result["results_json"],
                     baseline_results_path=baseline_path,
                     goals=j["goals"],
+                    general_candidate_results_path=general_candidate_path,
+                    general_baseline_results_path=general_baseline_path,
+                    general_goals=general_goals,
                 )
                 print(json.dumps(gate_result, indent=2))
             row["gate_passed"] = bool(gate_result and gate_result.get("passed"))
@@ -389,6 +445,8 @@ def main(
 
         if pull:
             pull_artifacts(job_name, exp_name)
+            if general_goals and general_eval_result:
+                pull_artifacts(job_name, f"{job_name}__{gen_profile}", dest="models/finetuned")
 
     _print_summary(summary)
 
@@ -405,14 +463,26 @@ def publish_only(job: str):
 
     preset = defaults.get("preset", "minicpm5-1b")
     profile = j.get("eval_profile", "compare_study")
+    gen_profile = general_eval_profile(defaults)
+    general_goals = general_goals_for_job(j, defaults)
     adapter_path = f"{FINETUNE_VOL_PATH}/{job}"
-    candidate_results_path = f"{LM_EVAL_OUTPUT}/{job}__{profile}/results.json"
-    baseline_results_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+    candidate_results_path, baseline_results_path, _ = eval_paths(
+        job_name=job, preset=preset, profile=profile
+    )
+    general_candidate_path = None
+    general_baseline_path = None
+    if general_goals:
+        general_candidate_path, general_baseline_path, _ = eval_paths(
+            job_name=job, preset=preset, profile=gen_profile
+        )
 
     gate_result = check_gate.remote(
         candidate_results_path=candidate_results_path,
         baseline_results_path=baseline_results_path,
         goals=j["goals"],
+        general_candidate_results_path=general_candidate_path,
+        general_baseline_results_path=general_baseline_path,
+        general_goals=general_goals,
     )
     print(json.dumps(gate_result, indent=2))
 
