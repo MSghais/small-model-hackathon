@@ -35,7 +35,7 @@ for _candidate in (Path(__file__).resolve().parent, Path("/repo/research/modal")
     if _candidate.is_dir() and str(_candidate) not in sys.path:
         sys.path.insert(0, str(_candidate))
 
-from _common import (
+from _common import (  # noqa: E402
     BASE_MODEL_ID,
     FINETUNE_VOL_PATH,
     HF_CACHE_PATH,
@@ -50,8 +50,10 @@ from _common import (
     hf_secret,
     image,
     job_gpu,
-    load_experiments,
+    job_plan_rows,
+    parse_json_object,
     prepare_jobs,
+    split_csv,
     publish_adapter_files,
     pull_artifacts,
     reload_volumes,
@@ -107,6 +109,13 @@ def run_lm_eval(
     model_path: str | None = None,
     adapter_path: str | None = None,
     compare_to: str | None = None,
+    tasks: list[str] | None = None,
+    limit: int | None = None,
+    num_fewshot: int | None = None,
+    batch_size: str | None = None,
+    device: str | None = None,
+    dtype: str | None = None,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """Run slm-lm-eval on base model or finetuned checkpoint."""
     reload_volumes()
@@ -128,6 +137,13 @@ def run_lm_eval(
         model_path=model_path,
         adapter_path=adapter_path,
         compare_to=compare_to,
+        tasks=tasks,
+        limit=limit,
+        num_fewshot=num_fewshot,
+        batch_size=batch_size,
+        device=device,
+        dtype=dtype,
+        seed=seed,
     )
     print("Running:", " ".join(cmd))
     proc = subprocess.run(cmd, cwd="/repo", check=False, env=repo_env())
@@ -146,6 +162,13 @@ def run_lm_eval(
         "model_path": model_path,
         "adapter_path": adapter_path,
         "compare_to": compare_to,
+        "tasks": tasks,
+        "limit": limit,
+        "num_fewshot": num_fewshot,
+        "batch_size": batch_size,
+        "device": device,
+        "dtype": dtype,
+        "seed": seed,
         "results_json": str(results_json),
         "summary_md": str(summary_md),
         "comparison_md": str(comparison_md) if comparison_md.is_file() else None,
@@ -213,9 +236,23 @@ def main(
     parallel: bool = False,
     job: str | None = None,
     category: str | None = None,
+    sector: str | None = None,
+    usecase: str | None = None,
+    profiles: str | None = None,
     max_steps: int | None = None,
+    max_samples: int | None = None,
+    finetune_args_json: str | None = None,
     publish: bool = True,
     pull: bool = True,
+    plan: bool = False,
+    skip_baseline: bool = False,
+    eval_tasks: str | None = None,
+    eval_limit: int | None = None,
+    eval_num_fewshot: int | None = None,
+    eval_batch_size: str | None = None,
+    eval_device: str | None = None,
+    eval_dtype: str | None = None,
+    eval_seed: int | None = None,
 ):
     """
     Skill-matrix pipeline: per-profile baselines -> train -> eval -> gate -> publish -> pull.
@@ -227,21 +264,43 @@ def main(
         modal run research/modal/finetune_app.py --eval-only --job math-lora
         modal run research/modal/finetune_app.py --no-publish --no-pull
     """
-    defaults, prepared = prepare_jobs(job=job, category=category, max_steps=max_steps)
+    defaults, prepared = prepare_jobs(
+        job=job,
+        category=category,
+        sector=sector,
+        usecase=usecase,
+        profiles=split_csv(profiles),
+        max_steps=max_steps,
+        max_samples=max_samples,
+        finetune_overrides=parse_json_object(
+            finetune_args_json, flag="--finetune-args-json"
+        ),
+    )
     if not prepared:
         raise SystemExit("No matching jobs; check --job/--category and experiments.yaml")
     preset = defaults.get("preset", "minicpm5-1b")
+    plan_rows = job_plan_rows(prepared)
+    if plan:
+        print(json.dumps({"preset": preset, "jobs": plan_rows}, indent=2))
+        return
 
-    profiles = sorted({j.get("eval_profile", "compare_study") for j in prepared})
+    profile_names = sorted({j.get("eval_profile", "compare_study") for j in prepared})
 
     baselines_ok: dict[str, bool] = {}
-    if not eval_only:
-        print(f"--- baselines ({', '.join(profiles)}) ---")
-        for profile in profiles:
+    if not eval_only and not skip_baseline:
+        print(f"--- baselines ({', '.join(profile_names)}) ---")
+        for profile in profile_names:
             result = run_lm_eval.remote(
                 experiment_name=f"{preset}__baseline__{profile}",
                 config=config_for_profile(profile),
                 preset=preset,
+                tasks=split_csv(eval_tasks),
+                limit=eval_limit,
+                num_fewshot=eval_num_fewshot,
+                batch_size=eval_batch_size,
+                device=eval_device,
+                dtype=eval_dtype,
+                seed=eval_seed,
             )
             print(json.dumps(result, indent=2))
             baselines_ok[profile] = bool(result.get("ok"))
@@ -284,6 +343,13 @@ def main(
             model_path=BASE_MODEL_ID,
             adapter_path=adapter_path,
             compare_to=compare_to,
+            tasks=split_csv(eval_tasks),
+            limit=eval_limit,
+            num_fewshot=eval_num_fewshot,
+            batch_size=eval_batch_size,
+            device=eval_device,
+            dtype=eval_dtype,
+            seed=eval_seed,
         )
         print(json.dumps(eval_result, indent=2))
 
@@ -291,6 +357,7 @@ def main(
             "name": job_name,
             "category": j.get("category"),
             "profile": profile,
+            "plan": next((p for p in plan_rows if p["name"] == job_name), None),
         }
 
         gate_result: dict[str, Any] | None = None

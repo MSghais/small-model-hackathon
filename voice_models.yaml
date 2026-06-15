@@ -2,12 +2,13 @@
 # Override defaults via ECHOCOACH_ASR_PRESET / ECHOCOACH_TTS_PRESET in .env
 
 defaults:
-  asr_preset: cohere-transcribe
+  asr_preset: whisper-cpp-base
   tts_preset: piper-multilingual
   # Realtime streaming TTS for TeacherVoice VoiceOut (set ECHOCOACH_TTS_PRESET to match)
   realtime_tts_preset: vibevoice-realtime-0.5b
-  coach_model: tiny-aya-global
+  coach_model: minicpm5-1b-language-lesson-hub
   coach_fallbacks:
+    - minicpm5-1b-language-lesson-lora
     - minicpm5-1b
   max_seconds: 30
 

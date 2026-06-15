@@ -1,0 +1,75 @@
+# Hand-crafted TeacherVoice examples — exact inference prompt shape.
+# Loaded by build_language_lesson_chat.py (always included; not held out for eval).
+
+fr:
+  - mode: explain
+    topic: Photosynthèse
+    user: Qu'est-ce que la photosynthèse ?
+    assistant: >
+      La photosynthèse est le processus par lequel les plantes fabriquent leur
+      nourriture grâce à la lumière du soleil. Elles utilisent l'eau, le dioxyde
+      de carbone et l'énergie lumineuse pour produire du sucre et libérer de
+      l'oxygène. C'est ainsi que les forêts nous fournissent l'air que nous respirons.
+  - mode: lesson
+    topic: Les fractions
+    user: Comment introduire les fractions en classe de CM1 ?
+    assistant: >
+      Commence par montrer une pizza coupée en parts égales pour illustrer une moitié
+      et un quart. Demande aux élèves de nommer des fractions autour d'eux, puis
+      propose un exercice où ils comparent deux fractions simples avec un dessin.
+  - mode: explain
+    topic: null
+    user: Explain gravity in simple terms.
+    assistant: >
+      La gravité est la force qui attire les objets les uns vers les autres.
+      Sur Terre, elle nous maintient au sol et fait tomber les pommes des arbres.
+      Plus un objet est massif, plus son attraction gravitationnelle est forte.
+  - mode: lesson
+    topic: Le cycle de l'eau
+    user: Planifie une leçon courte sur le cycle de l'eau pour des élèves de 10 ans.
+    assistant: >
+      Objectif : comprendre évaporation, condensation et précipitation. Montre un
+      schéma simple, puis fais l'expérience de l'eau qui condense sur un verre froid.
+      Termine par un dessin étiqueté que chaque élève ramène à la maison.
+  - mode: explain
+    topic: L'électricité
+    user: Comment fonctionne un circuit électrique simple ?
+    assistant: >
+      Un circuit simple relie une pile, des fils et une ampoule en boucle fermée.
+      Le courant circule de la pile vers l'ampoule, qui transforme l'énergie en lumière.
+      Si tu coupes un fil, la boucle s'ouvre et l'ampoule s'éteint.
+
+ar:
+  - mode: explain
+    topic: البناء الضوئي
+    user: ما هي عملية البناء الضوئي؟
+    assistant: >
+      البناء الضوئي هو الطريقة التي تصنع بها النباتات غذاءها باستخدام ضوء الشمس.
+      تمتص الأوراق الماء وثاني أكسيد الكربون وتُنتج سكراً وطلق الأكسجين في الهواء.
+      بدون هذه العملية لما كانت الحياة على الأرض ممكنة كما نعرفها اليوم.
+  - mode: lesson
+    topic: الكسور
+    user: كيف أقدّم درساً عن الكسور للصف الخامس؟
+    assistant: >
+      ابدأ برسم دائرة مقسّمة إلى أجزاء متساوية وسمِّ نصفاً وربعاً. اطلب من التلاميذ
+      إيجاد أمثلة من حياتهم اليومية، ثم قارنوا بين كسرين بسيطين باستخدام رسومات.
+  - mode: explain
+    topic: null
+    user: What causes seasons on Earth?
+    assistant: >
+      الفصول تحدث لأن محور الأرض مائل أثناء دورانه حول الشمس. عندما تميل نصف الكرة
+      الشمالي نحو الشمس يكون الصيف، وعندما يبتعد يكون الشتاء. هذا الميل لا يتغيّر
+      طوال السنة، لكن موقعنا بالنسبة للشمس يتغيّر.
+  - mode: lesson
+    topic: دورة الماء
+    user: خطّط درساً قصيراً عن دورة الماء لطلاب في سن العاشرة.
+    assistant: >
+      الهدف أن يفهم التلاميذ التبخّر والتكاثف والهطول. اعرض رسمًا مبسّطاً، ثم
+      جرّب تجربة تكاثف الماء على كوب بارد. اختم برسم مُوسوم يحمله كل تلميذ.
+  - mode: explain
+    topic: الكهرباء
+    user: كيف يعمل دائرة كهربائية بسيطة؟
+    assistant: >
+      الدائرة البسيطة تربط بطارية وأسلاكاً ومصباحاً في حلقة مغلقة. ينتقل التيار
+      من البطارية إلى المصباح فيتحوّل إلى ضوء. إذا قُطع أحد الأسلاك تنكسر الحلقة
+      وينطفئ المصباح فوراً.

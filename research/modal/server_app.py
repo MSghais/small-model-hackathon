@@ -43,7 +43,7 @@ for _candidate in (Path(__file__).resolve().parent, Path("/repo/research/modal")
     if _candidate.is_dir() and str(_candidate) not in sys.path:
         sys.path.insert(0, str(_candidate))
 
-from _common import (
+from _common import (  # noqa: E402
     BASE_MODEL_ID,
     DEFAULT_GPU,
     DEFAULT_KEEPALIVE_HOURS,
@@ -52,7 +52,6 @@ from _common import (
     FINETUNE_VOL_PATH,
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
-    apply_defaults,
     baseline_is_cached,
     build_finetune_cmd,
     build_lm_eval_cmd,
@@ -63,8 +62,10 @@ from _common import (
     hf_cache_vol,
     hf_secret,
     image,
-    load_experiments,
+    job_plan_rows,
+    parse_json_object,
     prepare_jobs,
+    split_csv,
     publish_adapter_files,
     pull_artifacts,
     reload_volumes,
@@ -165,6 +166,13 @@ class GpuWorker:
         model_path: str | None = None,
         adapter_path: str | None = None,
         compare_to: str | None = None,
+        tasks: list[str] | None = None,
+        limit: int | None = None,
+        num_fewshot: int | None = None,
+        batch_size: str | None = None,
+        device: str | None = None,
+        dtype: str | None = None,
+        seed: int | None = None,
     ) -> dict[str, Any]:
         """Run slm-lm-eval on base model or finetuned checkpoint."""
         # Pick up adapters committed by another container (e.g. a separate
@@ -187,6 +195,13 @@ class GpuWorker:
             model_path=model_path,
             adapter_path=adapter_path,
             compare_to=compare_to,
+            tasks=tasks,
+            limit=limit,
+            num_fewshot=num_fewshot,
+            batch_size=batch_size,
+            device=device,
+            dtype=dtype,
+            seed=seed,
         )
         print("Running:", " ".join(cmd))
         proc = subprocess.run(cmd, cwd="/repo", check=False, env=repo_env())
@@ -205,6 +220,13 @@ class GpuWorker:
             "model_path": model_path,
             "adapter_path": adapter_path,
             "compare_to": compare_to,
+            "tasks": tasks,
+            "limit": limit,
+            "num_fewshot": num_fewshot,
+            "batch_size": batch_size,
+            "device": device,
+            "dtype": dtype,
+            "seed": seed,
             "results_json": str(results_json),
             "summary_md": str(summary_md),
             "comparison_md": str(comparison_md) if comparison_md.is_file() else None,
@@ -252,43 +274,63 @@ class GpuWorker:
         *,
         job_names: list[str] | None = None,
         category: str | None = None,
+        sector: str | None = None,
+        usecase: str | None = None,
+        profiles: list[str] | None = None,
         max_steps: int | None = None,
+        max_samples: int | None = None,
+        finetune_overrides: dict[str, Any] | None = None,
         train: bool = True,
         eval_only: bool = False,
+        eval_tasks: list[str] | None = None,
+        eval_limit: int | None = None,
+        eval_num_fewshot: int | None = None,
+        eval_batch_size: str | None = None,
+        eval_device: str | None = None,
+        eval_dtype: str | None = None,
+        eval_seed: int | None = None,
+        skip_baseline: bool = False,
         publish: bool = True,
+        plan_only: bool = False,
     ) -> dict[str, Any]:
         """Per-profile baselines -> finetune -> eval -> gate -> publish (same container)."""
-        spec = load_experiments()
-        defaults = spec.get("defaults", {})
-        jobs = spec.get("finetune", [])
-
+        defaults, prepared = prepare_jobs(
+            job=None,
+            category=category,
+            sector=sector,
+            usecase=usecase,
+            profiles=profiles,
+            max_steps=max_steps,
+            max_samples=max_samples,
+            finetune_overrides=finetune_overrides,
+        )
         if job_names:
-            jobs = [j for j in jobs if j.get("name") in job_names]
-            if not jobs:
+            wanted = set(job_names)
+            prepared = [j for j in prepared if j.get("name") in wanted]
+            if not prepared:
                 raise ValueError(f"No matching jobs in experiments.yaml: {job_names}")
-        if category:
-            jobs = [j for j in jobs if j.get("category") == category]
-            if not jobs:
-                raise ValueError(f"No jobs with category {category!r}")
-        if not jobs:
-            raise ValueError("No jobs matched job_names/category")
+        if not prepared:
+            raise ValueError("No jobs matched the requested filters")
 
         preset = defaults.get("preset", "minicpm5-1b")
-        prepared: list[dict[str, Any]] = []
-        for raw in jobs:
-            merged = apply_defaults(raw, defaults)
-            if max_steps is not None:
-                merged["max_steps"] = max_steps
-            prepared.append(merged)
-
-        profiles = sorted({j.get("eval_profile", "compare_study") for j in prepared})
+        profile_names = sorted({j.get("eval_profile", "compare_study") for j in prepared})
+        plan = job_plan_rows(prepared)
+        if plan_only:
+            return {"preset": preset, "jobs": plan}
 
         baselines_ok: dict[str, bool] = {}
-        if not eval_only:
-            for profile in profiles:
+        if not eval_only and not skip_baseline:
+            for profile in profile_names:
                 exp = f"{preset}__baseline__{profile}"
                 cfg_path = config_for_profile(profile)
-                if baseline_is_cached(exp, cfg_path):
+                if baseline_is_cached(
+                    exp,
+                    cfg_path,
+                    tasks=eval_tasks,
+                    limit=eval_limit,
+                    num_fewshot=eval_num_fewshot,
+                    seed=eval_seed,
+                ):
                     print(f"baseline {exp}: reusing cached results (config unchanged)")
                     baselines_ok[profile] = True
                     continue
@@ -296,6 +338,13 @@ class GpuWorker:
                     experiment_name=exp,
                     config=cfg_path,
                     preset=preset,
+                    tasks=eval_tasks,
+                    limit=eval_limit,
+                    num_fewshot=eval_num_fewshot,
+                    batch_size=eval_batch_size,
+                    device=eval_device,
+                    dtype=eval_dtype,
+                    seed=eval_seed,
                 )
                 baselines_ok[profile] = bool(result.get("ok"))
 
@@ -325,12 +374,20 @@ class GpuWorker:
                 model_path=BASE_MODEL_ID,
                 adapter_path=adapter_path,
                 compare_to=compare_to,
+                tasks=eval_tasks,
+                limit=eval_limit,
+                num_fewshot=eval_num_fewshot,
+                batch_size=eval_batch_size,
+                device=eval_device,
+                dtype=eval_dtype,
+                seed=eval_seed,
             )
 
             row: dict[str, Any] = {
                 "name": job_name,
                 "category": j.get("category"),
                 "profile": profile,
+                "plan": next((p for p in plan if p["name"] == job_name), None),
                 "eval": eval_result,
             }
 
@@ -374,13 +431,27 @@ def main(
     cmd: str | None = None,
     job: str | None = None,
     category: str | None = None,
+    sector: str | None = None,
+    usecase: str | None = None,
+    profiles: str | None = None,
     max_steps: int | None = None,
+    max_samples: int | None = None,
+    finetune_args_json: str | None = None,
     eval_only: bool = False,
     pipeline: bool = False,
     publish: bool = True,
     publish_only: bool = False,
     pull: bool = True,
     ping: bool = False,
+    plan: bool = False,
+    skip_baseline: bool = False,
+    eval_tasks: str | None = None,
+    eval_limit: int | None = None,
+    eval_num_fewshot: int | None = None,
+    eval_batch_size: str | None = None,
+    eval_device: str | None = None,
+    eval_dtype: str | None = None,
+    eval_seed: int | None = None,
 ):
     """
     GPU worker CLI.
@@ -395,11 +466,25 @@ def main(
         modal run research/modal/server_app.py
         modal run research/modal/server_app.py --pipeline --job math-lora --max-steps 20
         modal run research/modal/server_app.py --pipeline --category science --no-publish
+        modal run research/modal/server_app.py --pipeline --sector science --eval-limit 25
+        modal run research/modal/server_app.py --plan --profiles math,science
         modal run research/modal/server_app.py --eval-only --job math-lora
         modal run research/modal/server_app.py --publish-only --job math-lora
         modal run research/modal/server_app.py --cmd "uv run python research/finetune.py --help"
     """
-    has_task = bool(cmd or job or category or eval_only or pipeline or publish_only or ping)
+    has_task = bool(
+        cmd
+        or job
+        or category
+        or sector
+        or usecase
+        or profiles
+        or eval_only
+        or pipeline
+        or publish_only
+        or ping
+        or plan
+    )
     if has_task:
         serve = False
 
@@ -451,17 +536,36 @@ def main(
         print(json.dumps(result, indent=2))
         return
 
-    if pipeline or job or category or eval_only:
+    if pipeline or job or category or sector or usecase or profiles or eval_only or plan:
         job_names = [job] if job else None
         result = worker.run_pipeline.remote(
             job_names=job_names,
             category=category,
+            sector=sector,
+            usecase=usecase,
+            profiles=split_csv(profiles),
             max_steps=max_steps,
+            max_samples=max_samples,
+            finetune_overrides=parse_json_object(
+                finetune_args_json, flag="--finetune-args-json"
+            ),
             train=not eval_only,
             eval_only=eval_only,
+            eval_tasks=split_csv(eval_tasks),
+            eval_limit=eval_limit,
+            eval_num_fewshot=eval_num_fewshot,
+            eval_batch_size=eval_batch_size,
+            eval_device=eval_device,
+            eval_dtype=eval_dtype,
+            eval_seed=eval_seed,
+            skip_baseline=skip_baseline,
             publish=publish,
+            plan_only=plan,
         )
         print(json.dumps(result, indent=2))
+
+        if plan:
+            return
 
         if pull:
             for row in result.get("jobs", []):

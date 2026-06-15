@@ -94,6 +94,20 @@ models:
     adapter_path: MSGEncrypted/minicpm5-1b-math-lora
     trust_remote_code: true
 
+  minicpm5-1b-language-lesson-hub:
+    label: MiniCPM5 1B language lesson LoRA (FR/AR, Hub)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    adapter_path: MSGEncrypted/minicpm5-1b-language-lesson-lora
+    trust_remote_code: true
+
+  minicpm5-1b-language-lesson-lora:
+    label: MiniCPM5 1B language lesson LoRA (FR/AR, local)
+    backend: transformers
+    model_id: openbmb/MiniCPM5-1B
+    adapter_path: ./models/finetuned/language-lesson-lora
+    trust_remote_code: true
+
   tiny-aya-global:
     label: Tiny Aya Global 3.3B (multilingual coach)
     backend: transformers

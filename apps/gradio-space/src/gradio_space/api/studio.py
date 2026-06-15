@@ -10,7 +10,7 @@ import gradio as gr
 
 from echocoach.config import get_echo_coach_config
 from echocoach.pipeline import run_echo_coach
-from echocoach.prompts import TeacherVoiceMode, resolve_aya_preset
+from echocoach.prompts import TeacherVoiceMode
 from echocoach.recording import (
     ServerRecordingError,
     recording_backend_status,
@@ -187,7 +187,7 @@ def _coach_model_key(
     elif coach_variant and coach_variant not in ("auto", ""):
         key = coach_variant.strip()
     else:
-        key = resolve_aya_preset(language, coach_variant)
+        key = _echo_config.coach_model
     if key in ("tiny-aya-water", "tiny-aya-fire", "tiny-aya-earth", "auto"):
         key = "tiny-aya-global"
     return key
