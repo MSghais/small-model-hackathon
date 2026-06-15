@@ -4,22 +4,22 @@ overview: Add a Modal GPU pipeline that runs existing `research/finetune.py` and
 todos:
   - id: modal-scaffold
     content: Create research/modal/finetune_app.py with Image, Volumes, HF secret, GPU functions
-    status: in_progress
+    status: completed
   - id: experiments-yaml
     content: Add research/modal/experiments.yaml with lesson/alpaca/smoltalk job matrix + smoke limits
-    status: pending
+    status: completed
   - id: train-worker
     content: Implement finetune_one() subprocess wrapper around research/finetune.py with volume commit
-    status: pending
+    status: completed
   - id: eval-worker
     content: Implement run_lm_eval() subprocess wrapper for baseline + post-train comparison
-    status: pending
+    status: completed
   - id: sweep-entrypoint
     content: Add @app.local_entrypoint sweep() to run baseline, map trainings, then eval each checkpoint
-    status: pending
+    status: completed
   - id: modal-notebook
     content: Create research/notebook/minicpm5-modal-finetune.ipynb for interactive OpenBMB MiniCPM5-1B demo
-    status: pending
+    status: in_progress
   - id: docs-deps
     content: Add research/modal/README.md, modal dependency group in pyproject.toml, HF_TOKEN note in .env.example
     status: pending
