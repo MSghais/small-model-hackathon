@@ -4,7 +4,7 @@ overview: "Sprint 1 (teaching loop): ship a quiz-maker skill mirroring education
 todos:
   - id: quiz-skill-backend
     content: Create quiz-maker skill, QuizOutline models, prompts, create_quiz tool, iter_quiz_maker runner
-    status: pending
+    status: in_progress
   - id: quiz-tests
     content: "Agent tests: JSON repair, fallback_quiz, docx/html smoke"
     status: pending
