@@ -65,7 +65,7 @@ COMMON_ENV = {
 
 DEFAULT_GPU = "A10G"
 DEFAULT_KEEPALIVE_HOURS = 4.0
-DEFAULT_SCALEDOWN_WINDOW = 7200  # 2h idle before scale-down
+DEFAULT_SCALEDOWN_WINDOW = 3600  # max allowed by Modal (1h idle before scale-down)
 DEFAULT_WORKER_TIMEOUT = 14400  # 4h per method call
 
 
