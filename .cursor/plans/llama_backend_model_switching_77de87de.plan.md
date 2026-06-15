@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: tests-docs
     content: Test preset parsing + runtime key override; document local switching in USAGE.md
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
