@@ -605,16 +605,24 @@ def publish_adapter_files(
 
     from huggingface_hub import HfApi
 
-    repo_id = publish_cfg["hub_repo"]
+    repo_ids = [publish_cfg["hub_repo"], *(publish_cfg.get("mirror_repos") or [])]
     private = publish_cfg.get("private", True)
 
     api = HfApi()
-    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
-    api.upload_folder(
-        folder_path=str(adapter_path),
-        repo_id=repo_id,
-        repo_type="model",
-        commit_message=f"Publish {job['name']} (gate passed: {gate_result.get('task')})",
-    )
+    uploads = []
+    for repo_id in dict.fromkeys(repo_ids):
+        api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
+        api.upload_folder(
+            folder_path=str(adapter_path),
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message=f"Publish {job['name']} (gate passed: {gate_result.get('task')})",
+        )
+        uploads.append({"repo_id": repo_id, "url": f"https://huggingface.co/{repo_id}"})
 
-    return {"published": True, "repo_id": repo_id, "url": f"https://huggingface.co/{repo_id}"}
+    return {
+        "published": True,
+        "repo_id": uploads[0]["repo_id"],
+        "url": uploads[0]["url"],
+        "uploads": uploads,
+    }

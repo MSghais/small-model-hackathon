@@ -57,6 +57,8 @@ finetune:
       min_improve: 0.02
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-teaching-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-teaching-lora
       private: false
 
   # --- science: factual + explanatory science tutoring ---
@@ -78,6 +80,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-science-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-science-lora
       private: false
 
   # --- math: GSM8K/MATH natural-language CoT augmentation (MetaMathQA) ---
@@ -120,6 +124,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-math-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-math-lora
       private: false
 
   # --- coding: Python instruction-following code generation ---
@@ -145,6 +151,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-coding-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-coding-lora
       private: false
 
   # --- reasoning: multi-turn chat with reasoning-heavy conversations ---
@@ -169,6 +177,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-reasoning-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-reasoning-lora
       private: false
 
   # --- general instructions baseline: no goals/publish -> local-only adapter ---
