@@ -8,6 +8,7 @@ defaults:
   realtime_tts_preset: vibevoice-realtime-0.5b
   coach_model: minicpm5-1b-language-lesson-hub
   coach_fallbacks:
+    - minicpm5-1b-language-lesson-lora
     - minicpm5-1b
   max_seconds: 30
 
