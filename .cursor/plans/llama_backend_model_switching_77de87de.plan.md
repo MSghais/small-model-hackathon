@@ -1,9 +1,9 @@
 ---
 name: Llama backend model switching
-overview: Add an official MiniCPM5-1B GGUF preset for the llama.cpp / Llama Champion path, then wire a shared runtime model selector so local dev can switch between transformers and llama.cpp backends (and other presets) from Gradio Settings and Studio — not just the Chat debug tab.
+overview: Add the official MiniCPM-V-4.6 GGUF preset from openbmb/MiniCPM-V-4.6-gguf for the llama.cpp / Llama Champion path, then wire a shared runtime model selector so local dev can switch between transformers and llama.cpp backends (and other presets) from Gradio Settings and Studio — not just the Chat debug tab.
 todos:
   - id: add-gguf-preset
-    content: Add minicpm5-1b-gguf preset to models.yaml and document in .env.example
+    content: Add minicpm-v-4.6-gguf preset to models.yaml (openbmb/MiniCPM-V-4.6-gguf) and document in .env.example
     status: pending
   - id: runtime-model-state
     content: Add set_runtime_model_key() and make get_active_model_key() runtime-aware in model_loading.py
@@ -24,7 +24,7 @@ isProject: false
 
 ## What already exists
 
-Your repo already has **two inference backends** behind one factory — no new backend code is required:
+Your repo already has **two inference backends** behind one factory — no new backend code is required for **text** inference:
 
 ```mermaid
 flowchart LR
@@ -39,7 +39,7 @@ flowchart LR
 ```
 
 - Presets live in [`models.yaml`](models.yaml); backend is chosen **per preset**, not via a separate toggle.
-- Switching transformers → llama.cpp means switching preset, e.g. `minicpm5-1b` → `minicpm5-1b-gguf` (to be added).
+- Switching transformers → llama.cpp means switching preset, e.g. `minicpm-v-4.6` → `minicpm-v-4.6-gguf` (to be added).
 - [`libs/inference/src/inference/llama_cpp.py`](libs/inference/src/inference/llama_cpp.py) downloads GGUF from Hub and runs `create_chat_completion`.
 - [`ALLOW_MODEL_SWITCH`](libs/inference/src/inference/config.py) gates dropdowns in Settings, Chat, and Studio debug — but **only Chat/Debug actually pass the selected key to inference**.
 
@@ -56,35 +56,56 @@ Lesson slides, ResearchMind, EchoCoach, TeacherVoice, and Studio Research/Slides
 
 ---
 
-## Step 1 — Add MiniCPM5-1B GGUF preset (OpenBMB + llama.cpp)
+## Step 1 — Add MiniCPM-V-4.6 GGUF preset (OpenBMB + llama.cpp)
 
-Official GGUF is published at [`openbmb/MiniCPM5-1B-GGUF`](https://huggingface.co/openbmb/MiniCPM5-1B-GGUF) (`MiniCPM5-1B-Q4_K_M.gguf`, ~657 MB). Add to [`models.yaml`](models.yaml):
+Official GGUF is published at [`openbmb/MiniCPM-V-4.6-gguf`](https://huggingface.co/openbmb/MiniCPM-V-4.6-gguf). This is the **quantized llama.cpp build** of the same ~0.8B multimodal model already registered as `minicpm-v-4.6` (transformers). Recommended quant for local dev: **Q4_K_M** (~529 MB).
+
+Add to [`models.yaml`](models.yaml):
 
 ```yaml
-  minicpm5-1b-gguf:
-    label: MiniCPM5 1B (GGUF / llama.cpp)
+  minicpm-v-4.6-gguf:
+    label: MiniCPM-V 4.6 (GGUF / llama.cpp)
     backend: llama_cpp
-    model_repo: openbmb/MiniCPM5-1B-GGUF
-    model_file: MiniCPM5-1B-Q4_K_M.gguf
+    model_repo: openbmb/MiniCPM-V-4.6-gguf
+    model_file: MiniCPM-V-4.6-Q4_K_M.gguf
+    multimodal: true
     n_ctx: 8192
     n_gpu_layers: 0
 ```
+
+Pair with the existing transformers preset for A/B comparison:
+
+| Preset key | Backend | Hub source | Use case |
+|------------|---------|------------|----------|
+| `minicpm-v-4.6` | transformers | `openbmb/MiniCPM-V-4.6` | Full multimodal (image/video) via HF processor |
+| `minicpm-v-4.6-gguf` | llama_cpp | `openbmb/MiniCPM-V-4.6-gguf` | Llama Champion / Off-the-Grid; text chat + future image via llama.cpp |
 
 Also update [`.env.example`](.env.example) with a commented dev block:
 
 ```bash
 ALLOW_MODEL_SWITCH=true
-ACTIVE_MODEL=minicpm5-1b          # startup default
-# switch in UI to minicpm5-1b-gguf for llama.cpp
+ACTIVE_MODEL=minicpm-v-4.6          # transformers default (or minicpm5-1b)
+# switch in UI to minicpm-v-4.6-gguf for llama.cpp
 ```
 
 Prefetch locally (optional, speeds first load):
 
 ```bash
-uv run python scripts/download_model.py --preset minicpm5-1b-gguf
+uv run python scripts/download_model.py --preset minicpm-v-4.6-gguf
 ```
 
-This satisfies the **Llama Champion** path while keeping the OpenBMB / Tiny Titan story (same model, different runtime). LoRA/merged lesson presets remain **transformers-only** — llama.cpp cannot load PEFT adapters.
+Per the [model card](https://huggingface.co/openbmb/MiniCPM-V-4.6-gguf), llama.cpp loads it directly — no custom fork:
+
+```bash
+llama-cli -hf openbmb/MiniCPM-V-4.6-gguf:Q4_K_M
+```
+
+This satisfies the **Llama Champion** badge (llama.cpp runtime) while keeping the **OpenBMB / Tiny Titan** story (same MiniCPM-V 4.6 model family). LoRA/merged lesson presets on MiniCPM5-1B remain **transformers-only**.
+
+### Multimodal caveat (text vs image)
+
+- **Text-only tabs** (Lesson slides, ResearchMind, Chat, EchoCoach) work immediately — `LlamaCppBackend.chat()` passes string messages to `create_chat_completion`.
+- **Image input via llama.cpp** requires OpenAI-style message content arrays (`type: image_url`). Current `LlamaCppBackend.chat()` types messages as `list[dict[str, str]]` and does not forward images. Defer image support to a follow-up unless a tab needs it now; keep `minicpm-v-4.6` (transformers) for full VLM demos.
 
 ---
 
@@ -147,7 +168,7 @@ Studio Research + Slides already delegate to helpers that use `get_active_model_
 ```bash
 # .env
 ALLOW_MODEL_SWITCH=true
-ACTIVE_MODEL=minicpm5-1b
+ACTIVE_MODEL=minicpm-v-4.6
 ```
 
 ```bash
@@ -157,8 +178,9 @@ uv run --package gradio-space python -m gradio_space.server
 
 | Goal | Action |
 |------|--------|
-| Transformers MiniCPM5 | Select `minicpm5-1b` in Settings (or leave startup default) |
-| llama.cpp MiniCPM5 (Llama track) | Select `minicpm5-1b-gguf` — backend switches automatically |
+| Transformers MiniCPM-V 4.6 (full VLM) | Select `minicpm-v-4.6` in Settings (or leave startup default) |
+| llama.cpp MiniCPM-V 4.6 (Llama track) | Select `minicpm-v-4.6-gguf` — backend switches automatically |
+| Text-only MiniCPM5 | Select `minicpm5-1b` |
 | Fine-tuned lesson LoRA | Select `minicpm5-1b-lesson-lora` (transformers only) |
 | Compare Qwen GGUF baseline | Select `qwen3b-gguf` |
 
@@ -166,17 +188,18 @@ uv run --package gradio-space python -m gradio_space.server
 
 ### Compatibility notes to surface in Settings status
 
-- `minicpm-v-4.6` (multimodal) requires transformers — warn if selected while on llama_cpp-only tabs
+- `minicpm-v-4.6-gguf` is text-ready on all tabs; image/video input needs transformers `minicpm-v-4.6` until llama.cpp multimodal messages are wired
 - LoRA/merged local presets require transformers
-- First llama.cpp load downloads ~657 MB GGUF from Hub (subsequent loads use cache)
+- First llama.cpp load downloads ~529 MB GGUF from Hub (subsequent loads use cache)
 
 ---
 
 ## Step 6 — Tests and docs
 
-- Extend [`libs/inference/tests/test_config.py`](libs/inference/tests/test_config.py) to assert `minicpm5-1b-gguf` parses with `backend=llama_cpp`
+- Extend [`libs/inference/tests/test_config.py`](libs/inference/tests/test_config.py) to assert `minicpm-v-4.6-gguf` parses with `backend=llama_cpp` and `multimodal=true`
 - Add a small unit test for `set_runtime_model_key` / `get_active_model_key` override in gradio-space tests (or inference tests if kept in `model_loading.py`)
 - Add a short "Switching models locally" subsection to [`USAGE.md`](USAGE.md) and [`apps/gradio-space/README.md`](apps/gradio-space/README.md)
+- Update [`TODO.md`](TODO.md) Llama Champion checklist to reference `minicpm-v-4.6-gguf` instead of generic MiniCPM5 GGUF
 
 ---
 
@@ -189,19 +212,20 @@ sequenceDiagram
   participant Factory as inference_factory
   participant Tab as Any_Tab_or_Studio_API
 
-  Dev->>ML: set_runtime_model_key("minicpm5-1b-gguf")
+  Dev->>ML: set_runtime_model_key("minicpm-v-4.6-gguf")
   ML->>Factory: reset_backend()
   Tab->>ML: get_active_model_key()
-  ML-->>Tab: "minicpm5-1b-gguf"
+  ML-->>Tab: "minicpm-v-4.6-gguf"
   Tab->>ML: ensure_model_loaded(key)
   ML->>Factory: get_backend(key).load()
-  Note over Factory: LlamaCppBackend for GGUF preset
+  Note over Factory: LlamaCppBackend loads MiniCPM-V-4.6-Q4_K_M.gguf
 ```
 
 ---
 
 ## Out of scope (per your choices)
 
-- Pinning HF Space to Llama GGUF for judges (deployment config only — set `ACTIVE_MODEL=minicpm5-1b-gguf` in Space secrets; keep `ALLOW_MODEL_SWITCH=false`)
-- Converting fine-tuned LoRA weights to GGUF (OpenBMB documents `convert_hf_to_gguf.py` if needed later)
+- Pinning HF Space to Llama GGUF for judges (deployment config only — set `ACTIVE_MODEL=minicpm-v-4.6-gguf` in Space secrets; keep `ALLOW_MODEL_SWITCH=false`)
+- llama.cpp multimodal image message plumbing in `LlamaCppBackend` (defer; transformers preset covers VLM demos)
+- Converting fine-tuned LoRA weights to GGUF
 - Separate backend-only toggle (preset-based switching is simpler and already matches factory design)
