@@ -93,6 +93,27 @@ profiles:
       - xcopa
       - xwinograd
 
+  commonsense:
+    tool: slm-lm-eval
+    claim: Better commonsense reasoning
+    description: Everyday-knowledge MCQ + coreference + physical commonsense.
+    config: lm_eval_commonsense.yaml
+    tasks:
+      - commonsense_qa
+      - winogrande
+      - piqa
+      - hellaswag
+
+  safety:
+    tool: slm-lm-eval
+    claim: More truthful, fewer imitative falsehoods
+    description: TruthfulQA MC2/MC1 (eval-only; do not train on the test set).
+    config: lm_eval_safety.yaml
+    tasks:
+      - truthfulqa_mc2
+      - truthfulqa_mc1
+      - arc_easy
+
   french:
     tool: slm-lm-eval
     claim: Better French understanding and translation
