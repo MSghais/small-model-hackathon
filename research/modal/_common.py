@@ -321,23 +321,25 @@ def pull_artifacts(job_name: str, exp_name: str, dest: str = "models/finetuned")
     import shutil
     import subprocess
 
-    def _get(remote: str, local: str) -> None:
-        # `modal volume get --force` errors with "[Errno 21] Is a directory" when
-        # the local destination already exists, so clear it for a clean download.
-        shutil.rmtree(local, ignore_errors=True)
-        Path(local).parent.mkdir(parents=True, exist_ok=True)
+    def _get(remote: str, parent: str) -> None:
+        # For a folder REMOTE_PATH, `modal volume get` expects the *parent*
+        # directory as the destination and recreates the folder inside it.
+        # Passing the full target path (parent/<name>) raises
+        # "[Errno 21] Is a directory". Clear the target first for a clean pull.
+        name = remote.rsplit("/", 1)[-1]
+        shutil.rmtree(Path(parent) / name, ignore_errors=True)
+        Path(parent).mkdir(parents=True, exist_ok=True)
         subprocess.run(
-            ["modal", "volume", "get", "slm-finetune", remote, local, "--force"],
+            ["modal", "volume", "get", "slm-finetune", remote, f"{parent}/", "--force"],
             check=False,
         )
 
-    local_dir = f"{dest}/{job_name}"
-    print(f"--- pulling {job_name} -> {local_dir} ---")
-    _get(job_name, local_dir)
+    print(f"--- pulling {job_name} -> {dest}/{job_name} ---")
+    _get(job_name, dest)
 
-    results_dir = f"results/lm_eval/{exp_name}"
-    print(f"--- pulling {results_dir} ---")
-    _get(results_dir, results_dir)
+    exp_dir = f"results/lm_eval/{exp_name}"
+    print(f"--- pulling {exp_dir} ---")
+    _get(exp_dir, "results/lm_eval")
 
 
 def check_gate_files(
