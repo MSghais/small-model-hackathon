@@ -248,6 +248,17 @@ def parse_args():
         help="Cap examples after loading (useful for Hub smoke tests)",
     )
     p.add_argument(
+        "--mix-json",
+        type=str,
+        default=os.environ.get("FINETUNE_MIX_JSON"),
+        help=(
+            "JSON list of dataset source specs to mix/replay; overrides "
+            "--dataset/--format. Each spec: "
+            '{"dataset":..,"format":..,"columns":{..},"dataset_config":..,'
+            '"dataset_split":..,"max_samples":..,"max_len":..,"weight":..}'
+        ),
+    )
+    p.add_argument(
         "--format",
         type=str,
         default=os.environ.get("FINETUNE_FORMAT", "chat"),
@@ -286,6 +297,22 @@ def parse_args():
     p.add_argument("--mask_prompt", action="store_true", default=True,
                    help="compute loss only on the response tokens")
     p.add_argument("--no_mask_prompt", dest="mask_prompt", action="store_false")
+    # training schedule / regularization (previously hardcoded)
+    p.add_argument("--lr_scheduler", type=str, default="cosine",
+                   help="LR scheduler type: cosine, linear, constant, ...")
+    p.add_argument("--weight_decay", type=float, default=0.01)
+    p.add_argument("--max_grad_norm", type=float, default=1.0)
+    p.add_argument("--logging_steps", type=int, default=10)
+    p.add_argument("--eval_steps", type=int, default=None,
+                   help="eval every N steps (default: max_steps//5, else 200)")
+    p.add_argument("--save_steps", type=int, default=500)
+    p.add_argument("--save_total_limit", type=int, default=2)
+    p.add_argument("--early_stopping_patience", type=int, default=0,
+                   help=">0 enables early stopping + load_best_model_at_end on eval_loss")
+    p.add_argument("--neftune_noise_alpha", type=float, default=None,
+                   help="NEFTune noise alpha (e.g. 5) — quick instruction-tuning gain")
+    p.add_argument("--report_to", type=str, default="none",
+                   help="trainer reporting: none, wandb, tensorboard, ...")
     # lora hparams
     p.add_argument("--lora_r", type=int, default=16)
     p.add_argument("--lora_alpha", type=int, default=32)
