@@ -355,27 +355,33 @@ def main(
     hours: float = DEFAULT_KEEPALIVE_HOURS,
     cmd: str | None = None,
     job: str | None = None,
+    category: str | None = None,
     max_steps: int | None = None,
     eval_only: bool = False,
     pipeline: bool = False,
-    skip_baseline: bool = False,
-    lm_eval_config: str | None = None,
-    baseline_config: str | None = None,
+    publish: bool = True,
+    publish_only: bool = False,
+    pull: bool = True,
     ping: bool = False,
 ):
     """
     GPU worker CLI.
 
-    With no task flags, keeps one container alive (default). With --job, --cmd,
-    --eval-only, or --pipeline, runs that task on the warm worker instead.
+    With no task flags, keeps one container alive (default). With --job/--category,
+    --cmd, --eval-only, --pipeline, or --publish-only, runs that task on the warm
+    worker instead. --pipeline (and --job/--category/--eval-only) run the skill-matrix
+    pipeline: per-profile baselines -> finetune -> eval -> gate -> publish.
 
     Examples:
         modal deploy research/modal/server_app.py
         modal run research/modal/server_app.py
-        modal run research/modal/server_app.py --job lesson-lora --max-steps 20
+        modal run research/modal/server_app.py --pipeline --job math-lora --max-steps 20
+        modal run research/modal/server_app.py --pipeline --category science --no-publish
+        modal run research/modal/server_app.py --eval-only --job math-lora
+        modal run research/modal/server_app.py --publish-only --job math-lora
         modal run research/modal/server_app.py --cmd "uv run python research/finetune.py --help"
     """
-    has_task = bool(cmd or job or eval_only or pipeline or ping)
+    has_task = bool(cmd or job or category or eval_only or pipeline or publish_only or ping)
     if has_task:
         serve = False
 
@@ -396,24 +402,52 @@ def main(
             raise SystemExit(result.get("exit_code", 1))
         return
 
-    if pipeline or (eval_only and not job):
-        job_names = [job] if job else None
-        result = worker.run_pipeline.remote(
-            job_names=job_names,
-            max_steps=max_steps,
-            train=not eval_only,
-            eval_only=eval_only,
-            skip_baseline=skip_baseline,
-            lm_eval_config=lm_eval_config,
-            baseline_config=baseline_config,
+    if publish_only:
+        if not job:
+            raise SystemExit("--publish-only requires --job")
+        defaults, prepared = prepare_jobs(job=job)
+        j = prepared[0]
+        if not j.get("goals") or not j.get("publish"):
+            raise SystemExit(f"Job {job!r} needs `goals` and `publish` in experiments.yaml")
+
+        preset = defaults.get("preset", "minicpm5-1b")
+        profile = j.get("eval_profile", "compare_study")
+        adapter_path = f"{FINETUNE_VOL_PATH}/{job}"
+        candidate_results_path = f"{LM_EVAL_OUTPUT}/{job}__{profile}/results.json"
+        baseline_results_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+
+        gate_result = worker.check_gate.remote(
+            candidate_results_path=candidate_results_path,
+            baseline_results_path=baseline_results_path,
+            goals=j["goals"],
+        )
+        print(json.dumps(gate_result, indent=2))
+
+        result = worker.publish_adapter.remote(
+            job=j,
+            adapter_dir=adapter_path,
+            gate_result=gate_result,
+            candidate_results_path=candidate_results_path,
+            baseline_results_path=baseline_results_path,
         )
         print(json.dumps(result, indent=2))
         return
 
-    if job:
-        _, prepared = prepare_jobs(job=job, max_steps=max_steps)
-        result = worker.finetune.remote(prepared[0])
+    if pipeline or job or category or eval_only:
+        job_names = [job] if job else None
+        result = worker.run_pipeline.remote(
+            job_names=job_names,
+            category=category,
+            max_steps=max_steps,
+            train=not eval_only,
+            eval_only=eval_only,
+            publish=publish,
+        )
         print(json.dumps(result, indent=2))
+
+        if pull:
+            for row in result.get("jobs", []):
+                pull_artifacts(row["name"], f"{row['name']}__{row['profile']}")
         return
 
     if serve:
@@ -427,5 +461,6 @@ def main(
         return
 
     raise SystemExit(
-        "Nothing to do. Use default serve mode, or pass --job, --cmd, --pipeline, --eval-only, or --ping."
+        "Nothing to do. Use default serve mode, or pass --job, --category, --cmd, "
+        "--pipeline, --eval-only, --publish-only, or --ping."
     )
