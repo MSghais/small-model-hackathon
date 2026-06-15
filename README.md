@@ -19,6 +19,8 @@ tags:
   - sharing-is-caring
   - off-the-grid
   - off-brand
+  - field-notes
+  - well-tuned
 ---
 
 # Lesson Agent
