@@ -43,7 +43,7 @@ modal secret create huggingface HF_TOKEN=<token>
 # Smoke train on Modal
 modal run research/modal/finetune_app.py --job lesson-lora --max-steps 20
 
-# Download adapter to repo path expected by models.yaml
+# Download adapter to repo path expected by models.yaml (use CLI — files may exceed 16 MB UI limit)
 modal volume get slm-finetune lesson-lora ./models/finetuned/minicpm5-1b-lora
 
 # Publish to Hugging Face Hub
@@ -51,7 +51,7 @@ huggingface-cli upload your-user/minicpm5-1b-lesson-lora \
   ./models/finetuned/minicpm5-1b-lora . --repo-type model
 ```
 
-Full guide (Volume layout, merge, Space deploy): **[modal/README.md](modal/README.md)**.
+Full guide (Volumes, Hub deploy, Space): **[modal/README.md](modal/README.md)** · [Modal Volumes docs](https://modal.com/docs/guide/volumes).
 
 ---
 

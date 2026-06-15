@@ -87,14 +87,24 @@ Edit `defaults.max_steps` or per-job `max_samples` in `experiments.yaml` to bala
 
 ## What gets saved on Modal
 
-Modal persists artifacts on **Volumes** (durable object storage), not in the container filesystem.
+Modal persists artifacts on [**Volumes**](https://modal.com/docs/guide/volumes) — a distributed filesystem optimized for write-once, read-many workloads like model checkpoints. Files written only to the container disk (outside the mount path) are **not** saved.
 
 | Volume | Mount in container | Contents |
 | ------ | ------------------ | -------- |
 | `slm-finetune` | `/vol/finetuned` | LoRA adapters, `training_results.json`, lm-eval `results/` |
 | `hf-cache` | `/root/.cache/huggingface` | Cached base weights + datasets |
 
-After each train/eval job, the app calls `volume.commit()` so files are durable.
+Volumes are created lazily on first run (`create_if_missing=True` in [`finetune_app.py`](finetune_app.py)).
+
+### Commits and visibility
+
+Per the [Volumes guide](https://modal.com/docs/guide/volumes):
+
+- **`volume.commit()`** — persist writes so other containers and `modal volume get` can see them. Our workers call this after each train/eval job.
+- **Background commits** — Modal also snapshots attached Volumes every few seconds and on container shutdown, but explicit `commit()` is safest before download.
+- **`volume.reload()`** — needed only if the *same* container must see writes from another container without restarting. Each `finetune_one.remote()` / `run_lm_eval.remote()` starts fresh and mounts the latest committed state.
+
+Training writes under `/vol/finetuned/...` (the mount), not `/repo/models/...`. That matches Modal’s [model checkpointing](https://modal.com/docs/guide/volumes#model-checkpointing) pattern: point `finetune.py --out` at the Volume path.
 
 ### Per-job adapter layout
 
@@ -116,45 +126,94 @@ slm-finetune (Volume)
 
 ---
 
-## Download LoRA to your machine
+## Volume CLI (browse, download, upload)
 
-### 1. List what is on the Volume
+Official reference: [Modal Volumes guide](https://modal.com/docs/guide/volumes) · [CLI reference](https://modal.com/docs/reference/cli/volume)
+
+### Create or list volumes
 
 ```bash
+modal volume list
+modal volume create slm-finetune    # optional; app creates on first run
 modal volume ls slm-finetune
 modal volume ls slm-finetune lesson-lora
 ```
 
-### 2. Download one adapter
+### Browse in a shell
+
+Volumes are mounted under `/mnt` in an interactive shell:
+
+```bash
+modal shell --volume slm-finetune
+# inside shell:
+ls /mnt/slm-finetune
+ls /mnt/slm-finetune/lesson-lora
+du -sh /mnt/slm-finetune/lesson-lora
+```
+
+Use `du` for size — Volumes do not report accurate `df` / `disk_usage()` values ([docs](https://modal.com/docs/guide/volumes#disk-usage-reporting)).
+
+### Download LoRA to your machine
+
+**Use the CLI for adapter weights.** The Modal web UI only supports downloads up to **16 MB** per file; `adapter_model.safetensors` is usually larger ([docs](https://modal.com/docs/guide/volumes#downloading-a-file-from-a-volume)).
 
 ```bash
 mkdir -p ./models/finetuned
+
+# One job folder → local path expected by models.yaml
 modal volume get slm-finetune lesson-lora ./models/finetuned/minicpm5-1b-lora
+
+# lm-eval artifacts
+mkdir -p ./results
+modal volume get slm-finetune results/lm_eval ./results/lm_eval
+
+# Entire volume (large)
+modal volume get slm-finetune / ./modal-artifacts
 ```
 
-Use the path your app expects. Root [`models.yaml`](../../models.yaml) preset `minicpm5-1b-lesson-lora` points at `./models/finetuned/minicpm5-1b-lora`.
+Job folders use the **job name** from `experiments.yaml` (`lesson-lora`), not `minicpm5-1b-lora`. Root [`models.yaml`](../../models.yaml) preset `minicpm5-1b-lesson-lora` expects `./models/finetuned/minicpm5-1b-lora`.
 
-If you used a different job name (e.g. `lesson-lora` on Volume), either copy or symlink:
+If you downloaded to a different folder name:
 
 ```bash
 modal volume get slm-finetune lesson-lora ./models/finetuned/lesson-lora
 cp -r ./models/finetuned/lesson-lora ./models/finetuned/minicpm5-1b-lora
 ```
 
-### 3. Download lm-eval results
+### Upload to a Volume from local
+
+Push a local adapter or merged checkpoint back to Modal ([`modal volume put`](https://modal.com/docs/reference/cli/volume)):
 
 ```bash
-mkdir -p ./results
-modal volume get slm-finetune results/lm_eval ./results/lm_eval
+modal volume put slm-finetune ./models/finetuned/minicpm5-1b-lora lesson-lora
 ```
 
-### 4. Download everything (large)
+Or from Python ([`batch_upload`](https://modal.com/docs/guide/volumes#using-a-volume-from-local-code)):
+
+```python
+import modal
+
+vol = modal.Volume.from_name("slm-finetune")
+with vol.batch_upload() as batch:
+    batch.put_directory(
+        "./models/finetuned/minicpm5-1b-lora",
+        "/lesson-lora",
+    )
+```
+
+### Copy within a Volume
 
 ```bash
-modal volume get slm-finetune / ./modal-artifacts
+modal volume cp slm-finetune lesson-lora lesson-lora-backup
 ```
 
-### 5. Use locally
+### Parallel training note
+
+With `--parallel`, multiple jobs write to **different** folders on the same Volume. On Volumes v1, avoid more than ~5 concurrent writers/commits ([docs](https://modal.com/docs/guide/volumes#volume-commits-and-reloads)). Prefer sequential runs unless you use Volumes v2 (`modal volume create --version=2`).
+
+---
+
+## Use downloaded weights locally
 
 ```bash
 # Gradio / inference preset
@@ -169,7 +228,7 @@ uv run --package slm-evals slm-lm-eval \
   --experiment-name minicpm5-1b-lora__local-check
 ```
 
-### 6. Optional: merge LoRA into full weights locally
+### Optional: merge LoRA into full weights locally
 
 Adapters are small; merged weights are easier for some deploy targets.
 
@@ -249,24 +308,24 @@ huggingface-cli upload your-user/minicpm5-1b-lesson-merged \
 
 Consumers set `MODEL_ID=your-user/minicpm5-1b-lesson-merged` with no adapter.
 
-### Option C — Upload from Modal (no local download)
+### Option C — Upload from Modal shell (no local download)
 
-Run a one-off shell on Modal with the Volume mounted, then push from inside the container:
+Browse the Volume in a shell ([docs](https://modal.com/docs/guide/volumes#using-a-volume-from-outside-of-modal)):
 
 ```bash
-modal shell research/modal/finetune_app.py::finetune_one
+modal shell --volume slm-finetune
 ```
 
-Inside the shell (paths are illustrative — adjust if your Modal version differs):
+Inside the shell (volume at `/mnt/slm-finetune`):
 
 ```bash
 pip install huggingface_hub
-export HF_TOKEN=...   # or rely on huggingface secret if wired
+export HF_TOKEN=...   # write token
 huggingface-cli upload your-user/minicpm5-1b-lesson-lora \
-  /vol/finetuned/lesson-lora . --repo-type model
+  /mnt/slm-finetune/lesson-lora . --repo-type model
 ```
 
-Or download to laptop first (Option A) — usually simpler for review before publish.
+Downloading to your laptop first (Option A) is usually easier to review before publish.
 
 ### Use on Hugging Face Space
 
@@ -335,7 +394,9 @@ flowchart LR
 | Symptom | Fix |
 | ------- | --- |
 | `Secret huggingface not found` | `modal secret create huggingface HF_TOKEN=...` |
-| Volume empty after run | Wait for job success; run `modal volume ls slm-finetune` |
+| Volume empty after run | Job may have failed; `modal volume ls slm-finetune`; ensure writes went to `/vol/finetuned` not `/repo` |
+| `modal volume get` missing files | Call `commit()` completed; for same-container reads use `volume.reload()` |
+| Large file won't download in UI | Use `modal volume get` CLI (16 MB UI limit) |
 | `modal volume get` path wrong | Job name = top-level folder (`lesson-lora`, not `minicpm5-1b-lora`) |
 | Hub upload 403 | Use a write token; create the repo first on huggingface.co |
 | Space cannot find adapter | Use merged weights or copy adapter into repo `models/finetuned/` |
@@ -351,4 +412,4 @@ flowchart LR
 3. Adapter on Volume or Hub + `ACTIVE_MODEL=minicpm5-1b-lesson-lora` on Space.
 4. Optional: Notebook recording of smoke train cell.
 
-See also: [research/USAGE.md](../USAGE.md) (local finetune/eval) and [Modal CUDA guide](https://modal.com/docs/guide/cuda).
+See also: [research/USAGE.md](../USAGE.md) · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal CUDA](https://modal.com/docs/guide/cuda)
