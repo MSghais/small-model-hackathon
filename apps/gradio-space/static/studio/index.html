@@ -36,6 +36,7 @@
     <nav class="sidebar-nav">
       <button type="button" class="nav-item" data-view="research"><span class="material-symbols-outlined">search</span>Research</button>
       <button type="button" class="nav-item active" data-view="slides"><span class="material-symbols-outlined">present_to_all</span>Slides</button>
+      <button type="button" class="nav-item" data-view="quiz"><span class="material-symbols-outlined">quiz</span>Quiz</button>
       <button type="button" class="nav-item" data-view="language-lessons"><span class="material-symbols-outlined">translate</span>Language lessons</button>
       <button type="button" class="nav-item" data-view="debug"><span class="material-symbols-outlined">chat</span>Chat</button>
       <button type="button" id="btn-open-settings" class="nav-item"><span class="material-symbols-outlined">settings</span>Settings</button>
@@ -313,10 +314,127 @@
           <div id="slide-outline" class="slide-outline"></div>
         </details>
         <div id="downloads" class="downloads hidden"></div>
+        <button type="button" id="btn-slides-to-quiz" class="btn btn-ghost btn-block slides-to-quiz hidden">
+          <span class="material-symbols-outlined">quiz</span>
+          Create quiz on this topic
+        </button>
         <details class="slide-export-help">
           <summary>Export help — open in Google Docs</summary>
           <p class="status-text">Download the <strong>.docx</strong> file, upload it to <a href="https://drive.google.com" target="_blank" rel="noopener">Google Drive</a>, then choose <strong>Open with → Google Docs</strong>. You can also upload the <strong>.html</strong> file via Google Docs → File → Open → Upload.</p>
         </details>
+      </div>
+    </section>
+
+    <section class="col col-quiz view-quiz-only">
+      <div class="card card-tall">
+        <div class="card-header">
+          <div class="step-badge">3</div>
+          <h2>Quiz maker</h2>
+        </div>
+        <div class="controls-panel">
+          <div class="controls-grid">
+            <label class="field">
+              <span>Topic override (optional)</span>
+              <input id="quiz-topic" type="text" class="input" placeholder="Uses workspace topic when empty" />
+            </label>
+            <label class="field">
+              <span>Grade</span>
+              <select id="quiz-grade" class="input">
+                <option value="K">K</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6" selected>6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+                <option value="12">12</option>
+                <option value="Adult">Adult</option>
+              </select>
+            </label>
+            <label class="field field-wide">
+              <span>Questions: <strong id="quiz-count-val">5</strong></span>
+              <input id="quiz-count" type="range" min="5" max="10" value="5" />
+            </label>
+          </div>
+          <details class="slide-source-details" id="quiz-source-details">
+            <summary>Research sources (optional)</summary>
+            <label class="field">
+              <span>Source mode</span>
+              <select id="quiz-source-mode" class="input">
+                <option value="">Auto (RAG toggle)</option>
+                <option value="none">None (model only)</option>
+                <option value="web">Web search</option>
+                <option value="rag">RAG (indexed sources)</option>
+              </select>
+            </label>
+            <label class="field slide-web-workflow hidden" id="quiz-web-workflow-wrap">
+              <span>Web search workflow</span>
+              <select id="quiz-search-workflow" class="input">
+                <option value="two_step">Discover &amp; confirm</option>
+                <option value="auto">Auto search &amp; ingest</option>
+              </select>
+            </label>
+            <div class="slide-web-discover hidden" id="quiz-web-discover-wrap">
+              <button type="button" id="btn-quiz-discover" class="btn btn-secondary btn-block">Discover sources</button>
+              <div id="quiz-url-choices-panel" class="url-choices-panel hidden">
+                <div id="quiz-url-choices-list" class="url-choices-list"></div>
+              </div>
+              <label class="field">
+                <span>URLs (one per line)</span>
+                <textarea id="quiz-urls-text" class="input" rows="2" placeholder="https://…"></textarea>
+              </label>
+            </div>
+            <label class="upload-zone upload-zone-compact">
+              <input id="quiz-source-files" type="file" accept=".pdf,.docx" multiple hidden />
+              <span class="material-symbols-outlined">upload_file</span>
+              <span>Upload PDF or Doc for generation</span>
+            </label>
+          </details>
+          <div class="controls-actions">
+            <button type="button" id="btn-generate-quiz" class="btn btn-primary">
+              <span class="material-symbols-outlined">auto_awesome</span>
+              Generate quiz
+            </button>
+          </div>
+          <p id="quiz-generate-status" class="status-text">Ready to generate.</p>
+          <div id="quiz-progress-panel" class="progress-panel hidden">
+            <div class="progress-panel-head">
+              <span id="quiz-progress-elapsed" class="progress-elapsed">Elapsed: 0s</span>
+              <span id="quiz-progress-eta" class="progress-eta"></span>
+            </div>
+            <div class="progress-bar-track" aria-hidden="true">
+              <div id="quiz-progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <p id="quiz-progress-current" class="progress-current">Idle</p>
+            <ol id="quiz-progress-steps" class="progress-steps"></ol>
+            <div id="quiz-progress-log" class="progress-log hidden" aria-live="polite"></div>
+            <details class="studio-debug-trace" id="quiz-trace-details">
+              <summary>Agent trace</summary>
+              <div id="quiz-trace-panel"></div>
+            </details>
+          </div>
+        </div>
+        <div id="quiz-preview" class="slide-canvas">
+          <div id="quiz-preview-overlay" class="region-loading hidden" aria-live="polite">
+            <div class="region-loading-inner">
+              <span class="studio-spinner" aria-hidden="true"></span>
+              <p class="region-loading-text">Generating quiz…</p>
+            </div>
+          </div>
+          <div id="quiz-preview-content" class="slide-canvas-content">
+            <div class="studio-canvas-empty"><p>Generate a quiz to preview the worksheet here.</p></div>
+          </div>
+        </div>
+        <details class="slide-outline-details hidden" id="quiz-outline-details">
+          <summary>Outline (markdown)</summary>
+          <div id="quiz-outline" class="slide-outline"></div>
+        </details>
+        <div id="quiz-downloads" class="downloads hidden"></div>
       </div>
     </section>
 

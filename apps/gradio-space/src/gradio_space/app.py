@@ -9,6 +9,7 @@ from gradio_space.tabs import (
     build_chat_tab,
     build_education_pptx_tab,
     build_echo_coach_tab,
+    build_quiz_maker_tab,
     build_research_mind_tab,
     build_teacher_voice_tab,
 )
@@ -63,6 +64,8 @@ def build_demo() -> gr.Blocks:
         with gr.Tabs():
             with gr.Tab("Lesson slides"):
                 build_education_pptx_tab(workspace)
+            with gr.Tab("Quiz maker"):
+                build_quiz_maker_tab(workspace)
             with gr.Tab("ResearchMind"):
                 build_research_mind_tab(workspace)
             with gr.Tab("EchoCoach"):
