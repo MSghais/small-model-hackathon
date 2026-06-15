@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -20,14 +21,35 @@ if (_file.parent / "experiments.yaml").is_file():
 else:
     EXPERIMENTS_PATH = Path("/repo/research/modal/experiments.yaml")
 
+_EVAL_PROFILES_REL = "research/evals/configs/eval_profiles.yaml"
+if (LOCAL_REPO_ROOT / _EVAL_PROFILES_REL).is_file():
+    EVAL_PROFILES_PATH = LOCAL_REPO_ROOT / _EVAL_PROFILES_REL
+else:
+    EVAL_PROFILES_PATH = Path("/repo") / _EVAL_PROFILES_REL
+
 REPO_ROOT = LOCAL_REPO_ROOT
 
 HF_CACHE_PATH = "/root/.cache/huggingface"
 FINETUNE_VOL_PATH = "/vol/finetuned"
 LM_EVAL_OUTPUT = f"{FINETUNE_VOL_PATH}/results/lm_eval"
+BASE_MODEL_ID = "openbmb/MiniCPM5-1B"
 
 BASELINE_EXPERIMENT = "minicpm5-1b__modal-baseline"
 BASELINE_RESULTS_JSON = f"{LM_EVAL_OUTPUT}/{BASELINE_EXPERIMENT}/results.json"
+
+# Metric keys to prefer when picking a task's "primary" score, in priority
+# order. Covers lm-eval-harness multiple-choice (acc), generation (exact_match),
+# and code (pass@1) tasks so gates and model cards pick a real score, not a stderr.
+_METRIC_PRIORITY = (
+    "acc,none",
+    "acc_norm,none",
+    "exact_match,strict-match",
+    "exact_match,flexible-extract",
+    "pass_at_1,create_test",
+    "pass_at_1,none",
+    "f1,none",
+    "bleu,none",
+)
 
 hf_cache_vol = modal.Volume.from_name("hf-cache", create_if_missing=True)
 finetune_vol = modal.Volume.from_name("slm-finetune", create_if_missing=True)
