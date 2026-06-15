@@ -152,6 +152,16 @@ def _build_lm_eval_cmd(
     return cmd
 
 
+BASELINE_EXPERIMENT = "minicpm5-1b__modal-baseline"
+BASELINE_RESULTS_JSON = f"{LM_EVAL_OUTPUT}/{BASELINE_EXPERIMENT}/results.json"
+
+
+def _reload_volumes() -> None:
+    """Pick up commits from other containers before reading Volume paths."""
+    finetune_vol.reload()
+    hf_cache_vol.reload()
+
+
 @app.function(
     gpu="A10G",
     volumes={
@@ -199,6 +209,18 @@ def run_lm_eval(
     compare_to: str | None = None,
 ) -> dict[str, Any]:
     """Run slm-lm-eval on base model or finetuned checkpoint."""
+    _reload_volumes()
+
+    if adapter_path:
+        adapter_dir = Path(adapter_path)
+        adapter_cfg = adapter_dir / "adapter_config.json"
+        if not adapter_cfg.is_file():
+            raise FileNotFoundError(
+                f"LoRA adapter not visible at {adapter_path} "
+                f"(missing {adapter_cfg.name}). "
+                "If training just finished, retry after volume commit/reload."
+            )
+
     cmd = _build_lm_eval_cmd(
         experiment_name=experiment_name,
         config=config,
@@ -237,6 +259,7 @@ def run_lm_eval(
 def main(
     train: bool = True,
     eval_only: bool = False,
+    skip_baseline: bool = False,
     parallel: bool = False,
     job: str | None = None,
     max_steps: int | None = None,
@@ -275,22 +298,26 @@ def main(
         prepared.append(merged)
 
     baseline_result: dict[str, Any] | None = None
-    if not eval_only:
+    compare_path: str | None = None
+
+    if not eval_only and not skip_baseline:
         print("--- baseline lm-eval ---")
         baseline_result = run_lm_eval.remote(
-            experiment_name="minicpm5-1b__modal-baseline",
+            experiment_name=BASELINE_EXPERIMENT,
             config=base_cfg,
             preset=defaults.get("preset", "minicpm5-1b"),
         )
         print(json.dumps(baseline_result, indent=2))
         if not baseline_result.get("ok"):
             print("Warning: baseline lm-eval failed; continuing without compare_to")
-
-    compare_path = (
-        baseline_result["results_json"]
-        if baseline_result and baseline_result.get("ok")
-        else None
-    )
+        elif baseline_result.get("results_json"):
+            compare_path = baseline_result["results_json"]
+    elif skip_baseline:
+        compare_path = BASELINE_RESULTS_JSON
+        print(f"--- skipping baseline; compare_to {compare_path} ---")
+    elif eval_only:
+        compare_path = BASELINE_RESULTS_JSON
+        print(f"--- eval-only; compare_to {compare_path} if present ---")
 
     train_results: list[dict[str, Any]] = []
     if train and not eval_only:
