@@ -30,11 +30,26 @@ defaults:
 
 finetune:
   # --- teaching: lesson-planning agent chat data (Well-Tuned primary) ---
+  # 8 local lesson chats overfit easily; mix in alpaca replay + NEFTune so
+  # IFEval clears without washing out the lesson skill signal.
   - name: teaching-lora
     category: teaching
-    dataset: research/data/education-lesson-chat.jsonl
-    format: chat
-    description: Lesson-planning agent chat data (local)
+    max_steps: 150
+    mix:
+      - dataset: research/data/education-lesson-chat.jsonl
+        format: chat
+        weight: 20                    # ~8 samples → ~160 examples
+      - dataset: tatsu-lab/alpaca      # instruction-following replay for ifeval
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
+    description: Lesson-planning chat + alpaca replay, r=32 + NEFTune
     eval_profile: instructions
     goals:
       task: ifeval
@@ -42,6 +57,8 @@ finetune:
       min_improve: 0.02
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-teaching-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-teaching-lora
       private: false
 
   # --- science: factual + explanatory science tutoring ---
@@ -49,6 +66,9 @@ finetune:
     category: science
     dataset: research/data/science-tutor-chat.jsonl
     format: chat
+    args:
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Science tutor Q&A chat data (local)
     eval_profile: science
     goals:
@@ -60,6 +80,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-science-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-science-lora
       private: false
 
   # --- math: GSM8K/MATH natural-language CoT augmentation (MetaMathQA) ---
@@ -102,6 +124,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-math-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-math-lora
       private: false
 
   # --- coding: Python instruction-following code generation ---
@@ -111,6 +135,9 @@ finetune:
     format: alpaca
     dataset_split: "train[:1000]"
     max_samples: 1000
+    args:
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Python code instruction tuning (Hub, alpaca columns)
     eval_profile: code
     goals:
@@ -124,6 +151,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-coding-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-coding-lora
       private: false
 
   # --- reasoning: multi-turn chat with reasoning-heavy conversations ---
@@ -134,6 +163,9 @@ finetune:
     dataset_config: all
     dataset_split: "train[:500]"
     max_samples: 500
+    args:
+      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      val_split: 0.05
     description: Multi-turn reasoning/chat subset (Hub)
     eval_profile: reasoning
     goals:
@@ -145,6 +177,8 @@ finetune:
           max_regress: 0.03
     publish:
       hub_repo: MSGEncrypted/minicpm5-1b-reasoning-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-reasoning-lora
       private: false
 
   # --- general instructions baseline: no goals/publish -> local-only adapter ---

@@ -50,6 +50,13 @@ const SLIDE_PIPELINE_STEPS = [
   "Build PPTX, DOCX, and HTML exports",
 ];
 
+const QUIZ_PIPELINE_STEPS = [
+  "Load language model",
+  "Gather lesson sources",
+  "Generate quiz outline",
+  "Build DOCX and HTML quiz exports",
+];
+
 const state = {
   workspaceTopic: "small model finetuning",
   workspaceSessionId: "",
@@ -58,6 +65,8 @@ const state = {
   selectedUrls: [],
   slideDiscoveredUrls: [],
   slideSelectedUrls: [],
+  quizDiscoveredUrls: [],
+  quizSelectedUrls: [],
   lessonsDiscoveredUrls: [],
   lessonsSelectedUrls: [],
   researchChatHistory: [],
@@ -65,6 +74,9 @@ const state = {
   lessonsMode: "lesson",
   history: [],
   downloads: null,
+  quizDownloads: null,
+  lastSlideTopic: "",
+  lastSlideGrade: "6",
   client: null,
   progressTimer: null,
   progressStartedAt: null,
@@ -171,9 +183,25 @@ function syncSlideSourceUi() {
   }
 }
 
+function syncQuizSourceUi() {
+  const mode = $("#quiz-source-mode")?.value || "";
+  const isWeb = mode === "web";
+  $("#quiz-web-workflow-wrap")?.classList.toggle("hidden", !isWeb);
+  $("#quiz-web-discover-wrap")?.classList.toggle("hidden", !isWeb);
+  if (isWeb && $("#quiz-search-workflow")?.value === "two_step") {
+    $("#quiz-url-choices-panel")?.classList.toggle(
+      "hidden",
+      !state.quizDiscoveredUrls.length
+    );
+  } else {
+    $("#quiz-url-choices-panel")?.classList.add("hidden");
+  }
+}
+
 function syncResearchLayout() {
   syncIngestWorkflowUi();
   syncSlideSourceUi();
+  syncQuizSourceUi();
   updateResearchDocCount(state.workspaceDocIds?.length || 0);
 }
 
@@ -375,6 +403,13 @@ function renderSlideGenerationResult(data, { scrollToCanvas = false, pulsePresen
   }
 
   setTracePanel("#slides-trace-panel", data);
+
+  const cta = $("#btn-slides-to-quiz");
+  if (cta) {
+    state.lastSlideTopic = data.topic || effectiveTopic($("#lesson-topic")?.value);
+    state.lastSlideGrade = $("#lesson-grade")?.value || "6";
+    cta.classList.remove("hidden");
+  }
 
   if (scrollToCanvas) {
     $("#slide-canvas")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -732,6 +767,19 @@ function renderSlideUrlChoices(urls, selected) {
   syncSlideSourceUi();
 }
 
+function renderQuizUrlChoices(urls, selected) {
+  state.quizDiscoveredUrls = urls || [];
+  state.quizSelectedUrls = selected?.length ? selected : [...state.quizDiscoveredUrls];
+  renderUrlChoices(
+    urls,
+    selected,
+    "#quiz-url-choices-list",
+    "#quiz-url-choices-panel",
+    { discovered: state.quizDiscoveredUrls, selected: state.quizSelectedUrls }
+  );
+  syncQuizSourceUi();
+}
+
 function syncUrlSelectAll() {
   const boxes = [...document.querySelectorAll("#url-choices-list input[type=checkbox]")];
   const selectAll = $("#url-select-all");
@@ -782,6 +830,18 @@ async function discoverSlideSources() {
   await withRegionLoading($(".controls-panel"), "Discovering sources…", async () => {
     const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
     renderSlideUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
+  });
+}
+
+async function discoverQuizSources() {
+  const topic = effectiveTopic($("#quiz-topic")?.value);
+  if (!topic) {
+    showError("Set a topic before discovering sources.");
+    return;
+  }
+  await withRegionLoading($(".col-quiz .controls-panel"), "Discovering sources…", async () => {
+    const data = await callApi("discover_sources", [topic, state.workspaceSessionId]);
+    renderQuizUrlChoices(data.urls || [], data.selected_urls || data.urls || []);
   });
 }
 
@@ -1558,6 +1618,238 @@ async function generateSlidesFromConversation(kind) {
   );
 }
 
+async function collectQuizGenerationParams() {
+  const topic = effectiveTopic($("#quiz-topic")?.value);
+  const grade = $("#quiz-grade")?.value;
+  const questionCount = Number($("#quiz-count")?.value || 5);
+  const useRag = Boolean($("#lessons-use-rag")?.checked);
+  const docIds = effectiveDocIds([]);
+  const sourceMode = $("#quiz-source-mode")?.value || "";
+  const searchWorkflow = $("#quiz-search-workflow")?.value || "two_step";
+  const urlsText = $("#quiz-urls-text")?.value.trim() || "";
+  const selectedUrls = getSelectedDiscoveredUrls("#quiz-url-choices-list");
+  const filePaths = [];
+  const quizFiles = $("#quiz-source-files")?.files;
+  if (quizFiles?.length) {
+    for (const file of quizFiles) {
+      filePaths.push(await uploadFile(file));
+    }
+  }
+  return {
+    topic,
+    grade,
+    questionCount,
+    sessionId: state.workspaceSessionId,
+    useRag,
+    docIds,
+    sourceMode,
+    searchWorkflow,
+    urlsText,
+    selectedUrls,
+    filePaths,
+  };
+}
+
+function startQuizProgressPanel() {
+  const panel = $("#quiz-progress-panel");
+  const stepsEl = $("#quiz-progress-steps");
+  panel?.classList.remove("hidden");
+  state.progressStartedAt = Date.now();
+  if (stepsEl) {
+    stepsEl.innerHTML = QUIZ_PIPELINE_STEPS.map(
+      (label, index) =>
+        `<li data-step="${index}" class="progress-step pending">${label}</li>`
+    ).join("");
+  }
+  $("#quiz-progress-log")?.classList.add("hidden");
+  if ($("#quiz-progress-log")) $("#quiz-progress-log").textContent = "";
+  if ($("#quiz-progress-eta")) $("#quiz-progress-eta").textContent = "Est. remaining: calculating…";
+  updateQuizProgressElapsed();
+  if (state.progressTimer) clearInterval(state.progressTimer);
+  state.progressTimer = setInterval(updateQuizProgressElapsed, 500);
+}
+
+function updateQuizProgressElapsed() {
+  if (!state.progressStartedAt) return;
+  const elapsed = (Date.now() - state.progressStartedAt) / 1000;
+  if ($("#quiz-progress-elapsed")) {
+    $("#quiz-progress-elapsed").textContent = `Elapsed: ${elapsed.toFixed(1)}s`;
+  }
+  const eta = estimateQuizRemaining(elapsed);
+  if ($("#quiz-progress-eta")) {
+    $("#quiz-progress-eta").textContent =
+      eta !== null ? `Est. remaining: ~${Math.max(0, Math.round(eta))}s` : "";
+  }
+}
+
+function estimateQuizRemaining(elapsed) {
+  if (elapsed < 3) return null;
+  const stepNodes = [...document.querySelectorAll("#quiz-progress-steps .progress-step")];
+  const activeIndex = stepNodes.findIndex((node) => node.classList.contains("active"));
+  const doneCount = stepNodes.filter((node) => node.classList.contains("done")).length;
+  const progress = Math.max((doneCount + (activeIndex >= 0 ? 0.35 : 0)) / stepNodes.length, 0.15);
+  return elapsed / progress - elapsed;
+}
+
+function advanceQuizProgressWhileWaiting() {
+  let current = 0;
+  const mark = (index, status) => {
+    const node = document.querySelector(`#quiz-progress-steps [data-step="${index}"]`);
+    if (!node) return;
+    node.classList.remove("pending", "active", "done");
+    node.classList.add(status);
+  };
+  mark(current, "active");
+  const timer = setInterval(() => {
+    if (!$("#quiz-progress-panel") || $("#quiz-progress-panel").classList.contains("hidden")) {
+      clearInterval(timer);
+      return;
+    }
+    if (current < QUIZ_PIPELINE_STEPS.length - 1) {
+      mark(current, "done");
+      current += 1;
+      mark(current, "active");
+    }
+  }, 9000);
+  return timer;
+}
+
+function finishQuizProgressPanel(data) {
+  if (state.progressTimer) {
+    clearInterval(state.progressTimer);
+    state.progressTimer = null;
+  }
+  const stepsEl = $("#quiz-progress-steps");
+  const traceSteps = data?.progress?.steps || [];
+  if (stepsEl) {
+    if (traceSteps.length) {
+      stepsEl.innerHTML = traceSteps
+        .map((step) => {
+          const duration = step.duration_s != null ? ` (${step.duration_s}s)` : "";
+          const detail = step.detail ? ` — ${step.detail}` : "";
+          return `<li class="progress-step done">${step.label}${duration}${detail}</li>`;
+        })
+        .join("");
+    } else {
+      document.querySelectorAll("#quiz-progress-steps .progress-step").forEach((node) => {
+        node.classList.remove("pending", "active");
+        node.classList.add("done");
+      });
+    }
+  }
+  if (data?.progress_log) {
+    const logEl = $("#quiz-progress-log");
+    const log = data.progress_log;
+    if (logEl) {
+      if (/<[a-z][\s\S]*>/i.test(log)) logEl.innerHTML = log;
+      else logEl.textContent = stripMd(log);
+      logEl.classList.remove("hidden");
+    }
+  }
+  if (data?.elapsed_seconds != null && $("#quiz-progress-elapsed")) {
+    $("#quiz-progress-elapsed").textContent = `Elapsed: ${Number(data.elapsed_seconds).toFixed(1)}s`;
+  }
+  if ($("#quiz-progress-eta")) $("#quiz-progress-eta").textContent = "Complete";
+  setTracePanel("#quiz-trace-panel", data);
+}
+
+async function runQuizGenerationApi(apiArgs) {
+  startQuizProgressPanel();
+  const waitTimer = advanceQuizProgressWhileWaiting();
+  try {
+    return await callApi("generate_quiz", apiArgs);
+  } finally {
+    clearInterval(waitTimer);
+    if (state.progressTimer) {
+      clearInterval(state.progressTimer);
+      state.progressTimer = null;
+    }
+  }
+}
+
+function renderQuizGenerationResult(data, { scrollToPreview = false } = {}) {
+  finishQuizProgressPanel(data);
+  $("#quiz-generate-status").textContent = stripMd(data.status || "Quiz generated.");
+  const contentEl = $("#quiz-preview-content");
+  if (data.preview_html && contentEl) {
+    const blob = new Blob([data.preview_html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    contentEl.innerHTML = `<iframe class="quiz-preview-frame" src="${url}" title="Quiz preview"></iframe>`;
+  } else if (contentEl) {
+    contentEl.innerHTML = '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
+  }
+
+  state.quizDownloads = data.downloads;
+  const dl = $("#quiz-downloads");
+  if (data.downloads?.docx) {
+    dl.classList.remove("hidden");
+    dl.innerHTML = `
+      <a href="${fileUrl(data.downloads.docx)}" download>DOCX worksheet</a>
+      <a href="${fileUrl(data.downloads.html)}" download>HTML preview</a>`;
+  } else {
+    dl.classList.add("hidden");
+    dl.innerHTML = "";
+  }
+
+  const outlineDetails = $("#quiz-outline-details");
+  const outlineEl = $("#quiz-outline");
+  if (data.outline_md) {
+    outlineEl.innerHTML = renderMarkdownLite(data.outline_md);
+    outlineDetails?.classList.remove("hidden");
+  } else {
+    outlineEl.innerHTML = "";
+    outlineDetails?.classList.add("hidden");
+  }
+
+  setTracePanel("#quiz-trace-panel", data);
+
+  if (scrollToPreview) {
+    $("#quiz-preview")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+async function generateQuiz() {
+  const params = await collectQuizGenerationParams();
+
+  await withRegionLoading(
+    $("#quiz-preview"),
+    "Generating quiz…",
+    async () => {
+      let data;
+      try {
+        data = await runQuizGenerationApi([
+          params.topic,
+          params.grade,
+          params.questionCount,
+          params.sessionId,
+          params.useRag,
+          params.docIds,
+          params.sourceMode,
+          params.searchWorkflow,
+          params.urlsText,
+          params.selectedUrls,
+          params.filePaths,
+        ]);
+      } catch (_err) {
+        if ($("#quiz-progress-eta")) $("#quiz-progress-eta").textContent = "Failed";
+        throw _err;
+      }
+
+      renderQuizGenerationResult(data, { scrollToPreview: true });
+    },
+    { overlayEl: $("#quiz-preview-overlay") }
+  );
+}
+
+function openQuizFromSlides() {
+  const topic = state.lastSlideTopic || effectiveTopic($("#lesson-topic")?.value);
+  const grade = state.lastSlideGrade || $("#lesson-grade")?.value || "6";
+  if ($("#quiz-topic")) $("#quiz-topic").value = topic;
+  if ($("#quiz-grade")) $("#quiz-grade").value = grade;
+  setWorkspaceView("quiz");
+  window.setTimeout(() => $("#quiz-topic")?.focus(), 80);
+}
+
 function renderLessonsReply(data) {
   state.history = data.history ?? state.history;
   if (state.history.length) {
@@ -1776,6 +2068,9 @@ function bindUi() {
   $("#slide-count").addEventListener("input", (e) => {
     $("#slide-count-val").textContent = e.target.value;
   });
+  $("#quiz-count")?.addEventListener("input", (e) => {
+    $("#quiz-count-val").textContent = e.target.value;
+  });
 
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1835,6 +2130,10 @@ function bindUi() {
   $("#slide-search-workflow")?.addEventListener("change", syncSlideSourceUi);
   $("#btn-slide-discover")?.addEventListener("click", () => discoverSlideSources().catch(() => {}));
 
+  $("#quiz-source-mode")?.addEventListener("change", syncQuizSourceUi);
+  $("#quiz-search-workflow")?.addEventListener("change", syncQuizSourceUi);
+  $("#btn-quiz-discover")?.addEventListener("click", () => discoverQuizSources().catch(() => {}));
+
   $("#btn-research-ask").addEventListener("click", () => askResearchQuestion().catch(() => {}));
   $("#research-question")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1844,6 +2143,8 @@ function bindUi() {
   });
 
   $("#btn-generate").addEventListener("click", () => generateSlides().catch(() => {}));
+  $("#btn-generate-quiz")?.addEventListener("click", () => generateQuiz().catch(() => {}));
+  $("#btn-slides-to-quiz")?.addEventListener("click", () => openQuizFromSlides());
   $("#btn-present")?.addEventListener("click", () => openPresenter());
   $("#btn-research-to-slides")?.addEventListener("click", () =>
     generateSlidesFromConversation("research").catch(() => {})

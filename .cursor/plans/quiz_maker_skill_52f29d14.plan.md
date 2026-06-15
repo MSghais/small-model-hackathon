@@ -4,19 +4,19 @@ overview: "Sprint 1 (teaching loop): ship a quiz-maker skill mirroring education
 todos:
   - id: quiz-skill-backend
     content: Create quiz-maker skill, QuizOutline models, prompts, create_quiz tool, iter_quiz_maker runner
-    status: pending
+    status: completed
   - id: quiz-tests
     content: "Agent tests: JSON repair, fallback_quiz, docx/html smoke"
-    status: pending
+    status: completed
   - id: quiz-classic-tab
     content: Add tabs/quiz_maker.py with source modes + wire Classic Gradio tab
-    status: pending
+    status: completed
   - id: quiz-studio-ui
     content: Add api_generate_quiz + Studio Quiz sidebar view with DOCX/HTML downloads
-    status: pending
+    status: completed
   - id: quiz-teaching-cta
     content: "Slides view CTA: Create quiz on this topic (pre-fill topic/grade/session)"
-    status: pending
+    status: completed
 isProject: false
 ---
 

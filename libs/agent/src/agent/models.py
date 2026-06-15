@@ -17,6 +17,32 @@ class SlideOutline(BaseModel):
     slides: list[SlideSpec] = Field(min_length=1)
 
 
+class QuizQuestion(BaseModel):
+    prompt: str
+    choices: list[str] = Field(min_length=4, max_length=4)
+    correct_index: int = Field(ge=0, le=3)
+    explanation: str = ""
+
+
+class QuizOutline(BaseModel):
+    title: str
+    instructions: str = ""
+    questions: list[QuizQuestion] = Field(min_length=3, max_length=12)
+
+
+class QuizMakerInput(BaseModel):
+    topic: str
+    grade: str
+    question_count: int = Field(ge=5, le=10, default=5)
+    source_mode: Literal["none", "web", "rag"] = "none"
+    search_workflow: Literal["two_step", "auto"] = "two_step"
+    urls: list[str] = Field(default_factory=list)
+    files: list[Path] = Field(default_factory=list)
+    session_id: str | None = None
+    doc_ids: list[str] = Field(default_factory=list)
+    conversation_context: str = ""
+
+
 class EducationPptxInput(BaseModel):
     topic: str
     grade: str

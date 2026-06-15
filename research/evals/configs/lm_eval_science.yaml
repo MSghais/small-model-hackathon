@@ -9,8 +9,8 @@ tasks:
   - openbookqa
   - arc_challenge
 
-num_fewshot: 0
-limit: 100
+num_fewshot: null   # per-task canonical fewshot (sciq/openbookqa/arc 0-shot)
+limit: 200           # larger sample -> tighter stderr for gate decisions
 seed: 42
 batch_size: auto
 device: auto

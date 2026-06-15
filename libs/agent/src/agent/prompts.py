@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agent.models import EducationPptxInput, SlideOutline, SlideSpec
+from agent.models import EducationPptxInput, QuizMakerInput, QuizOutline, QuizQuestion, SlideOutline, SlideSpec
 
 
 def education_outline_system(skill_body: str) -> str:
@@ -182,3 +182,151 @@ def outline_json_example(slide_count: int) -> str:
         ],
     }
     return json.dumps(example, indent=2)
+
+
+def quiz_max_tokens(question_count: int) -> int:
+    count = max(3, min(int(question_count), 12))
+    return min(1536, 120 + count * 180)
+
+
+def quiz_outline_system(skill_body: str) -> str:
+    return f"""You are an expert teacher writing multiple-choice quizzes.
+Follow the skill workflow below and output ONLY valid JSON (no markdown fences).
+
+Skill workflow:
+{skill_body}
+
+Required JSON shape:
+{{
+  "title": "Photosynthesis Quiz — Grade 6",
+  "instructions": "Read each question. Circle the best answer.",
+  "questions": [
+    {{
+      "prompt": "What do plants use to make food?",
+      "choices": ["Sunlight", "Rocks", "Plastic", "Metal"],
+      "correct_index": 0,
+      "explanation": "Plants use sunlight in photosynthesis."
+    }}
+  ]
+}}
+
+Rules:
+- Each question has exactly 4 choices; correct_index is 0-3.
+- Grade-appropriate vocabulary and plausible distractors.
+- Output compact JSON only — no preamble, no markdown fences.
+- When source excerpts are provided, ground questions in those sources.
+"""
+
+
+def quiz_outline_user(req: QuizMakerInput, *, source_context: str = "") -> str:
+    base = (
+        f"Topic: {req.topic}\n"
+        f"Grade level: {req.grade}\n"
+        f"Number of questions: {req.question_count}\n"
+    )
+    if source_context.strip():
+        base += (
+            "\nUse the following retrieved source excerpts as factual grounding. "
+            "Prefer these over general knowledge when they apply.\n\n"
+            f"{source_context}\n"
+        )
+    if req.conversation_context.strip():
+        base += (
+            "\nBase the quiz on this conversation transcript when relevant.\n\n"
+            f"{req.conversation_context.strip()}\n"
+        )
+    return base + "\nReturn JSON only."
+
+
+def quiz_outline_repair(
+    invalid_output: str,
+    error: str,
+    *,
+    expected_questions: int | None = None,
+) -> str:
+    count_line = ""
+    if expected_questions is not None:
+        count_line = f"\nYou must include exactly {expected_questions} items in the questions array.\n"
+    return (
+        "The previous response was invalid JSON or did not match the QuizOutline schema.\n"
+        f"Validation error: {error}\n"
+        f"{count_line}"
+        f"Previous output:\n{invalid_output}\n\n"
+        "Return corrected JSON only, no explanation."
+    )
+
+
+def quiz_outline_retry_user(req: QuizMakerInput, *, example_json: str) -> str:
+    return (
+        f"Topic: {req.topic}\n"
+        f"Grade level: {req.grade}\n"
+        f"Number of questions: {req.question_count}\n\n"
+        "Your previous response was empty or invalid. "
+        "Write real quiz content for the topic. "
+        "Return ONLY valid JSON matching this structure:\n"
+        f"{example_json}"
+    )
+
+
+def quiz_json_example(question_count: int) -> str:
+    example = {
+        "title": "Example Quiz",
+        "instructions": "Circle the best answer for each question.",
+        "questions": [
+            {
+                "prompt": f"Question {i}?",
+                "choices": ["Correct answer", "Distractor A", "Distractor B", "Distractor C"],
+                "correct_index": 0,
+                "explanation": "Brief teacher note.",
+            }
+            for i in range(1, question_count + 1)
+        ],
+    }
+    return json.dumps(example, indent=2)
+
+
+def fallback_quiz(req: QuizMakerInput) -> QuizOutline:
+    """Deterministic quiz when the model returns empty or unparseable JSON."""
+    topic = req.topic.strip() or "Lesson"
+    grade = req.grade
+    n = req.question_count
+    questions: list[QuizQuestion] = []
+    for i in range(1, n + 1):
+        questions.append(
+            QuizQuestion(
+                prompt=f"What is an important idea about {topic} (question {i})?",
+                choices=[
+                    f"A key fact about {topic}",
+                    "An unrelated detail",
+                    "A common misconception",
+                    "None of these",
+                ],
+                correct_index=0,
+                explanation="Template question — edit using your lesson sources.",
+            )
+        )
+    return QuizOutline(
+        title=f"{topic[:1].upper() + topic[1:]} Quiz — Grade {grade}",
+        instructions="Read each question carefully. Circle the best answer.",
+        questions=questions,
+    )
+
+
+def quiz_to_markdown(outline: QuizOutline) -> str:
+    lines = [f"# {outline.title}", ""]
+    if outline.instructions.strip():
+        lines.extend([outline.instructions.strip(), ""])
+    for i, q in enumerate(outline.questions, start=1):
+        lines.append(f"## Question {i}")
+        lines.append("")
+        lines.append(q.prompt)
+        lines.append("")
+        for label, choice in zip("ABCD", q.choices, strict=True):
+            lines.append(f"- **{label}.** {choice}")
+        correct = "ABCD"[q.correct_index]
+        lines.append("")
+        lines.append(f"**Answer:** {correct}")
+        if q.explanation.strip():
+            lines.append(f"*{q.explanation.strip()}*")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"

@@ -53,6 +53,7 @@ from _common import (
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
     apply_defaults,
+    baseline_is_cached,
     build_finetune_cmd,
     build_lm_eval_cmd,
     check_gate_files,
@@ -285,9 +286,15 @@ class GpuWorker:
         baselines_ok: dict[str, bool] = {}
         if not eval_only:
             for profile in profiles:
+                exp = f"{preset}__baseline__{profile}"
+                cfg_path = config_for_profile(profile)
+                if baseline_is_cached(exp, cfg_path):
+                    print(f"baseline {exp}: reusing cached results (config unchanged)")
+                    baselines_ok[profile] = True
+                    continue
                 result = self.lm_eval.local(
-                    experiment_name=f"{preset}__baseline__{profile}",
-                    config=config_for_profile(profile),
+                    experiment_name=exp,
+                    config=cfg_path,
                     preset=preset,
                 )
                 baselines_ok[profile] = bool(result.get("ok"))

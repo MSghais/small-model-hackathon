@@ -39,6 +39,7 @@ from gradio_space.research_helpers import (
 )
 from gradio_space.conversation_helpers import format_conversation_context
 from gradio_space.tabs.education_pptx import SOURCE_MODES, SEARCH_WORKFLOWS, generate_lesson_slides
+from gradio_space.tabs.quiz_maker import generate_quiz
 from gradio_space.tabs.research_mind import (
     ask_question,
     auto_search_ingest,
@@ -642,6 +643,132 @@ def api_generate_slides(
     )
 
 
+def _build_quiz_api_response(
+    last: tuple,
+    *,
+    topic: str,
+    sid: str,
+    rag_notice: str = "",
+) -> dict[str, Any]:
+    (
+        outline_md,
+        preview_html,
+        docx,
+        html_export,
+        processing_log,
+        trace_sum,
+        trace_json,
+        status,
+    ) = last
+
+    if preview_html and "form-error" in preview_html:
+        return err(status or "Generation failed.", status=status, progress_log=processing_log)
+
+    if rag_notice:
+        status = f"{rag_notice}\n\n{status or 'Quiz generated.'}".strip()
+
+    downloads = {
+        "docx": docx,
+        "html": html_export,
+    }
+    trace_str = trace_json if isinstance(trace_json, str) else ""
+    return ok(
+        topic=topic,
+        session_id=sid,
+        outline_md=outline_md,
+        preview_html=preview_html,
+        downloads=downloads,
+        status=status,
+        rag_fallback=bool(rag_notice),
+        progress_log=processing_log,
+        trace_summary=trace_sum,
+        trace_json=trace_str,
+        trace_html=render_trace_details(
+            trace_summary=trace_sum,
+            trace_json=trace_str,
+            progress_log=processing_log,
+        ),
+        elapsed_seconds=_elapsed_seconds_from_log(processing_log),
+        progress=_progress_from_trace(trace_str),
+    )
+
+
+def _run_quiz_generation(**kwargs) -> dict[str, Any]:
+    topic = kwargs.pop("topic")
+    sid = kwargs.pop("sid", "")
+    rag_notice = kwargs.pop("rag_notice", "")
+
+    gen = generate_quiz(topic, **kwargs)
+    last: tuple | None = None
+    for item in gen:
+        last = item
+    if last is None:
+        return err("Generation failed before producing output.")
+    return _build_quiz_api_response(last, topic=topic, sid=sid, rag_notice=rag_notice)
+
+
+def api_generate_quiz(
+    topic: str,
+    grade: str = "6",
+    question_count: int = 5,
+    session_id: str = "",
+    use_rag: bool = True,
+    doc_ids: list[str] | None = None,
+    source_mode: str = "",
+    search_workflow: str = "two_step",
+    urls_text: str = "",
+    selected_urls: list[str] | None = None,
+    file_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    rag_docs = doc_ids or []
+    sid = (session_id or "").strip()
+    if not (source_mode or "").strip() and use_rag and not sid:
+        sid = _pick_session(topic)
+
+    source_label, workflow_label, effective_sid, effective_docs = _resolve_source_labels(
+        source_mode,
+        search_workflow,
+        use_rag,
+        sid,
+        rag_docs,
+    )
+
+    rag_notice = ""
+    if (source_mode or "").strip().lower() == "rag" or (
+        not (source_mode or "").strip() and use_rag
+    ):
+        has_sources = _session_has_rag_sources(sid, rag_docs)
+        if use_rag and not has_sources and source_label == _SOURCE_LABELS["rag"]:
+            rag_notice = (
+                "Cross-Reference Sources is on, but this session has no indexed documents — "
+                "generated from model knowledge only. Ingest sources in Step 1 to enable RAG."
+            )
+            source_label = _SOURCE_LABELS["none"]
+            effective_sid = ""
+            effective_docs = []
+
+    upload_files = file_paths if file_paths else None
+
+    return _run_quiz_generation(
+        topic=topic,
+        sid=sid,
+        rag_notice=rag_notice,
+        grade=grade,
+        question_count=int(question_count),
+        source_mode_label=source_label,
+        search_workflow_label=workflow_label,
+        urls_text=urls_text or "",
+        selected_urls=selected_urls or [],
+        upload_files=upload_files,
+        session_id=effective_sid,
+        doc_ids=effective_docs,
+        workspace_topic=topic,
+        workspace_session=effective_sid,
+        workspace_doc_ids=effective_docs,
+        progress=_NoopProgress(),
+    )
+
+
 def api_generate_slides_from_conversation(
     history: list | None,
     history_kind: str,
@@ -1216,6 +1343,34 @@ def register_studio_apis(server: gr.Server) -> None:
             topic,
             grade,
             slide_count,
+            session_id,
+            use_rag,
+            doc_ids,
+            source_mode,
+            search_workflow,
+            urls_text,
+            selected_urls,
+            file_paths,
+        )
+
+    @server.api(name="generate_quiz")
+    def _generate_quiz(
+        topic: str,
+        grade: str = "6",
+        question_count: int = 5,
+        session_id: str = "",
+        use_rag: bool = True,
+        doc_ids: list[str] | None = None,
+        source_mode: str = "",
+        search_workflow: str = "two_step",
+        urls_text: str = "",
+        selected_urls: list[str] | None = None,
+        file_paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return api_generate_quiz(
+            topic,
+            grade,
+            question_count,
             session_id,
             use_rag,
             doc_ids,

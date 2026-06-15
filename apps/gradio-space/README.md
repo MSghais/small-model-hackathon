@@ -31,6 +31,7 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 - `discover_sources`, `auto_search_ingest`, `ingest_sources`, `ingest_url`, `ingest_files`
 - `research_chat`, `generate_slides` (supports `source_mode`: none / web / rag)
 - `generate_slides_from_conversation` — build a deck from Research, Language lessons, or Chat history
+- `generate_quiz` — printable MCQ worksheet (DOCX + HTML) with optional RAG / web sources
 
 **Voice & coach**
 
@@ -61,8 +62,11 @@ Set `ALLOW_MODEL_SWITCH=true` in `.env` (see [USAGE.md](../../USAGE.md)). The Se
 1. Open `/` — **Small Model Finetuning** project workspace
 2. **Research** — ingest a PDF or URL on your topic → ask 2 RAG questions with citations
 3. Tap **Generate slides from chat** → switch to **Slides** → preview deck → **Present** (fullscreen, arrow keys)
-4. Download **PPTX** and expand **Agent trace**
-5. Optional: **Language lessons** → French voice turn → **Slides from chat** on the same topic
+4. Tap **Create quiz on this topic** → **Quiz** view → generate worksheet → download **DOCX** (answer key included)
+5. Download **PPTX** and expand **Agent trace**
+6. Optional: **Language lessons** → French voice turn → **Slides from chat** on the same topic
+
+Classic UI (`/classic`) adds a **Quiz maker** tab after **Lesson slides** with the same agent pipeline.
 
 ### Language lessons + Cohere stack (voice demo)
 

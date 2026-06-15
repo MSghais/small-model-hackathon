@@ -291,6 +291,31 @@ def primary_metric(task_metrics: dict[str, Any]) -> tuple[str, float] | None:
     return None
 
 
+def baseline_is_cached(experiment_name: str, config_path: str) -> bool:
+    """True if a baseline results.json exists AND its run_meta still matches the
+    profile config's tasks/limit/num_fewshot. Config changes (e.g. new guard
+    tasks or a higher limit) therefore correctly force a fresh baseline."""
+    results = Path(LM_EVAL_OUTPUT) / experiment_name / "results.json"
+    if not results.is_file():
+        return False
+    candidates = [Path(config_path)]
+    if not Path(config_path).is_absolute():
+        candidates += [REPO_ROOT / config_path, Path("/repo") / config_path]
+    cfg_file = next((p for p in candidates if p.is_file()), None)
+    if cfg_file is None:
+        return False
+    try:
+        meta = json.loads(results.read_text()).get("run_meta", {})
+        cfg = yaml.safe_load(cfg_file.read_text()) or {}
+    except Exception:
+        return False
+    return (
+        sorted(meta.get("tasks") or []) == sorted(cfg.get("tasks") or [])
+        and meta.get("limit") == cfg.get("limit")
+        and meta.get("num_fewshot") == cfg.get("num_fewshot", 0)
+    )
+
+
 def evaluate_gate(
     *,
     candidate: dict[str, Any],
@@ -429,6 +454,16 @@ def render_model_card(
     base_tasks = (baseline or {}).get("results", {})
     base_model = (training_payload or {}).get("model") or BASE_MODEL_ID
 
+    # A job is either a single dataset (`dataset`/`format`) or a `mix:` of sources.
+    if job.get("mix"):
+        dataset_desc = " + ".join(
+            f"`{s.get('dataset', '?')}`" for s in job["mix"]
+        )
+        format_desc = "mix"
+    else:
+        dataset_desc = f"`{job.get('dataset', '?')}`"
+        format_desc = job.get("format", "?")
+
     lines = [
         "---",
         "library_name: peft",
@@ -445,7 +480,7 @@ def render_model_card(
         f"# {job['name']}",
         "",
         f"QLoRA adapter for **{job.get('category', 'general')}**, fine-tuned from "
-        f"`{base_model}` on `{job['dataset']}` (format: `{job['format']}`).",
+        f"`{base_model}` on {dataset_desc} (format: `{format_desc}`).",
         "",
         "Trained, evaluated, and gated on [Modal](https://modal.com/docs/guide) via "
         "`research/modal/` (app `slm-finetune-benchmark`).",
@@ -570,16 +605,24 @@ def publish_adapter_files(
 
     from huggingface_hub import HfApi
 
-    repo_id = publish_cfg["hub_repo"]
+    repo_ids = [publish_cfg["hub_repo"], *(publish_cfg.get("mirror_repos") or [])]
     private = publish_cfg.get("private", True)
 
     api = HfApi()
-    api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
-    api.upload_folder(
-        folder_path=str(adapter_path),
-        repo_id=repo_id,
-        repo_type="model",
-        commit_message=f"Publish {job['name']} (gate passed: {gate_result.get('task')})",
-    )
+    uploads = []
+    for repo_id in dict.fromkeys(repo_ids):
+        api.create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
+        api.upload_folder(
+            folder_path=str(adapter_path),
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message=f"Publish {job['name']} (gate passed: {gate_result.get('task')})",
+        )
+        uploads.append({"repo_id": repo_id, "url": f"https://huggingface.co/{repo_id}"})
 
-    return {"published": True, "repo_id": repo_id, "url": f"https://huggingface.co/{repo_id}"}
+    return {
+        "published": True,
+        "repo_id": uploads[0]["repo_id"],
+        "url": uploads[0]["url"],
+        "uploads": uploads,
+    }
