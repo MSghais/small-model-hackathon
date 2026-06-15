@@ -4,19 +4,19 @@ overview: Add the official MiniCPM-V-4.6 GGUF preset from openbmb/MiniCPM-V-4.6-
 todos:
   - id: add-gguf-preset
     content: Add minicpm-v-4.6-gguf preset to models.yaml (openbmb/MiniCPM-V-4.6-gguf) and document in .env.example
-    status: pending
+    status: completed
   - id: runtime-model-state
     content: Add set_runtime_model_key() and make get_active_model_key() runtime-aware in model_loading.py
-    status: pending
+    status: completed
   - id: classic-ui-sync
     content: Wire Settings + Chat dropdowns to set_runtime_model_key; reload on change
-    status: pending
+    status: completed
   - id: studio-api-sync
     content: Add api_set_active_model + studio.js settings dropdown handler; sync debug picker
-    status: pending
+    status: completed
   - id: tests-docs
     content: Test preset parsing + runtime key override; document local switching in USAGE.md
-    status: pending
+    status: in_progress
 isProject: false
 ---
 

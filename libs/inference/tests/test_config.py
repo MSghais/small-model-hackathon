@@ -54,6 +54,24 @@ models:
     assert model.model_file == "override.gguf"
 
 
+def test_minicpm_v_gguf_preset_from_repo(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[3]
+    models_yaml = repo_root / "models.yaml"
+    if not models_yaml.is_file():
+        pytest.skip("repo models.yaml not found")
+
+    monkeypatch.chdir(repo_root)
+    monkeypatch.delenv("ACTIVE_MODEL", raising=False)
+    monkeypatch.delenv("ALLOW_MODEL_SWITCH", raising=False)
+
+    model = load_app_config().get_model("minicpm-v-4.6-gguf")
+
+    assert model.backend == "llama_cpp"
+    assert model.multimodal is True
+    assert model.model_repo == "openbmb/MiniCPM-V-4.6-gguf"
+    assert model.model_file == "MiniCPM-V-4.6-Q4_K_M.gguf"
+
+
 def test_resolve_relative_model_path(tmp_path, monkeypatch):
     local_dir = tmp_path / "gemma_merged_model"
     local_dir.mkdir()

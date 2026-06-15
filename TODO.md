@@ -15,8 +15,8 @@ below is parked for follow-up PRs.
 
 ## 🦙 Llama Champion badge (cheap, high value)
 - [ ] Run the Space on the **llama.cpp / GGUF** backend (`libs/inference/src/inference/llama_cpp.py`).
-- [ ] Confirm MiniCPM5-1B has a GGUF (or convert/quantize one) — keep OpenBMB story intact.
-- [ ] Document the llama.cpp path in README + Space (which `ACTIVE_MODEL` preset).
+- [x] Add `minicpm-v-4.6-gguf` preset (`openbmb/MiniCPM-V-4.6-gguf`) — OpenBMB multimodal on llama.cpp.
+- [ ] Document the llama.cpp path in README + Space (`ACTIVE_MODEL=minicpm-v-4.6-gguf`).
 
 ## 📓 Field Notes badge (cheapest miss — no blog exists yet)
 - [ ] Write a blog post / report on the fine-tuning + Modal pipeline:

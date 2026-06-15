@@ -1,5 +1,6 @@
 import gradio as gr
 
+from gradio_space.model_loading import get_active_model_key, set_runtime_model_key
 from gradio_space.research_helpers import (
     list_session_choices,
     rag_aware_chat,
@@ -29,7 +30,7 @@ def build_chat_tab(workspace: WorkspaceWidgets) -> None:
         "Plain chat or corpus-grounded answers — traces appear in Advanced when RAG is on."
     )
 
-    model_key = _app_config.active_model
+    model_key = get_active_model_key()
 
     with gr.Group():
         gr.Markdown("#### RAG scope (override workspace defaults)")
@@ -57,11 +58,17 @@ def build_chat_tab(workspace: WorkspaceWidgets) -> None:
     if _app_config.allow_model_switch and len(_app_config.models) > 1:
         model_dropdown = gr.Dropdown(
             choices=_app_config.model_choices(),
-            value=_app_config.active_model,
+            value=get_active_model_key(),
             label="Model preset (debug override)",
         )
 
+        def _on_model_change(mkey: str) -> None:
+            set_runtime_model_key(mkey)
+
+        model_dropdown.change(fn=_on_model_change, inputs=model_dropdown)
+
         def _chat(message, history, mkey, use_rag_flag, sid, docs, ws_sid, ws_docs):
+            set_runtime_model_key(mkey)
             sid = resolve_session(sid, ws_sid)
             docs = resolve_doc_ids(docs, ws_docs)
             reply, trace_json, trace_summary = rag_aware_chat(
@@ -83,7 +90,7 @@ def build_chat_tab(workspace: WorkspaceWidgets) -> None:
             examples=[
                 [
                     "What do my ingested sources say about AI agents?",
-                    _app_config.active_model,
+                    get_active_model_key(),
                     True,
                     "",
                     [],
@@ -92,7 +99,7 @@ def build_chat_tab(workspace: WorkspaceWidgets) -> None:
                 ],
                 [
                     "Hello! What can you help me with?",
-                    _app_config.active_model,
+                    get_active_model_key(),
                     False,
                     "",
                     [],

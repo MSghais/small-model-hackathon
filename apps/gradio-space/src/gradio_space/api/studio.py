@@ -26,6 +26,7 @@ from gradio_space.model_loading import (
     get_active_model_key,
     model_status,
     reload_model,
+    select_and_reload_model,
 )
 from gradio_space.research_helpers import (
     list_session_choices,
@@ -873,7 +874,8 @@ def api_model_status() -> dict[str, Any]:
 
 
 def api_model_choices() -> dict[str, Any]:
-    active = _app_config.active
+    key = get_active_model_key()
+    active = _app_config.get_model(key)
     allow_switch = bool(
         _app_config.allow_model_switch and len(_app_config.models) > 1
     )
@@ -881,7 +883,7 @@ def api_model_choices() -> dict[str, Any]:
     if allow_switch:
         choices = [{"key": k, "label": label} for label, k in _app_config.model_choices()]
     return ok(
-        active_model=_app_config.active_model,
+        active_model=key,
         active_label=active.label,
         active_backend=active.backend,
         allow_model_switch=allow_switch,
@@ -889,6 +891,17 @@ def api_model_choices() -> dict[str, Any]:
         voice_stack=_voice_stack_summary(),
         paths=_paths_summary(),
     )
+
+
+def api_set_active_model(model_key: str = "") -> dict[str, Any]:
+    key = (model_key or "").strip() or get_active_model_key()
+    try:
+        status_md = select_and_reload_model(key)
+    except KeyError as exc:
+        return err(str(exc), model_key=key)
+    if status_md.lower().startswith("error") or "failed" in status_md.lower():
+        return err(status_md, status_markdown=status_md, model_key=key)
+    return ok(status_markdown=status_md, model_key=key)
 
 
 def api_reload_model(model_key: str = "") -> dict[str, Any]:
@@ -1210,6 +1223,10 @@ def register_studio_apis(server: gr.Server) -> None:
     @server.api(name="model_choices")
     def _model_choices() -> dict[str, Any]:
         return api_model_choices()
+
+    @server.api(name="set_active_model")
+    def _set_active_model(model_key: str = "") -> dict[str, Any]:
+        return api_set_active_model(model_key)
 
     @server.api(name="reload_model")
     def _reload_model(model_key: str = "") -> dict[str, Any]:
