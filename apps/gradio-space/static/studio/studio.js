@@ -643,6 +643,7 @@ function renderLessonsChat() {
   if (!state.history.length) {
     container.innerHTML =
       '<p class="research-chat-empty">Choose a language, then type, speak, or upload audio to start your lesson.</p>';
+    syncChatToSlidesButtons();
     return;
   }
   const parts = [];
@@ -839,6 +840,7 @@ function renderResearchChat() {
   if (!state.researchChatHistory.length) {
     container.innerHTML =
       '<p class="research-chat-empty">Ingest sources, then ask questions — answers include citations from your library.</p>';
+    syncChatToSlidesButtons();
     return;
   }
   container.innerHTML = state.researchChatHistory
@@ -857,6 +859,7 @@ function renderDebugChat() {
   if (!state.debugChatHistory.length) {
     container.innerHTML =
       '<p class="research-chat-empty">Ask the local model — turn on RAG to ground answers in your library.</p>';
+    syncChatToSlidesButtons();
     return;
   }
   container.innerHTML = state.debugChatHistory
@@ -865,6 +868,7 @@ function renderDebugChat() {
     })
     .join("");
   container.scrollTop = container.scrollHeight;
+  syncChatToSlidesButtons();
 }
 
 function updateResearchRagBadge() {
@@ -1456,6 +1460,7 @@ async function initWorkspace() {
   syncLessonsModeUi();
   renderLessonsChat();
   await refreshDebugDocuments();
+  syncChatToSlidesButtons();
   const recStatus = await callApi("recording_status", []);
   state.useBrowserMic = !recStatus.backend || /unavailable|no capture/i.test(recStatus.message || "");
   syncLayoutOffsets();
@@ -1471,104 +1476,80 @@ async function ingestFiles(files) {
 }
 
 async function generateSlides() {
-  const topic = effectiveTopic($("#lesson-topic").value);
-  const grade = $("#lesson-grade").value;
-  const slideCount = Number($("#slide-count").value);
-  const useRag = Boolean($("#lessons-use-rag")?.checked);
-  const docIds = effectiveDocIds([]);
-  const sourceMode = $("#slide-source-mode")?.value || "";
-  const searchWorkflow = $("#slide-search-workflow")?.value || "two_step";
-  const urlsText = $("#slide-urls-text")?.value.trim() || "";
-  const selectedUrls = getSelectedDiscoveredUrls("#slide-url-choices-list");
+  const params = await collectSlideGenerationParams();
 
   await withRegionLoading(
     $("#slide-canvas"),
     "Generating slides…",
     async () => {
-      const filePaths = [];
-      const slideFiles = $("#slide-source-files")?.files;
-      if (slideFiles?.length) {
-        for (const file of slideFiles) {
-          filePaths.push(await uploadFile(file));
-        }
-      }
-
-      startProgressPanel();
-      const waitTimer = advanceProgressWhileWaiting();
       let data;
       try {
-        data = await callApi("generate_slides", [
-          topic,
-          grade,
-          slideCount,
-          state.workspaceSessionId,
-          useRag,
-          docIds,
-          sourceMode,
-          searchWorkflow,
-          urlsText,
-          selectedUrls,
-          filePaths,
+        data = await runSlideGenerationApi("generate_slides", [
+          params.topic,
+          params.grade,
+          params.slideCount,
+          params.sessionId,
+          params.useRag,
+          params.docIds,
+          params.sourceMode,
+          params.searchWorkflow,
+          params.urlsText,
+          params.selectedUrls,
+          params.filePaths,
         ]);
       } catch (_err) {
         $("#progress-eta").textContent = "Failed";
         throw _err;
-      } finally {
-        clearInterval(waitTimer);
-        if (state.progressTimer) {
-          clearInterval(state.progressTimer);
-          state.progressTimer = null;
-        }
       }
 
-      finishProgressPanel(data);
-      $("#generate-status").textContent = stripMd(data.status || "Slides generated.");
-      const canvasHtml =
-        data.canvas_html ||
-        (data.preview_html ? `<div class="studio-canvas-inner">${data.preview_html}</div>` : "");
-      $("#slide-canvas-content").innerHTML =
-        canvasHtml || '<div class="studio-canvas-empty"><p>Preview unavailable.</p></div>';
+      state.fromConversation = false;
+      renderSlideGenerationResult(data);
+    },
+    {
+      overlayEl: $("#canvas-overlay"),
+      hint: "First run may take several minutes on CPU; use GPU Space or fewer slides for a quick demo.",
+    }
+  );
+}
 
-      const galleryEl = $("#slide-gallery");
-      if (data.gallery_html) {
-        galleryEl.innerHTML = data.gallery_html;
-        galleryEl.classList.remove("hidden");
-      } else if (data.gallery?.length) {
-        galleryEl.innerHTML = data.gallery
-          .map(
-            (path, i) =>
-              `<a class="studio-gallery-item" href="${fileUrl(path)}" target="_blank" rel="noopener"><img src="${fileUrl(path)}" alt="Slide ${i + 1}" loading="lazy" /></a>`
-          )
-          .join("");
-        galleryEl.classList.remove("hidden");
-      } else {
-        galleryEl.classList.add("hidden");
-        galleryEl.innerHTML = "";
+async function generateSlidesFromConversation(kind) {
+  const { history, historyKind } = pickHistory(kind);
+  if (!history?.length) {
+    showError("Start a conversation first.");
+    return;
+  }
+
+  const params = await collectSlideGenerationParams();
+  setWorkspaceView("slides");
+
+  await withRegionLoading(
+    $("#slide-canvas"),
+    "Generating slides from chat…",
+    async () => {
+      let data;
+      try {
+        data = await runSlideGenerationApi("generate_slides_from_conversation", [
+          history,
+          historyKind,
+          params.topic,
+          params.grade,
+          params.slideCount,
+          params.sessionId,
+          params.useRag,
+          params.docIds,
+          params.sourceMode,
+          params.searchWorkflow,
+          params.urlsText,
+          params.selectedUrls,
+          params.filePaths,
+        ]);
+      } catch (_err) {
+        $("#progress-eta").textContent = "Failed";
+        throw _err;
       }
 
-      state.downloads = data.downloads;
-      const dl = $("#downloads");
-      if (data.downloads?.pptx) {
-        dl.classList.remove("hidden");
-        dl.innerHTML = `
-      <a href="${fileUrl(data.downloads.pptx)}" download>PPTX</a>
-      <a href="${fileUrl(data.downloads.docx)}" download>DOCX</a>
-      <a href="${fileUrl(data.downloads.html)}" download>HTML</a>`;
-        $("#btn-export").disabled = false;
-        const exportBtn = $("#btn-export");
-        if (exportBtn) exportBtn.textContent = "Download PPTX";
-        syncLayoutOffsets();
-      }
-
-      const outlineDetails = $("#slide-outline-details");
-      const outlineEl = $("#slide-outline");
-      if (data.outline_md) {
-        outlineEl.innerHTML = renderMarkdownLite(data.outline_md);
-        outlineDetails?.classList.remove("hidden");
-      } else {
-        outlineEl.innerHTML = "";
-        outlineDetails?.classList.add("hidden");
-      }
+      state.fromConversation = true;
+      renderSlideGenerationResult(data, { scrollToCanvas: true, pulsePresent: true });
     },
     {
       overlayEl: $("#canvas-overlay"),
@@ -1863,6 +1844,34 @@ function bindUi() {
   });
 
   $("#btn-generate").addEventListener("click", () => generateSlides().catch(() => {}));
+  $("#btn-present")?.addEventListener("click", () => openPresenter());
+  $("#btn-research-to-slides")?.addEventListener("click", () =>
+    generateSlidesFromConversation("research").catch(() => {})
+  );
+  $("#btn-lessons-to-slides")?.addEventListener("click", () =>
+    generateSlidesFromConversation("voice").catch(() => {})
+  );
+  $("#btn-chat-to-slides")?.addEventListener("click", () =>
+    generateSlidesFromConversation("debug").catch(() => {})
+  );
+  $("#btn-presenter-close")?.addEventListener("click", closePresenter);
+  $("#btn-presenter-backdrop")?.addEventListener("click", closePresenter);
+  $("#btn-presenter-prev")?.addEventListener("click", presenterPrev);
+  $("#btn-presenter-next")?.addEventListener("click", presenterNext);
+  document.addEventListener("keydown", (e) => {
+    const overlay = $("#presenter-overlay");
+    if (!overlay || overlay.classList.contains("hidden")) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closePresenter();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      presenterNext();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      presenterPrev();
+    }
+  });
 
   $("#btn-lessons-send")?.addEventListener("click", () => sendLessonsTurn().catch(() => {}));
   $("#lessons-message")?.addEventListener("keydown", (e) => {

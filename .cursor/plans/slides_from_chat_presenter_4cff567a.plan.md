@@ -10,13 +10,13 @@ todos:
     status: completed
   - id: studio-slide-buttons
     content: Add Generate-slides-from-chat on Research, Language lessons, Chat; extract renderSlideGenerationResult()
-    status: in_progress
+    status: completed
   - id: presenter-mode
     content: Fullscreen presenter overlay (gallery/HTML source, keyboard nav, Present toolbar button)
-    status: pending
+    status: completed
   - id: docs-demo
     content: Update apps/gradio-space/README.md demo script + bump STUDIO_ASSET_VERSION
-    status: pending
+    status: completed
 isProject: false
 ---
 

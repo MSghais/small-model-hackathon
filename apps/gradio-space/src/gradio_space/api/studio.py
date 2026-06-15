@@ -570,7 +570,7 @@ def _run_slide_generation(**kwargs) -> dict[str, Any]:
     sid = kwargs.pop("sid", "")
     rag_notice = kwargs.pop("rag_notice", "")
 
-    gen = generate_lesson_slides(**kwargs)
+    gen = generate_lesson_slides(topic, **kwargs)
     last: tuple | None = None
     for item in gen:
         last = item
