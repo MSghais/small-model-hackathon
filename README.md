@@ -48,6 +48,9 @@ uv run --package gradio-space python -m gradio_space.app
 
 Open [http://localhost:7860](http://localhost:7860).
 
+- **Lesson slides** — topic, grade, slide count → downloadable PowerPoint
+- **Research Agent** — scrape/index sources into MemRAG, then ask questions offline with citations
+
 ### Studio UI (Off Brand track)
 
 The default landing page is a **custom AI Studio workspace** at `/` — not default Gradio chrome. It uses **Gradio 6 Server mode** (`gradio.Server`): Material 3 layout, sidebar + workspace (Research → Slides → Language lessons), and `@server.api` endpoints wired to the same Python backends as Classic.
@@ -57,8 +60,25 @@ The default landing page is a **custom AI Studio workspace** at `/` — not defa
 
 See [apps/gradio-space/README.md](apps/gradio-space/README.md) for API names and a 2-minute judge demo script.
 
-- **Lesson slides** — topic, grade, slide count → downloadable PowerPoint
-- **Research Agent** — scrape/index sources into MemRAG, then ask questions offline with citations
+### Modal + Fine-tuning track (Well-Tuned)
+
+Cloud GPU **train → eval → gate → publish** for a skill-matrix of QLoRA adapters on `openbmb/MiniCPM5-1B` — no local CUDA required. Each job in [`research/modal/experiments.yaml`](research/modal/experiments.yaml) (math, science, coding, reasoning, teaching, …) fine-tunes with [`research/finetune.py`](research/finetune.py), benchmarks with `slm-lm-eval`, gates on per-skill `goals`, and publishes passing adapters to the Hub.
+
+- **Modal (partner track)** — `modal run` / warm GPU worker, Volume artifacts, optional [Modal Notebook](research/notebook/minicpm5-modal-finetune.ipynb)
+- **Well-Tuned badge** — before/after lm-eval per skill + gated Hub publish (`MSGEncrypted/minicpm5-1b-<skill>-lora`)
+
+Full runbook: [`research/modal/README.md`](research/modal/README.md) · agent loop: [`research/modal/SERVER.md`](research/modal/SERVER.md) · local research overview: [`research/USAGE.md`](research/USAGE.md)
+
+```bash
+uv sync --group modal
+modal setup && modal secret create huggingface HF_TOKEN=<token>
+
+modal run research/modal/server_app.py --ping                       # health check
+modal run research/modal/server_app.py --job math-lora --max-steps 20 --no-publish   # cheap smoke
+modal run research/modal/server_app.py --pipeline                   # full sweep: baselines → train → eval → gate → publish
+```
+
+Pull a passing adapter into the Space: `modal volume get slm-finetune math-lora ./models/finetuned/minicpm5-1b-lora`, then set `ACTIVE_MODEL=minicpm5-1b-lesson-lora`.
 
 ## How it works
 
@@ -108,9 +128,15 @@ See [`.env.example`](.env.example) and [`models.yaml`](models.yaml) for model pr
 
 A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `sdk: docker`). See [USAGE.md](USAGE.md).
 
-## Hackathon checklist
+## Hackathon tracks & checklist
 
-- **Track:** Backyard AI — lesson slide builder for a teacher you know
+| Track | What we ship |
+| ----- | ------------ |
+| **Backyard AI** (primary) | Lesson slide builder for a teacher you know — topic + grade → downloadable `.pptx` |
+| **Off Brand** | Custom Studio UI at `/` (Gradio 6 Server mode, not default Gradio chrome) |
+| **Modal** (partner) | GPU `train → eval → gate → publish` on [Modal](https://modal.com) — [`research/modal/`](research/modal/) |
+| **Well-Tuned** (finetuning) | Skill-matrix QLoRA adapters on MiniCPM5-1B, lm-eval gates, Hub publish |
+
 - Space live under build-small-hackathon
 - Demo video: [YouTube](https://www.youtube.com/watch?v=bwtOiZvJ-7k) — real user enters topic → download `.pptx` → show agent trace
 - Social post published
@@ -123,24 +149,8 @@ A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `s
 - **OpenBMB** — `openbmb/MiniCPM5-1B`
 - **Sharing is Caring** — upload traces with `scripts/upload_trace.py`
 - **Off-the-Grid** — local inference only (no cloud LLM API)
-- **Well-Tuned** — per-skill QLoRA adapters trained + gated + published to the Hub via [`research/modal/`](research/modal/) (skill matrix in [`experiments.yaml`](research/modal/experiments.yaml))
-- **Modal** — GPU `train → eval → gate → publish` pipeline on [Modal](https://modal.com), no local CUDA required
-
-## Fine-tuning + Modal tracks
-
-Skill-matrix QLoRA adapters (math, science, coding, reasoning, teaching) fine-tuned on a Modal GPU, benchmarked with `slm-lm-eval`, gated on per-skill `goals`, and published to `MSGEncrypted/minicpm5-1b-<skill>-lora` only if they beat baseline. Fully wired — see [`research/modal/README.md`](research/modal/README.md) / [`SERVER.md`](research/modal/SERVER.md).
-
-```bash
-# Warm GPU worker (already deployed as slm-gpu-worker)
-modal run research/modal/server_app.py --ping                       # health check
-modal run research/modal/server_app.py --job math-lora --max-steps 20 --no-publish   # cheap smoke
-modal run research/modal/server_app.py --pipeline                   # full sweep: baselines → train → eval → gate → publish
-
-# Or one-shot batch app
-modal run research/modal/finetune_app.py --job math-lora --max-steps 20
-```
-
-Pull a passing adapter into the Space: `modal volume get slm-finetune math-lora ./models/finetuned/minicpm5-1b-lora`, then `ACTIVE_MODEL=minicpm5-1b-lesson-lora`.
+- **Well-Tuned** — per-skill QLoRA adapters trained + gated + published via the [Modal + Fine-tuning track](#modal--fine-tuning-track-well-tuned)
+- **Modal** — same pipeline; see [`research/modal/README.md`](research/modal/README.md)
 
 ## Agent trace upload
 
