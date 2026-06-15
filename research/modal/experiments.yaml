@@ -330,6 +330,46 @@ finetune:
         - build-small-hackathon/minicpm5-1b-tool-use-lora
       private: false
 
+  # --- commonsense: everyday-reasoning MCQ (CommonsenseQA train) ---
+  # New vertical. In-distribution MC train (question -> answerKey), same recipe
+  # as science-lora's ARC/OpenBookQA slices, with alpaca + winogrande-style guards.
+  - name: commonsense-lora
+    category: commonsense
+    max_steps: 150
+    mix:
+      - dataset: tau/commonsense_qa     # 5-way everyday-knowledge MCQ, in-distribution
+        format: prompt
+        columns:
+          prompt: question
+          response: answerKey
+        dataset_split: "train[:2000]"
+        max_samples: 2000
+      - dataset: tatsu-lab/alpaca       # general replay: protect piqa/hellaswag guards
+        format: alpaca
+        dataset_split: "train[:600]"
+        max_samples: 600
+    args:
+      lora_r: 16
+      lora_alpha: 32
+      early_stopping_patience: 2
+      val_split: 0.05
+    description: CommonsenseQA MC train + alpaca replay, r=16
+    eval_profile: commonsense
+    goals:
+      task: commonsense_qa
+      min_score: 0.30
+      min_improve: 0.02
+      guard_tasks:
+        - task: piqa
+          max_regress: 0.03
+        - task: hellaswag
+          max_regress: 0.03
+    publish:
+      hub_repo: MSGEncrypted/minicpm5-1b-commonsense-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-commonsense-lora
+      private: false
+
   # --- general instructions baseline: no goals/publish -> local-only adapter ---
   - name: alpaca-lora
     category: instructions
