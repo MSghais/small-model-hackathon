@@ -3,8 +3,9 @@
 
 # Pinned runtime deps (do not pin gradio, spaces, or huggingface_hub — HF preinstalls them)
 accelerate==1.13.0
-torch==2.12.0
-torchvision==0.27.0
+# ZeroGPU supports torch 2.8–2.11 only (not 2.12).
+torch==2.11.0
+torchvision==0.26.0
 transformers==5.10.2
 peft==0.19.1
 # llama-cpp-python omitted — compiles from source on HF (10+ min / timeout).
