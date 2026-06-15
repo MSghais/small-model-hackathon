@@ -26,9 +26,21 @@ function toggleTheme() {
 applyTheme(getPreferredTheme());
 
 function appOrigin() {
-  const { protocol, hostname } = window.location;
-  const secureProto = protocol === "http:" ? "https:" : protocol;
-  return `${secureProto}//${hostname}`;
+  const { protocol, hostname, port } = window.location;
+  if (protocol === "https:") {
+    return window.location.origin;
+  }
+  const isLocal =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]" ||
+    hostname === "0.0.0.0";
+  if (isLocal) {
+    return window.location.origin;
+  }
+  // HF Spaces: TLS terminates at the edge; Gradio client must use https.
+  const portSuffix = port ? `:${port}` : "";
+  return `https://${hostname}${portSuffix}`;
 }
 
 const SLIDE_PIPELINE_STEPS = [
