@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: submission
     content: Run pytest, record demo video, upload trace via scripts/upload_trace.py, submit
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
