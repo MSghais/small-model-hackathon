@@ -434,7 +434,115 @@ body.sidebar-open {
 .field { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; color: var(--secondary); }
 .field-wide { grid-column: 1 / -1; }
 
-.controls-actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
+.controls-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+
+.btn-present-pulse {
+  animation: present-pulse 1.2s ease-in-out 2;
+}
+
+@keyframes present-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(26, 115, 232, 0); }
+}
+
+.presenter-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.presenter-overlay.hidden {
+  display: none;
+}
+
+.presenter-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 12, 16, 0.92);
+}
+
+.presenter-shell {
+  position: relative;
+  z-index: 1;
+  width: min(96vw, 1100px);
+  max-height: 96vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.presenter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #f5f7fa;
+}
+
+.presenter-counter {
+  font-size: 0.9rem;
+  letter-spacing: 0.04em;
+}
+
+.presenter-toolbar-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.presenter-stage {
+  aspect-ratio: 16 / 9;
+  background: #1a1d21;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+.presenter-slide {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.presenter-slide img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.presenter-slide .lesson-slide {
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.presenter-fade {
+  animation: presenter-fade 150ms ease;
+}
+
+@keyframes presenter-fade {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+.presenter-notes {
+  color: #d8dee6;
+  font-size: 0.85rem;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.presenter-notes-text {
+  margin: 0.35rem 0 0;
+  line-height: 1.45;
+}
 
 .slide-demo-tip {
   margin-top: 0.5rem;
