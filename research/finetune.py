@@ -531,6 +531,82 @@ def build_tokenize_fn(tokenizer, fmt, max_len, mask_prompt, keys=None):
     return fn
 
 
+def _source_specs(args) -> list[dict]:
+    """Return the list of dataset source specs to train on.
+
+    With --mix-json, parse the JSON list verbatim. Otherwise synthesize a
+    single source from the top-level --dataset/--format/--*-key args."""
+    if args.mix_json:
+        specs = json.loads(args.mix_json)
+        if not isinstance(specs, list) or not specs:
+            raise SystemExit("--mix-json must be a non-empty JSON list of source specs")
+        return specs
+    return [{
+        "dataset": args.dataset,
+        "format": args.format,
+        "dataset_config": args.dataset_config,
+        "dataset_split": args.dataset_split,
+        "max_samples": args.dataset_max_samples,
+        "columns": {k: v for k, v in {
+            "prompt": args.prompt_key, "response": args.response_key,
+            "instruction": args.instruction_key, "input": args.input_key,
+            "output": args.output_key,
+        }.items() if v},
+    }]
+
+
+def _apply_weight(ds, weight):
+    """Up-sample (weight > 1, with repeats) or sub-sample (weight < 1) a source."""
+    if not weight or weight == 1.0 or len(ds) == 0:
+        return ds
+    target = max(0, int(round(len(ds) * float(weight))))
+    if target == 0:
+        return ds.select([])
+    n = len(ds)
+    return ds.select([i % n for i in range(target)])  # repeats when target > n
+
+
+def build_training_dataset(args, tokenizer):
+    """Load, tokenize, weight and concatenate every source into one dataset.
+
+    Each source carries its own format / columns / split / max_len so a skill
+    dataset can be mixed with a general-data replay slice in one run."""
+    from datasets import concatenate_datasets
+
+    specs = _source_specs(args)
+    multi = len(specs) > 1
+    if multi:
+        print(f"Mixing {len(specs)} dataset source(s):")
+
+    parts = []
+    for i, spec in enumerate(specs):
+        dataset = spec.get("dataset")
+        if not dataset:
+            raise SystemExit(f"mix source #{i} is missing 'dataset'")
+        fmt = spec.get("format", args.format)
+        raw = load_raw_dataset(
+            dataset,
+            config=spec.get("dataset_config"),
+            split=spec.get("dataset_split", "train"),
+            max_samples=spec.get("max_samples"),
+        )
+        raw = raw.shuffle(seed=args.seed)
+        keys = spec.get("columns") or {}
+        max_len = spec.get("max_len", args.max_len)
+        tokenize = build_tokenize_fn(tokenizer, fmt, max_len, args.mask_prompt, keys)
+        tok = raw.map(tokenize, remove_columns=raw.column_names,
+                      desc=f"tokenizing {dataset}")
+        tok = tok.filter(lambda e: len(e["input_ids"]) > 1)
+        tok = _apply_weight(tok, spec.get("weight"))
+        if multi:
+            wnote = f" (weight {spec['weight']})" if spec.get("weight") else ""
+            print(f"  - {dataset} [{fmt}] -> {len(tok)} examples{wnote}")
+        parts.append(tok)
+
+    ds = parts[0] if len(parts) == 1 else concatenate_datasets(parts)
+    return ds.shuffle(seed=args.seed)
+
+
 class CausalCollator:
     """Pads input_ids with pad_token and labels with IGNORE_INDEX."""
     def __init__(self, tokenizer):
@@ -841,7 +917,10 @@ def main():
     print(f"Base model: {args.model}")
     if preset_key:
         print(f"Preset: {preset_key}")
-    print(f"Dataset: {args.dataset}")
+    if args.mix_json:
+        print(f"Dataset mix: {len(json.loads(args.mix_json))} source(s)")
+    else:
+        print(f"Dataset: {args.dataset}")
     print(f"Output: {args.out}")
     print(f"Device: {args.device}")
 
