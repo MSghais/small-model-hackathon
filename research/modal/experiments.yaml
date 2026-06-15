@@ -81,28 +81,63 @@ finetune:
         - build-small-hackathon/minicpm5-1b-teaching-lora
       private: false
 
-  # --- science: factual + explanatory science tutoring ---
-  # 10 local science-tutor chats overfit easily on their own; mix in alpaca
-  # replay + NEFTune + bigger LoRA rank (same recipe as teaching/math/language)
-  # so sciq recall improves instead of regressing from narrow chat-format drift.
+  # --- science: MC-format science Q&A (sciq/ARC/OpenBookQA train) ---
+  # Previous attempt used chat-format tutoring — wrong signal for MC benchmarks.
+  # Model already scores 0.935 sciq; needs in-distribution MC Q→A to push higher.
+  # allenai/sciq train: 11k factual science MC (question→correct_answer).
+  # allenai/ai2_arc ARC-Easy train: elementary/science MC, boosts arc_* guards.
+  # allenai/openbookqa train: fact-based science Q&A, improves openbookqa eval.
+  # Local science-tutor-chat kept at low weight for style/explanation diversity.
+  # MetaMathQA slice protects gsm8k guard (prevented 0.14 regression last run).
+  # Reduced to r=16, no NEFTune: less catastrophic forgetting on small datasets.
   - name: science-lora
     category: science
-    max_steps: 150
+    max_steps: 120
     mix:
-      - dataset: research/data/science-tutor-chat.jsonl
+      - dataset: allenai/sciq           # 11k MC science Q→A (in-distribution with sciq eval)
+        format: prompt
+        columns:
+          prompt: question
+          response: correct_answer
+        dataset_split: "train[:1500]"
+        max_samples: 1500
+      - dataset: allenai/ai2_arc        # elementary + challenge science MC
+        format: prompt
+        dataset_config: ARC-Easy
+        columns:
+          prompt: question
+          response: answerKey
+        dataset_split: "train[:500]"
+        max_samples: 500
+      - dataset: allenai/openbookqa     # fact-based open science Q&A
+        format: prompt
+        columns:
+          prompt: question_stem
+          response: answerKey
+        dataset_split: "train[:400]"
+        max_samples: 400
+      - dataset: research/data/science-tutor-chat.jsonl   # style diversity
         format: chat
-        weight: 16                    # ~10 samples -> ~160 examples
-      - dataset: tatsu-lab/alpaca      # general replay: protect sciq/arc_challenge
+        weight: 4
+      - dataset: meta-math/MetaMathQA   # gsm8k guard protection
+        format: prompt
+        columns:
+          prompt: query
+          response: response
+        dataset_split: "train[:200]"
+        max_samples: 200
+      - dataset: tatsu-lab/alpaca       # general replay: protect hellaswag/piqa/boolq
         format: alpaca
-        dataset_split: "train[:600]"
-        max_samples: 600
+        dataset_split: "train[:400]"
+        max_samples: 400
     args:
-      lora_r: 32
-      lora_alpha: 64
-      neftune_noise_alpha: 5
-      early_stopping_patience: 2   # keep best eval_loss checkpoint, not the last
+      lora_r: 16
+      lora_alpha: 32
+      early_stopping_patience: 3
       val_split: 0.05
-    description: Science tutor Q&A chat + alpaca replay, r=32 + NEFTune
+    description: >
+      sciq + ARC-Easy + OpenBookQA MC train + science-chat style + MetaMathQA
+      guard + alpaca replay. r=16, no NEFTune to avoid gsm8k regression.
     eval_profile: science
     goals:
       task: sciq

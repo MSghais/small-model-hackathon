@@ -72,6 +72,27 @@ profiles:
     tasks:
       - ifeval
 
+  medical:
+    tool: slm-lm-eval
+    claim: Better medical knowledge
+    description: Clinical Q&A — PubMedQA + MedMCQA + MedQA (USMLE) with arc guard.
+    config: lm_eval_medical.yaml
+    tasks:
+      - pubmedqa
+      - medmcqa
+      - medqa_4options
+      - arc_challenge
+
+  multilingual:
+    tool: slm-lm-eval
+    claim: Better multilingual understanding
+    description: Cross-lingual NLI / commonsense / coreference (XNLI, XCOPA, XWinograd).
+    config: lm_eval_multilingual.yaml
+    tasks:
+      - xnli
+      - xcopa
+      - xwinograd
+
   general_slm:
     tool: slm-lm-eval
     claim: General ~1B SLM baseline

@@ -1,0 +1,20 @@
+# Medical profile — clinical Q&A fact recall + reasoning
+# Run: slm-lm-eval --profile medical --preset minicpm5-1b --experiment-name medical-baseline
+
+profile: medical
+claim: Better medical knowledge
+
+tasks:
+  - pubmedqa        # yes/no/maybe over biomedical abstracts (gate task)
+  - medmcqa         # multi-subject medical entrance-exam MCQ
+  - medqa_4options  # USMLE-style 4-option clinical MCQ
+  - arc_challenge   # general-capability guard (catch regression from skill tuning)
+
+num_fewshot: null   # per-task canonical fewshot
+limit: 200          # larger sample -> tighter stderr for gate decisions
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval
