@@ -35,6 +35,9 @@ See **[USAGE.md](USAGE.md)** for local run, Gradio SDK / ZeroGPU Space deploymen
 
 **X post:** [https://x.com/MSG_Encrypted/status/2066570320861921748](https://x.com/MSG_Encrypted/status/2066570320861921748)
 
+
+**Github:** [https://github.com/MSghais/small-model-hackathon/](https://github.com/MSghais/small-model-hackathon/)
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/)
