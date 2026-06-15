@@ -30,6 +30,51 @@ models:
     assert config.get_model("demo").model_repo == "org/model-GGUF"
 
 
+def test_allow_model_switch_defaults_true_without_env(tmp_path, monkeypatch):
+    presets = tmp_path / "models.yaml"
+    presets.write_text(
+        """
+defaults:
+  active_model: demo
+models:
+  demo:
+    label: Demo preset
+    backend: llama_cpp
+    model_repo: org/model-GGUF
+    model_file: demo.gguf
+"""
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ALLOW_MODEL_SWITCH", raising=False)
+
+    config = load_app_config()
+
+    assert config.allow_model_switch is True
+
+
+def test_allow_model_switch_env_false_overrides(tmp_path, monkeypatch):
+    presets = tmp_path / "models.yaml"
+    presets.write_text(
+        """
+defaults:
+  active_model: demo
+  allow_model_switch: true
+models:
+  demo:
+    label: Demo preset
+    backend: llama_cpp
+    model_repo: org/model-GGUF
+    model_file: demo.gguf
+"""
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ALLOW_MODEL_SWITCH", "false")
+
+    config = load_app_config()
+
+    assert config.allow_model_switch is False
+
+
 def test_legacy_env_overrides_active_preset(tmp_path, monkeypatch):
     presets = tmp_path / "models.yaml"
     presets.write_text(

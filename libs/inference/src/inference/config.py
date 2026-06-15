@@ -74,7 +74,7 @@ class AppConfig:
 
     active_model: str
     models: dict[str, ModelConfig]
-    allow_model_switch: bool = False
+    allow_model_switch: bool = True
     model_cache_dir: str | None = None
     presets_path: Path | None = None
 
@@ -238,7 +238,7 @@ def load_app_config() -> AppConfig:
 
     allow_model_switch = os.environ.get("ALLOW_MODEL_SWITCH")
     if allow_model_switch is None:
-        allow_switch = bool(defaults.get("allow_model_switch", False))
+        allow_switch = bool(defaults.get("allow_model_switch", True))
     else:
         allow_switch = allow_model_switch.lower() in {"1", "true", "yes"}
 
