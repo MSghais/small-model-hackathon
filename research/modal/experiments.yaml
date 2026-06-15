@@ -190,3 +190,44 @@ finetune:
     max_samples: 200
     description: General instruction tuning baseline (Hub, local-only)
     eval_profile: instructions
+
+  # --- language lessons: FR/AR TeacherVoice coach (Cohere-free stack) ---
+  - name: language-lesson-lora
+    category: language
+    max_steps: 200
+    mix:
+      - dataset: research/data/language-lesson-fr.jsonl
+        format: chat
+        weight: 12
+      - dataset: research/data/language-lesson-ar.jsonl
+        format: chat
+        weight: 12
+      - dataset: research/data/science-tutor-chat.jsonl
+        format: chat
+        weight: 4
+      - dataset: tatsu-lab/alpaca
+        format: alpaca
+        dataset_split: "train[:400]"
+        max_samples: 400
+        weight: 1
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+      early_stopping_patience: 2
+      val_split: 0.05
+    description: >
+      FR/AR TeacherVoice LoRA from language-lesson-fr/ar.jsonl (Hub-built via
+      build_language_lesson_chat.py) + English replay
+    eval_profile: understanding
+    goals:
+      task: boolq
+      min_improve: 0.0
+      guard_tasks:
+        - task: hellaswag
+          max_regress: 0.03
+    publish:
+      hub_repo: MSGEncrypted/minicpm5-1b-language-lesson-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-language-lesson-lora
+      private: false
