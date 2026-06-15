@@ -311,6 +311,25 @@ def evaluate_gate(
     }
 
 
+def pull_artifacts(job_name: str, exp_name: str, dest: str = "models/finetuned") -> None:
+    """Download an adapter and its lm-eval results from the `slm-finetune` Volume (run locally)."""
+    import subprocess
+
+    local_dir = f"{dest}/{job_name}"
+    print(f"--- pulling {job_name} -> {local_dir} ---")
+    subprocess.run(
+        ["modal", "volume", "get", "slm-finetune", job_name, local_dir, "--force"],
+        check=False,
+    )
+
+    results_dir = f"results/lm_eval/{exp_name}"
+    print(f"--- pulling {results_dir} ---")
+    subprocess.run(
+        ["modal", "volume", "get", "slm-finetune", results_dir, results_dir, "--force"],
+        check=False,
+    )
+
+
 def check_gate_files(
     *,
     candidate_results_path: str,

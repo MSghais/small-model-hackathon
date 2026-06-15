@@ -50,6 +50,7 @@ from _common import (
     load_experiments,
     prepare_jobs,
     publish_adapter_files,
+    pull_artifacts,
     reload_volumes,
     repo_env,
 )
@@ -202,23 +203,6 @@ def _print_summary(rows: list[dict[str, Any]]) -> None:
         )
 
 
-def _pull_artifacts(job_name: str, exp_name: str, dest: str = "models/finetuned") -> None:
-    """Download an adapter and its lm-eval results from the `slm-finetune` Volume."""
-    local_dir = f"{dest}/{job_name}"
-    print(f"--- pulling {job_name} -> {local_dir} ---")
-    subprocess.run(
-        ["modal", "volume", "get", "slm-finetune", job_name, local_dir, "--force"],
-        check=False,
-    )
-
-    results_dir = f"results/lm_eval/{exp_name}"
-    print(f"--- pulling {results_dir} ---")
-    subprocess.run(
-        ["modal", "volume", "get", "slm-finetune", results_dir, results_dir, "--force"],
-        check=False,
-    )
-
-
 @app.local_entrypoint()
 def main(
     train: bool = True,
@@ -333,7 +317,7 @@ def main(
         summary.append(row)
 
         if pull:
-            _pull_artifacts(job_name, exp_name)
+            pull_artifacts(job_name, exp_name)
 
     _print_summary(summary)
 
@@ -380,4 +364,4 @@ def pull(job: str | None = None, category: str | None = None, dest: str = "model
 
     for j in prepared:
         profile = j.get("eval_profile", "compare_study")
-        _pull_artifacts(j["name"], f"{j['name']}__{profile}", dest)
+        pull_artifacts(j["name"], f"{j['name']}__{profile}", dest)
