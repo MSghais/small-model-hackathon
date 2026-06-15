@@ -75,7 +75,12 @@ image = (
         ],
     )
     .run_commands(
-        "cd /repo && uv sync --frozen --group finetune --group lm-eval --no-dev"
+        "cd /repo && uv sync --frozen --group finetune --group lm-eval --no-dev",
+        # lm-eval's ifeval task (instructions profile) needs these, declared via
+        # the lm-eval[ifeval] extra but not activated into the project venv by the
+        # frozen group sync. Install the lock-pinned versions into /repo/.venv so
+        # `uv run slm-lm-eval` can import them.
+        "cd /repo && uv pip install langdetect==1.0.9 immutabledict==4.3.1",
     )
 )
 
