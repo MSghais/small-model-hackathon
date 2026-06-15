@@ -4,19 +4,19 @@ overview: Rename remaining "Debug" user-facing labels to "Chat", then polish Stu
 todos:
   - id: chat-labels
     content: "Update user-facing strings: Chat panel header, Agent trace summaries, Classic tab label in index.html + app.py"
-    status: in_progress
+    status: completed
   - id: cache-bust-deploy
     content: Add static asset version query param and redeploy HF Space so sidebar Chat is visible
-    status: pending
+    status: completed
   - id: ux-polish
     content: Export button clarity, honest slide loading hints, clear debug chat on new session
-    status: pending
+    status: completed
   - id: chat-view-css
     content: Polish full-page Chat view layout (centered/wider card)
-    status: pending
+    status: completed
   - id: submission
     content: Run pytest, record demo video, upload trace via scripts/upload_trace.py, submit
-    status: pending
+    status: in_progress
 isProject: false
 ---
 
