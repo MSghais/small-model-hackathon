@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +52,17 @@ _METRIC_PRIORITY = (
     "f1,none",
     "bleu,none",
 )
+
+# lm-eval tasks that execute model-generated code (pass@k). lm-eval refuses to
+# run them unless confirm_run_unsafe_code=True, and the HF `evaluate` code_eval
+# metric additionally requires HF_ALLOW_CODE_EVAL=1.
+_CODE_EXEC_TASK_PREFIXES = ("humaneval", "mbpp")
+
+
+def _requires_code_execution(tasks: list[str], override: bool | None) -> bool:
+    if override is not None:
+        return bool(override)
+    return any(str(t).lower().startswith(_CODE_EXEC_TASK_PREFIXES) for t in tasks)
 
 
 def parse_args() -> argparse.Namespace:
