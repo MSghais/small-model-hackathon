@@ -43,7 +43,7 @@ for _candidate in (Path(__file__).resolve().parent, Path("/repo/research/modal")
     if _candidate.is_dir() and str(_candidate) not in sys.path:
         sys.path.insert(0, str(_candidate))
 
-from _common import (
+from _common import (  # noqa: E402
     BASE_MODEL_ID,
     DEFAULT_GPU,
     DEFAULT_KEEPALIVE_HOURS,
