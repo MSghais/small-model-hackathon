@@ -58,7 +58,7 @@ hf_secret = modal.Secret.from_name("huggingface")
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "build-essential")
-    .pip_install("uv", "pyyaml")
+    .pip_install("uv", "pyyaml", "huggingface_hub")
     .add_local_dir(
         str(REPO_ROOT),
         remote_path="/repo",
