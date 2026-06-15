@@ -4,13 +4,29 @@ from inference.factory import get_backend, reset_backend
 from inference.response_clean import strip_reasoning_output
 
 _app_config = get_app_config()
+_runtime_model_key: str | None = None
 _current_model_key: str | None = None
 _load_state: dict[str, bool] = {}
 _load_errors: dict[str, str] = {}
 
 
 def get_active_model_key() -> str:
-    return _app_config.active_model
+    return _runtime_model_key or _app_config.active_model
+
+
+def set_runtime_model_key(key: str) -> str:
+    """Pin the active preset for all tabs until process restart."""
+    global _runtime_model_key, _current_model_key
+
+    model = get_model_config(key)
+    if key != get_active_model_key():
+        reset_backend()
+        _current_model_key = None
+        if _runtime_model_key:
+            _load_state.pop(_runtime_model_key, None)
+            _load_errors.pop(_runtime_model_key, None)
+    _runtime_model_key = key
+    return model.label
 
 
 def ensure_model_loaded(model_key: str) -> str | None:
@@ -53,7 +69,7 @@ def runtime_device_hint(model_key: str) -> str:
 
 
 def warmup(model_key: str | None = None) -> str:
-    key = model_key or _app_config.active_model
+    key = model_key or get_active_model_key()
     model = get_model_config(key)
 
     if _load_state.get(key):
@@ -80,7 +96,8 @@ def reload_model(model_key: str) -> str:
     """Clear cached backend and reload weights for settings panel."""
     global _current_model_key
 
-    key = model_key or _app_config.active_model
+    key = model_key or get_active_model_key()
+    set_runtime_model_key(key)
     reset_backend()
     _current_model_key = None
     _load_state.pop(key, None)
@@ -89,6 +106,11 @@ def reload_model(model_key: str) -> str:
     if error:
         return error
     return warmup(key)
+
+
+def select_and_reload_model(model_key: str) -> str:
+    """Switch runtime preset and load weights (Settings dropdown)."""
+    return reload_model(model_key)
 
 
 def preload_active_model() -> str:
@@ -106,7 +128,16 @@ def preload_active_model() -> str:
 
 def model_status(model_key: str) -> str:
     model = get_model_config(model_key)
-    return f"**{model.label}**\n\n- Backend: `{model.backend}`\n- {warmup(model_key)}"
+    notes = ""
+    if model.backend == "llama_cpp" and model.multimodal:
+        notes = (
+            "\n- Note: text-only on llama.cpp; use transformers preset for image/video input."
+        )
+    return (
+        f"**{model.label}**\n\n"
+        f"- Backend: `{model.backend}`\n"
+        f"- {warmup(model_key)}{notes}"
+    )
 
 
 def _history_to_messages(history: list) -> list[dict[str, str]]:
