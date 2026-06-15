@@ -1,30 +1,128 @@
-# Dataset sweep matrix for Modal finetune + lm-eval pipeline.
-# Smoke limits keep hackathon runs affordable; bump max_steps / limit for full runs.
+# Skill matrix for the Modal finetune + lm-eval + publish pipeline.
+#
+# Each entry trains one QLoRA adapter for a skill/category, evaluates it
+# against the matching slm-lm-eval profile (vs. a per-profile baseline),
+# checks the result against `goals`, and — only if the gate passes —
+# publishes the adapter to `publish.hub_repo` on the Hugging Face Hub.
+#
+# Smoke limits (max_steps, max_samples, eval `limit` in the profile configs)
+# keep hackathon runs affordable; bump them for full runs.
+#
+# Workflows (see modal/README.md):
+#   modal run research/modal/finetune_app.py                    # full sweep: baselines -> train -> eval -> gate -> publish -> pull
+#   modal run research/modal/finetune_app.py --job math-lora     # one skill
+#   modal run research/modal/finetune_app.py --category math     # one category
+#   modal run research/modal/finetune_app.py --eval-only --job math-lora
+#   modal run research/modal/finetune_app.py --no-publish        # train+eval, skip Hub push
+#   modal run research/modal/finetune_app.py::publish_only --job math-lora
+#   modal run research/modal/finetune_app.py::pull --category math
 
 defaults:
   preset: minicpm5-1b
-  mode: lora
+  mode: qlora
+  gpu: A10G          # QLoRA fits on T4 too; override per job with `gpu: T4` for cheaper runs
   max_steps: 100
-  lm_eval_config: research/evals/configs/lm_eval_smoke.yaml
-  baseline_config: research/evals/configs/lm_eval_compare_study.yaml
+  # Replace with your Hugging Face username/org before publishing.
+  hub_org: your-hf-username
 
 finetune:
-  - name: lesson-lora
+  # --- teaching: lesson-planning agent chat data (Well-Tuned primary) ---
+  - name: teaching-lora
+    category: teaching
     dataset: research/data/education-lesson-chat.jsonl
     format: chat
-    description: Lesson-agent chat data (Well-Tuned primary)
+    description: Lesson-planning agent chat data (local)
+    eval_profile: instructions
+    goals:
+      task: ifeval
+      min_score: 0.15
+      min_improve: 0.02
+    publish:
+      hub_repo: your-hf-username/minicpm5-1b-teaching-lora
+      private: true
 
-  - name: alpaca-lora
-    dataset: tatsu-lab/alpaca
+  # --- science: factual + explanatory science tutoring ---
+  - name: science-lora
+    category: science
+    dataset: research/data/science-tutor-chat.jsonl
+    format: chat
+    description: Science tutor Q&A chat data (local)
+    eval_profile: science
+    goals:
+      task: sciq
+      min_score: 0.50
+      min_improve: 0.02
+      guard_tasks:
+        - task: arc_challenge
+          max_regress: 0.03
+    publish:
+      hub_repo: your-hf-username/minicpm5-1b-science-lora
+      private: true
+
+  # --- math: grade-school word problems + instruction-style math solutions ---
+  - name: math-lora
+    category: math
+    dataset: TIGER-Lab/MathInstruct
     format: alpaca
-    dataset_split: train
-    max_samples: 200
-    description: General instruction tuning (Hub)
+    dataset_split: "train[:1000]"
+    max_samples: 1000
+    description: Math instruction tuning (Hub, instruction/output columns)
+    eval_profile: math
+    goals:
+      task: gsm8k
+      min_score: 0.05
+      min_improve: 0.02
+      guard_tasks:
+        - task: arc_challenge
+          max_regress: 0.03
+    publish:
+      hub_repo: your-hf-username/minicpm5-1b-math-lora
+      private: true
 
-  - name: smoltalk-lora
+  # --- coding: Python instruction-following code generation ---
+  - name: coding-lora
+    category: coding
+    dataset: iamtarun/python_code_instructions_18k_alpaca
+    format: alpaca
+    dataset_split: "train[:1000]"
+    max_samples: 1000
+    description: Python code instruction tuning (Hub, alpaca columns)
+    eval_profile: code
+    goals:
+      task: mbpp
+      min_score: 0.05
+      min_improve: 0.01
+    publish:
+      hub_repo: your-hf-username/minicpm5-1b-coding-lora
+      private: true
+
+  # --- reasoning: multi-turn chat with reasoning-heavy conversations ---
+  - name: reasoning-lora
+    category: reasoning
     dataset: HuggingFaceTB/smoltalk
     format: chat
     dataset_config: all
     dataset_split: "train[:500]"
     max_samples: 500
-    description: Multi-turn chat subset (Hub)
+    description: Multi-turn reasoning/chat subset (Hub)
+    eval_profile: reasoning
+    goals:
+      task: gsm8k
+      min_score: 0.05
+      min_improve: 0.01
+      guard_tasks:
+        - task: hellaswag
+          max_regress: 0.03
+    publish:
+      hub_repo: your-hf-username/minicpm5-1b-reasoning-lora
+      private: true
+
+  # --- general instructions baseline: no goals/publish -> local-only adapter ---
+  - name: alpaca-lora
+    category: instructions
+    dataset: tatsu-lab/alpaca
+    format: alpaca
+    dataset_split: train
+    max_samples: 200
+    description: General instruction tuning baseline (Hub, local-only)
+    eval_profile: instructions

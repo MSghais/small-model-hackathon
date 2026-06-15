@@ -1,0 +1,19 @@
+# Science profile — fact recall + elementary science reasoning
+# Run: slm-lm-eval --profile science --preset minicpm5-1b --experiment-name science-baseline
+
+profile: science
+claim: Better science knowledge
+
+tasks:
+  - sciq
+  - openbookqa
+  - arc_challenge
+
+num_fewshot: 0
+limit: 100
+seed: 42
+batch_size: auto
+device: auto
+dtype: bfloat16
+trust_remote_code: true
+output_dir: results/lm_eval
