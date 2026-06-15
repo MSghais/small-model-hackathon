@@ -5,7 +5,7 @@ from pathlib import Path
 
 import gradio as gr
 from fastapi import Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from gradio import mount_gradio_app
@@ -23,6 +23,15 @@ from gradio_space.ui.theme import get_theme, load_css
 _PKG_ROOT = Path(__file__).resolve().parent
 _APP_ROOT = _PKG_ROOT.parents[1]
 _STATIC_DIR = _APP_ROOT / "static" / "studio"
+_STUDIO_ASSET_VERSION = "20260615"
+_STUDIO_INDEX_HTML = _STATIC_DIR / "index.html"
+
+
+def _studio_index_html() -> str:
+    return _STUDIO_INDEX_HTML.read_text().replace(
+        "{{STUDIO_ASSET_VERSION}}",
+        _STUDIO_ASSET_VERSION,
+    )
 
 
 def _all_allowed_paths() -> list[str]:
@@ -66,13 +75,13 @@ def create_server() -> gr.Server:
         if _wants_classic_ui(request):
             # Relative path keeps huggingface.co/spaces/.../classic on HTTPS (not http hf.space).
             return RedirectResponse(url="classic", status_code=302)
-        return FileResponse(_STATIC_DIR / "index.html")
+        return HTMLResponse(_studio_index_html())
 
     @server.get("/studio")
     async def studio_alias(request: Request):
         if _wants_classic_ui(request):
             return RedirectResponse(url="classic", status_code=302)
-        return FileResponse(_STATIC_DIR / "index.html")
+        return HTMLResponse(_studio_index_html())
 
     demo = build_demo()
     mount_gradio_app(

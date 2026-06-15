@@ -15,7 +15,7 @@
         document.documentElement.dataset.theme = "dark";
     })();
   </script>
-  <link rel="stylesheet" href="/static/studio/studio.css" />
+  <link rel="stylesheet" href="/static/studio/studio.css?v={{STUDIO_ASSET_VERSION}}" />
 </head>
 <body>
   <div id="studio-error" class="studio-banner studio-banner-error hidden" role="alert"></div>
@@ -184,7 +184,7 @@
             </button>
             <p id="research-chat-status" class="status-text"></p>
             <details class="studio-debug-trace" id="research-trace-details">
-              <summary>Debug trace</summary>
+              <summary>Agent trace</summary>
               <div id="research-trace-panel"></div>
             </details>
           </div>
@@ -268,6 +268,7 @@
               Generate Slides
             </button>
           </div>
+          <p class="status-text slide-demo-tip">Demo tip: 3 slides on GPU hardware for a quick run.</p>
           <p id="generate-status" class="status-text">Ready to generate.</p>
           <div id="progress-panel" class="progress-panel">
             <div class="progress-panel-head">
@@ -281,7 +282,7 @@
             <ol id="progress-steps" class="progress-steps"></ol>
             <div id="progress-log" class="progress-log hidden" aria-live="polite"></div>
             <details class="studio-debug-trace" id="slides-trace-details">
-              <summary>Debug trace</summary>
+              <summary>Agent trace</summary>
               <div id="slides-trace-panel"></div>
             </details>
           </div>
@@ -291,7 +292,7 @@
             <div class="region-loading-inner">
               <span class="studio-spinner" aria-hidden="true"></span>
               <p id="canvas-overlay-text" class="region-loading-text">Generating slides…</p>
-              <p class="region-loading-hint canvas-overlay-hint">Local CPU models often take 30–90 seconds.</p>
+              <p class="region-loading-hint canvas-overlay-hint">First run may take several minutes on CPU; use GPU Space or fewer slides for a quick demo.</p>
             </div>
           </div>
           <div id="slide-canvas-content" class="slide-canvas-content">
@@ -417,8 +418,8 @@
     <section class="col col-debug">
       <div class="card card-tall coach-debug-card">
         <div class="coach-card-head">
-          <h2 class="section-label">Chat (debug)</h2>
-          <p class="status-text view-debug-only">Plain chat or corpus-grounded answers — traces appear below when RAG is on.</p>
+          <h2 class="section-label">Chat</h2>
+          <p class="status-text view-debug-only">Ask the local model — turn on RAG to ground answers in your library.</p>
         </div>
         <label class="toggle-row">
           <span>Use ResearchMind RAG</span>
@@ -445,7 +446,7 @@
           </label>
         </div>
         <div id="debug-chat-messages" class="research-chat-messages debug-chat-messages">
-          <p class="research-chat-empty">Send a message to test the active local model.</p>
+          <p class="research-chat-empty">Ask the local model — turn on RAG to ground answers in your library.</p>
         </div>
         <div class="coach-debug-compose">
           <label class="field">
@@ -455,7 +456,7 @@
           <button type="button" id="btn-debug-send" class="btn btn-primary btn-block">Send</button>
         </div>
         <details class="studio-debug-trace" id="debug-trace-details">
-          <summary>Debug trace</summary>
+          <summary>Agent trace</summary>
           <div id="debug-trace-panel"></div>
         </details>
       </div>
@@ -494,6 +495,6 @@
     </aside>
   </div>
 
-  <script type="module" src="/static/studio/studio.js"></script>
+  <script type="module" src="/static/studio/studio.js?v={{STUDIO_ASSET_VERSION}}"></script>
 </body>
 </html>

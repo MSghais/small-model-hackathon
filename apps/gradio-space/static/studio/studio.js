@@ -603,7 +603,7 @@ function renderDebugChat() {
   const container = $("#debug-chat-messages");
   if (!state.debugChatHistory.length) {
     container.innerHTML =
-      '<p class="research-chat-empty">Send a message to test the active local model.</p>';
+      '<p class="research-chat-empty">Ask the local model — turn on RAG to ground answers in your library.</p>';
     return;
   }
   container.innerHTML = state.debugChatHistory
@@ -1283,6 +1283,8 @@ async function generateSlides() {
       <a href="${fileUrl(data.downloads.docx)}" download>DOCX</a>
       <a href="${fileUrl(data.downloads.html)}" download>HTML</a>`;
         $("#btn-export").disabled = false;
+        const exportBtn = $("#btn-export");
+        if (exportBtn) exportBtn.textContent = "Download PPTX";
         syncLayoutOffsets();
       }
 
@@ -1298,7 +1300,7 @@ async function generateSlides() {
     },
     {
       overlayEl: $("#canvas-overlay"),
-      hint: "Local CPU models often take 30–90 seconds.",
+      hint: "First run may take several minutes on CPU; use GPU Space or fewer slides for a quick demo.",
     }
   );
 }
@@ -1649,16 +1651,34 @@ function bindUi() {
   });
 
   $("#btn-export").addEventListener("click", () => {
-    const p = state.downloads?.pptx;
-    if (p) window.open(fileUrl(p), "_blank");
+    const downloads = state.downloads;
+    if (!downloads) return;
+    const menu = [
+      { label: "PPTX", path: downloads.pptx },
+      { label: "DOCX", path: downloads.docx },
+      { label: "HTML", path: downloads.html },
+    ].filter((item) => item.path);
+    if (!menu.length) return;
+    if (menu.length === 1) {
+      window.open(fileUrl(menu[0].path), "_blank");
+      return;
+    }
+    const choice = prompt(
+      `Download format:\n${menu.map((item, i) => `${i + 1}. ${item.label}`).join("\n")}\n\nEnter 1–${menu.length} (default PPTX):`,
+      "1"
+    );
+    const idx = Math.max(0, Math.min(menu.length - 1, parseInt(choice, 10) - 1 || 0));
+    window.open(fileUrl(menu[idx].path), "_blank");
   });
 
   $("#btn-new-session").addEventListener("click", () => {
     state.workspaceSessionId = "";
     state.researchChatHistory = [];
+    state.debugChatHistory = [];
     state.discoveredUrls = [];
     state.selectedUrls = [];
     renderResearchChat();
+    renderDebugChat();
     renderResearchUrlChoices([], []);
     $("#workspace-session").value = "";
     $("#ingest-status").textContent =
