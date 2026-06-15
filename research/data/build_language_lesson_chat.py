@@ -43,6 +43,7 @@ MAX_ASSISTANT_CHARS = 600
 EVAL_HOLDOUT_RATIO = 0.05
 
 DEFAULT_FR_SOURCES = (
+    "FrancophonIA/english_french",
     "angeluriot/french_instruct",
     "CohereLabs/aya_dataset",
     "pinzhenchen/alpaca-cleaned-fr",
@@ -54,6 +55,7 @@ DEFAULT_AR_SOURCES = (
 )
 
 SOURCE_CAPS: dict[str, dict[str, int]] = {
+    "FrancophonIA/english_french": {"fr": 4000},
     "angeluriot/french_instruct": {"fr": 8000},
     "CohereLabs/aya_dataset": {"fr": 3000, "ar": 3000},
     "pinzhenchen/alpaca-cleaned-fr": {"fr": 2000},
@@ -136,6 +138,23 @@ def _load_seeds(path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]
             )
             (fr_rows if key == "fr" else ar_rows).append(row)
     return fr_rows, ar_rows
+
+
+def _iter_english_french(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
+    """EN→FR parallel sentences — user asks in English, coach replies in French."""
+    from datasets import load_dataset
+
+    ds = load_dataset("FrancophonIA/english_french", split="train", streaming=True)
+    count = 0
+    for row in ds:
+        english = (row.get("english") or "").strip()
+        french = (row.get("french") or "").strip()
+        if english and _assistant_ok(french):
+            user = f"Translate the following to French:\n{english}"
+            yield user, french, None
+            count += 1
+            if count >= max_rows:
+                break
 
 
 def _iter_french_instruct(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
@@ -235,6 +254,7 @@ def _iter_instar(max_rows: int) -> Iterator[tuple[str, str, str | None]]:
 
 
 _SOURCE_LOADERS: dict[str, dict[str, Any]] = {
+    "FrancophonIA/english_french": {"fr": _iter_english_french},
     "angeluriot/french_instruct": {"fr": _iter_french_instruct},
     "CohereLabs/aya_dataset": {
         "fr": lambda n: _iter_aya("fra", n),

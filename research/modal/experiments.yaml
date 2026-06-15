@@ -368,9 +368,9 @@ finetune:
     description: >
       FR/AR TeacherVoice LoRA from language-lesson-fr/ar.jsonl (Hub-built via
       build_language_lesson_chat.py) + English replay
-    eval_profile: understanding
+    eval_profile: multilingual
     goals:
-      task: boolq
+      task: xnli
       min_improve: 0.0
       guard_tasks:
         - task: hellaswag
@@ -379,4 +379,48 @@ finetune:
       hub_repo: MSGEncrypted/minicpm5-1b-language-lesson-lora
       mirror_repos:
         - build-small-hackathon/minicpm5-1b-language-lesson-lora
+      private: false
+
+  # --- french: EN→FR translation (FrancophonIA/english_french) + FrenchBench gate ---
+  # 320k parallel sentences from Kaggle englishfrench-fornmt (Hub: FrancophonIA/english_french).
+  # FrenchBench (CroissantLLM) is the official French lm-eval suite; gate on french_bench_xnli.
+  - name: french-lora
+    category: french
+    max_steps: 150
+    mix:
+      - dataset: FrancophonIA/english_french
+        format: prompt
+        columns:
+          prompt: english
+          response: french
+        prompt_prefix: "Translate the following English sentence to French:\n"
+        dataset_split: "train[:3000]"
+        max_samples: 3000
+      - dataset: research/data/language-lesson-fr.jsonl
+        format: chat
+        weight: 6
+      - dataset: tatsu-lab/alpaca
+        format: alpaca
+        dataset_split: "train[:400]"
+        max_samples: 400
+    args:
+      lora_r: 32
+      lora_alpha: 64
+      neftune_noise_alpha: 5
+      early_stopping_patience: 2
+      val_split: 0.05
+    description: >
+      EN→FR translation (FrancophonIA/english_french) + TeacherVoice FR chat +
+      alpaca replay. Evaluated on FrenchBench (french_bench_xnli, belebele_fra_Latn).
+    eval_profile: french
+    goals:
+      task: french_bench_xnli
+      min_improve: 0.01
+      guard_tasks:
+        - task: hellaswag
+          max_regress: 0.03
+    publish:
+      hub_repo: MSGEncrypted/minicpm5-1b-french-lora
+      mirror_repos:
+        - build-small-hackathon/minicpm5-1b-french-lora
       private: false

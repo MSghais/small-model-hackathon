@@ -93,6 +93,17 @@ profiles:
       - xcopa
       - xwinograd
 
+  french:
+    tool: slm-lm-eval
+    claim: Better French understanding and translation
+    description: Official FrenchBench MC tasks + WMT14 EN→FR (CroissantLLM benchmark suite).
+    config: lm_eval_french.yaml
+    tasks:
+      - french_bench_xnli
+      - belebele_fra_Latn
+      - french_bench_boolqa
+      - wmt14-en-fr
+
   general_slm:
     tool: slm-lm-eval
     claim: General ~1B SLM baseline
