@@ -41,9 +41,19 @@ This package uses **Gradio 6 Server mode** (`gradio.Server`):
 
 **Settings & debug**
 
-- `model_status`, `model_choices`, `reload_model`
+- `model_status`, `model_choices`, `set_active_model`, `reload_model`
 - `debug_chat`
 - `save_upload`
+
+### Switching models locally
+
+Set `ALLOW_MODEL_SWITCH=true` in `.env` (see [USAGE.md](../../USAGE.md)). The Settings drawer and Classic **Settings** accordion share one runtime preset — changing it reloads weights and applies to Lesson slides, Research, and voice tabs (not just Chat debug).
+
+| Preset | Backend |
+|--------|---------|
+| `minicpm-v-4.6` | transformers (full VLM) |
+| `minicpm-v-4.6-gguf` | llama.cpp (Llama Champion track) |
+| `minicpm5-1b` | transformers |
 
 ## Demo script (judges) — Language lessons + Cohere stack
 
