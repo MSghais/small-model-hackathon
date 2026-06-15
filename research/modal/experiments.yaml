@@ -8,6 +8,9 @@
 # Smoke limits (max_steps, max_samples, eval `limit` in the profile configs)
 # keep hackathon runs affordable; bump them for full runs.
 #
+# publish.private is `false` so passing adapters land on the Hub publicly: the
+# Well-Tuned badge requires a judge-visible, fine-tuned published model.
+#
 # Workflows (see modal/README.md):
 #   modal run research/modal/finetune_app.py                    # full sweep: baselines -> train -> eval -> gate -> publish -> pull
 #   modal run research/modal/finetune_app.py --job math-lora     # one skill
