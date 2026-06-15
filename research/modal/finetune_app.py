@@ -1,10 +1,21 @@
 """
 Modal GPU pipeline for research/finetune.py + slm-lm-eval.
 
+Skill-matrix pipeline: train -> eval -> gate -> publish.
+Each job in experiments.yaml fine-tunes one QLoRA adapter for a skill
+(math, science, coding, reasoning, teaching, ...), evaluates it against the
+matching slm-lm-eval profile vs. a per-profile baseline, checks the result
+against `goals`, and (only if the gate passes) publishes the adapter to the
+Hugging Face Hub.
+
 Run from repo root:
     modal run research/modal/finetune_app.py
     modal run research/modal/finetune_app.py --eval-only
-    modal run research/modal/finetune_app.py --job lesson-lora --max-steps 20
+    modal run research/modal/finetune_app.py --job math-lora --max-steps 20
+    modal run research/modal/finetune_app.py --category science
+    modal run research/modal/finetune_app.py --no-publish --no-pull
+    modal run research/modal/finetune_app.py::publish_only --job math-lora
+    modal run research/modal/finetune_app.py::pull --category math
 """
 
 from __future__ import annotations
@@ -22,20 +33,23 @@ if str(_modal_dir) not in sys.path:
     sys.path.insert(0, str(_modal_dir))
 
 from _common import (
-    BASELINE_EXPERIMENT,
-    BASELINE_RESULTS_JSON,
+    BASE_MODEL_ID,
     FINETUNE_VOL_PATH,
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
     build_finetune_cmd,
     build_lm_eval_cmd,
+    check_gate_files,
     commit_volumes,
+    config_for_profile,
     finetune_vol,
     hf_cache_vol,
     hf_secret,
     image,
+    job_gpu,
     load_experiments,
     prepare_jobs,
+    publish_adapter_files,
     reload_volumes,
     repo_env,
 )
@@ -132,8 +146,60 @@ def run_lm_eval(
         "summary_md": str(summary_md),
         "comparison_md": str(comparison_md) if comparison_md.is_file() else None,
         "exit_code": proc.returncode,
-        "ok": proc.returncode == 0,
+        "ok": proc.returncode == 0 and results_json.is_file(),
     }
+
+
+@app.function(volumes={FINETUNE_VOL_PATH: finetune_vol}, timeout=300)
+def check_gate(
+    *,
+    candidate_results_path: str,
+    baseline_results_path: str | None,
+    goals: dict[str, Any],
+) -> dict[str, Any]:
+    """Check a candidate's lm-eval results against `goals` (Hub publish gate)."""
+    reload_volumes()
+    return check_gate_files(
+        candidate_results_path=candidate_results_path,
+        baseline_results_path=baseline_results_path,
+        goals=goals,
+    )
+
+
+@app.function(
+    volumes={FINETUNE_VOL_PATH: finetune_vol},
+    secrets=[hf_secret],
+    timeout=900,
+)
+def publish_adapter(
+    *,
+    job: dict[str, Any],
+    adapter_dir: str,
+    gate_result: dict[str, Any],
+    candidate_results_path: str,
+    baseline_results_path: str | None,
+) -> dict[str, Any]:
+    """Write a model card and push the adapter to the Hub, but only if the gate passed."""
+    reload_volumes()
+    return publish_adapter_files(
+        job=job,
+        adapter_dir=adapter_dir,
+        gate_result=gate_result,
+        candidate_results_path=candidate_results_path,
+        baseline_results_path=baseline_results_path,
+    )
+
+
+def _print_summary(rows: list[dict[str, Any]]) -> None:
+    print("\n--- summary ---")
+    print(f"{'skill':<18} {'category':<12} {'gate':<6} {'published':<10} hub_repo")
+    for row in rows:
+        gate = "PASS" if row.get("gate_passed") else "fail"
+        published = "yes" if row.get("published") else "no"
+        print(
+            f"{row['name']:<18} {row.get('category') or '-':<12} {gate:<6} "
+            f"{published:<10} {row.get('hub_repo') or '-'}"
+        )
 
 
 @app.local_entrypoint()
