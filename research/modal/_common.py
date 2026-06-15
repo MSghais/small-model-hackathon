@@ -36,6 +36,8 @@ BASE_MODEL_ID = "openbmb/MiniCPM5-1B"
 
 BASELINE_EXPERIMENT = "minicpm5-1b__modal-baseline"
 BASELINE_RESULTS_JSON = f"{LM_EVAL_OUTPUT}/{BASELINE_EXPERIMENT}/results.json"
+# Shared general-capability profile for publish gates (limit 100; see compare_study).
+GENERAL_EVAL_PROFILE = "compare_study"
 
 # Metric keys to prefer when picking a task's "primary" score, in priority
 # order. Covers lm-eval-harness multiple-choice (acc), generation (exact_match),
@@ -87,6 +89,9 @@ image = (
 COMMON_ENV = {
     "TRUST_REMOTE_CODE": "true",
     "HF_HOME": HF_CACHE_PATH,
+    # Keep hf-xet logs off the HF cache Volume mount so volume.reload() is not
+    # blocked by open log file handles on warm containers.
+    "HF_XET_LOG_DEST": "/tmp/xet-logs/",
     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
 }
 
@@ -100,9 +105,24 @@ def repo_env() -> dict[str, str]:
     return {**os.environ, **COMMON_ENV}
 
 
-def reload_volumes() -> None:
+def _reload_volume_safe(vol: modal.Volume, *, label: str) -> None:
+    """Reload a Volume; skip (with warning) when open files block the operation."""
+    try:
+        vol.reload()
+    except (RuntimeError, modal.exception.ConflictError) as exc:
+        if "open files preventing the operation" in str(exc):
+            print(f"warning: skipping {label} volume reload ({exc})")
+            return
+        raise
+
+
+def reload_finetune_volume() -> None:
     finetune_vol.reload()
-    hf_cache_vol.reload()
+
+
+def reload_volumes() -> None:
+    reload_finetune_volume()
+    _reload_volume_safe(hf_cache_vol, label="hf-cache")
 
 
 def commit_volumes() -> None:
@@ -385,6 +405,46 @@ def job_gpu(job: dict[str, Any]) -> str:
     return job.get("gpu") or DEFAULT_GPU
 
 
+def job_needs_general_gate(job: dict[str, Any]) -> bool:
+    """Publishable jobs run a second general eval and must pass `general_goals`."""
+    return bool(job.get("goals") and job.get("publish"))
+
+
+def general_eval_profile(defaults: dict[str, Any]) -> str:
+    return defaults.get("general_eval_profile", GENERAL_EVAL_PROFILE)
+
+
+def general_goals_for_job(
+    job: dict[str, Any], defaults: dict[str, Any]
+) -> dict[str, Any] | None:
+    if not job_needs_general_gate(job):
+        return None
+    goals = job.get("general_goals") or defaults.get("general_goals")
+    return goals if goals else None
+
+
+def baseline_profiles_for_jobs(
+    jobs: list[dict[str, Any]], defaults: dict[str, Any]
+) -> list[str]:
+    profiles = {j.get("eval_profile", "compare_study") for j in jobs}
+    if any(job_needs_general_gate(j) for j in jobs):
+        profiles.add(general_eval_profile(defaults))
+    return sorted(profiles)
+
+
+def eval_paths(
+    *,
+    job_name: str,
+    preset: str,
+    profile: str,
+) -> tuple[str, str, str]:
+    """Return (candidate_results_path, baseline_results_path, experiment_name)."""
+    exp_name = f"{job_name}__{profile}"
+    candidate = f"{LM_EVAL_OUTPUT}/{exp_name}/results.json"
+    baseline = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+    return candidate, baseline, exp_name
+
+
 def config_for_profile(profile: str) -> str:
     """Map an eval_profiles.yaml profile name to its config path (relative to repo root)."""
     with EVAL_PROFILES_PATH.open() as f:
@@ -462,7 +522,7 @@ def evaluate_gate(
     """Check a candidate's lm-eval results dict against `goals` (Hub publish gate).
 
     `goals` schema:
-        task: <lm-eval task name>       # scored via primary_metric(), same as summary.md
+        task: <lm-eval task name, optional when only guard_tasks are set>
         min_score: <float, optional>    # candidate score must be >= this
         min_improve: <float, optional>  # candidate - baseline must be >= this
         guard_tasks:                     # optional regression guards
@@ -482,9 +542,11 @@ def evaluate_gate(
     checks: list[dict[str, Any]] = []
     passed = True
 
-    task = goals["task"]
-    cand_score = _score(cand_tasks, task)
-    base_score = _score(base_tasks, task)
+    task = goals.get("task")
+    cand_score = base_score = None
+    if task:
+        cand_score = _score(cand_tasks, task)
+        base_score = _score(base_tasks, task)
 
     # Tolerance so a score landing exactly on a threshold (e.g. a clean +0.02
     # improvement stored as 0.0199999996) is not rejected by float epsilon.
@@ -576,6 +638,61 @@ def check_gate_files(
     return evaluate_gate(candidate=candidate, baseline=baseline, goals=goals)
 
 
+def check_publish_gate_files(
+    *,
+    skill_candidate_path: str,
+    skill_baseline_path: str | None,
+    skill_goals: dict[str, Any],
+    general_candidate_path: str | None = None,
+    general_baseline_path: str | None = None,
+    general_goals: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Gate on skill-specific eval plus optional general-capability eval."""
+    skill_gate = check_gate_files(
+        candidate_results_path=skill_candidate_path,
+        baseline_results_path=skill_baseline_path,
+        goals=skill_goals,
+    )
+    general_gate: dict[str, Any] | None = None
+    if general_goals:
+        if not general_candidate_path:
+            general_gate = {
+                "passed": False,
+                "checks": [
+                    {
+                        "check": "general eval results missing",
+                        "value": None,
+                        "ok": False,
+                    }
+                ],
+                "reason": "general candidate results path not provided",
+            }
+        else:
+            general_gate = check_gate_files(
+                candidate_results_path=general_candidate_path,
+                baseline_results_path=general_baseline_path,
+                goals=general_goals,
+            )
+
+    passed = skill_gate.get("passed") and (
+        general_gate is None or general_gate.get("passed")
+    )
+    checks = list(skill_gate.get("checks", []))
+    if general_gate:
+        for check in general_gate.get("checks", []):
+            checks.append({**check, "check": f"general: {check['check']}"})
+
+    return {
+        "passed": passed,
+        "checks": checks,
+        "skill": skill_gate,
+        "general": general_gate,
+        "task": skill_gate.get("task"),
+        "candidate_score": skill_gate.get("candidate_score"),
+        "baseline_score": skill_gate.get("baseline_score"),
+    }
+
+
 def render_model_card(
     *,
     job: dict[str, Any],
@@ -624,16 +741,36 @@ def render_model_card(
         "",
         "## Benchmark gate",
         "",
-        f"- eval profile: `{job.get('eval_profile')}`",
+        f"- skill eval profile: `{job.get('eval_profile')}`",
         f"- gate: {'**PASSED**' if gate_result.get('passed') else '**FAILED**'}",
         "",
-        "| check | value | result |",
-        "| --- | ---: | --- |",
     ]
-    for c in gate_result.get("checks", []):
-        lines.append(f"| {c['check']} | {_fmt(c['value'])} | {'pass' if c['ok'] else 'fail'} |")
-    if not gate_result.get("checks"):
-        lines.append("| — | — | — |")
+
+    def _gate_table(section: dict[str, Any] | None, *, prefix: str = "") -> list[str]:
+        if not section:
+            return []
+        out = [
+            f"### {prefix}checks".strip(),
+            "",
+            "| check | value | result |",
+            "| --- | ---: | --- |",
+        ]
+        for c in section.get("checks", []):
+            out.append(
+                f"| {c['check']} | {_fmt(c['value'])} | {'pass' if c['ok'] else 'fail'} |"
+            )
+        if not section.get("checks"):
+            out.append("| — | — | — |")
+        out.append("")
+        return out
+
+    skill_section = gate_result.get("skill") or gate_result
+    lines.extend(_gate_table(skill_section, prefix="Skill "))
+    if gate_result.get("general"):
+        gen_profile = job.get("general_eval_profile") or GENERAL_EVAL_PROFILE
+        lines.append(f"- general eval profile: `{gen_profile}`")
+        lines.append("")
+        lines.extend(_gate_table(gate_result["general"], prefix="General "))
 
     lines.extend(
         [

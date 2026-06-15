@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from research.modal._common import (  # noqa: E402
+    COMMON_ENV,
     build_finetune_cmd,
     build_lm_eval_cmd,
     prepare_jobs,
@@ -74,3 +75,7 @@ def test_prepare_jobs_filters_and_applies_finetune_overrides():
 def test_split_csv_trims_empty_values():
     assert split_csv(" math, science ,,code ") == ["math", "science", "code"]
     assert split_csv(None) is None
+
+
+def test_common_env_redirects_xet_logs_off_hf_cache_volume():
+    assert COMMON_ENV["HF_XET_LOG_DEST"] == "/tmp/xet-logs/"

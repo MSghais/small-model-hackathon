@@ -56,6 +56,7 @@ from _common import (  # noqa: E402
     split_csv,
     publish_adapter_files,
     pull_artifacts,
+    reload_finetune_volume,
     reload_volumes,
     repo_env,
 )
@@ -118,7 +119,7 @@ def run_lm_eval(
     seed: int | None = None,
 ) -> dict[str, Any]:
     """Run slm-lm-eval on base model or finetuned checkpoint."""
-    reload_volumes()
+    reload_finetune_volume()
 
     if adapter_path:
         adapter_dir = Path(adapter_path)
@@ -185,7 +186,7 @@ def check_gate(
     goals: dict[str, Any],
 ) -> dict[str, Any]:
     """Check a candidate's lm-eval results against `goals` (Hub publish gate)."""
-    reload_volumes()
+    reload_finetune_volume()
     return check_gate_files(
         candidate_results_path=candidate_results_path,
         baseline_results_path=baseline_results_path,
@@ -207,7 +208,7 @@ def publish_adapter(
     baseline_results_path: str | None,
 ) -> dict[str, Any]:
     """Write a model card and push the adapter to the Hub, but only if the gate passed."""
-    reload_volumes()
+    reload_finetune_volume()
     return publish_adapter_files(
         job=job,
         adapter_dir=adapter_dir,
@@ -284,7 +285,7 @@ def main(
         print(json.dumps({"preset": preset, "jobs": plan_rows}, indent=2))
         return
 
-    profile_names = sorted({j.get("eval_profile", "compare_study") for j in prepared})
+    profile_names = baseline_profiles_for_jobs(prepared, defaults)
 
     baselines_ok: dict[str, bool] = {}
     if not eval_only and not skip_baseline:

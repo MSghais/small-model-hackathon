@@ -27,6 +27,22 @@ defaults:
   max_steps: 100
   # Hugging Face namespace for published adapters.
   hub_org: MSGEncrypted
+  # Second eval pass for publish gates: balanced general SLM mix (limit 100).
+  general_eval_profile: compare_study
+  general_goals:
+    guard_tasks:
+      - task: arc_easy
+        max_regress: 0.03
+      - task: arc_challenge
+        max_regress: 0.03
+      - task: hellaswag
+        max_regress: 0.03
+      - task: piqa
+        max_regress: 0.03
+      - task: boolq
+        max_regress: 0.03
+      - task: gsm8k
+        max_regress: 0.03
 
 finetune:
   # --- teaching: lesson-planning agent chat data (Well-Tuned primary) ---

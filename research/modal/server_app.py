@@ -68,6 +68,7 @@ from _common import (  # noqa: E402
     split_csv,
     publish_adapter_files,
     pull_artifacts,
+    reload_finetune_volume,
     reload_volumes,
     repo_env,
 )
@@ -177,7 +178,9 @@ class GpuWorker:
         """Run slm-lm-eval on base model or finetuned checkpoint."""
         # Pick up adapters committed by another container (e.g. a separate
         # eval-only invocation) — the warm container's mount may predate them.
-        reload_volumes()
+        # Only finetune_vol is needed here; reloading hf-cache can fail when
+        # hf-xet keeps log files open on the warm container's HF cache mount.
+        reload_finetune_volume()
 
         if adapter_path:
             adapter_dir = Path(adapter_path)
