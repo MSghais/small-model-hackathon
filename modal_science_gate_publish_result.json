@@ -1,0 +1,55 @@
+{
+  "job": "science-lora",
+  "baseline_results": "/vol/finetuned/results/lm_eval/minicpm5-1b__baseline__science/results.json",
+  "candidate_results": "/vol/finetuned/results/lm_eval/science-lora__science/results.json",
+  "gate": {
+    "passed": false,
+    "checks": [
+      {
+        "check": "sciq >= 0.5",
+        "value": 0.94,
+        "ok": true
+      },
+      {
+        "check": "sciq improve >= 0.02",
+        "value": -0.010000000000000009,
+        "ok": false
+      },
+      {
+        "check": "arc_challenge regress <= 0.03",
+        "value": -0.019999999999999962,
+        "ok": true
+      }
+    ],
+    "task": "sciq",
+    "candidate_score": 0.94,
+    "baseline_score": 0.95
+  },
+  "publish": {
+    "published": false,
+    "reason": "gate failed",
+    "gate": {
+      "passed": false,
+      "checks": [
+        {
+          "check": "sciq >= 0.5",
+          "value": 0.94,
+          "ok": true
+        },
+        {
+          "check": "sciq improve >= 0.02",
+          "value": -0.010000000000000009,
+          "ok": false
+        },
+        {
+          "check": "arc_challenge regress <= 0.03",
+          "value": -0.019999999999999962,
+          "ok": true
+        }
+      ],
+      "task": "sciq",
+      "candidate_score": 0.94,
+      "baseline_score": 0.95
+    }
+  }
+}
