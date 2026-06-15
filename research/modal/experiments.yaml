@@ -5,6 +5,10 @@
 # checks the result against `goals`, and — only if the gate passes —
 # publishes the adapter to `publish.hub_repo` on the Hugging Face Hub.
 #
+# Baselines are always the unfine-tuned base model (`defaults.preset` →
+# models.yaml model_id, e.g. openbmb/MiniCPM5-1B), stored as
+# results/lm_eval/<preset>__baseline__<profile>/ and reused across jobs.
+#
 # Smoke limits (max_steps, max_samples, eval `limit` in the profile configs)
 # keep hackathon runs affordable; bump them for full runs.
 #

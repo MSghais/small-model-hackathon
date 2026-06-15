@@ -432,6 +432,65 @@ def baseline_profiles_for_jobs(
     return sorted(profiles)
 
 
+def baseline_experiment_name(preset: str, profile: str) -> str:
+    """Volume path key for the unfine-tuned base model on a given eval profile."""
+    return f"{preset}__baseline__{profile}"
+
+
+def _load_models_registry() -> dict[str, Any]:
+    path = REPO_ROOT / "models.yaml"
+    if not path.is_file():
+        path = Path("/repo") / "models.yaml"
+    if not path.is_file():
+        return {}
+    with path.open() as f:
+        return yaml.safe_load(f) or {}
+
+
+def resolve_base_model_id(job: dict[str, Any], defaults: dict[str, Any]) -> str:
+    """Hub/path id of the base model this job fine-tunes — used as the eval baseline."""
+    explicit = job.get("model") or (job.get("args") or {}).get("model")
+    if explicit:
+        return str(explicit)
+    preset = job.get("preset", defaults.get("preset", "minicpm5-1b"))
+    entry = (_load_models_registry().get("models") or {}).get(preset) or {}
+    return entry.get("model_id") or BASE_MODEL_ID
+
+
+def discover_cached_baselines(
+    profile_names: list[str],
+    *,
+    preset: str,
+    eval_tasks: list[str] | None = None,
+    eval_limit: int | None = None,
+    eval_num_fewshot: int | None = None,
+    eval_seed: int | None = None,
+) -> dict[str, bool]:
+    """True per profile when base-model baseline results already exist on the Volume."""
+    cached: dict[str, bool] = {}
+    for profile in profile_names:
+        cached[profile] = baseline_is_cached(
+            baseline_experiment_name(preset, profile),
+            config_for_profile(profile),
+            tasks=eval_tasks,
+            limit=eval_limit,
+            num_fewshot=eval_num_fewshot,
+            seed=eval_seed,
+        )
+    return cached
+
+
+def profiles_needing_baseline_run(
+    profile_names: list[str],
+    cached: dict[str, bool],
+    *,
+    skip_baseline: bool,
+) -> list[str]:
+    if skip_baseline:
+        return []
+    return [profile for profile in profile_names if not cached.get(profile)]
+
+
 def eval_paths(
     *,
     job_name: str,
@@ -441,7 +500,7 @@ def eval_paths(
     """Return (candidate_results_path, baseline_results_path, experiment_name)."""
     exp_name = f"{job_name}__{profile}"
     candidate = f"{LM_EVAL_OUTPUT}/{exp_name}/results.json"
-    baseline = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+    baseline = f"{LM_EVAL_OUTPUT}/{baseline_experiment_name(preset, profile)}/results.json"
     return candidate, baseline, exp_name
 
 

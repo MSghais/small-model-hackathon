@@ -44,7 +44,6 @@ for _candidate in (Path(__file__).resolve().parent, Path("/repo/research/modal")
         sys.path.insert(0, str(_candidate))
 
 from _common import (  # noqa: E402
-    BASE_MODEL_ID,
     DEFAULT_GPU,
     DEFAULT_KEEPALIVE_HOURS,
     DEFAULT_SCALEDOWN_WINDOW,
@@ -52,7 +51,7 @@ from _common import (  # noqa: E402
     FINETUNE_VOL_PATH,
     HF_CACHE_PATH,
     LM_EVAL_OUTPUT,
-    baseline_is_cached,
+    baseline_experiment_name,
     baseline_profiles_for_jobs,
     build_finetune_cmd,
     build_lm_eval_cmd,
@@ -60,6 +59,7 @@ from _common import (  # noqa: E402
     check_publish_gate_files,
     commit_volumes,
     config_for_profile,
+    discover_cached_baselines,
     eval_paths,
     finetune_vol,
     general_eval_profile,
@@ -70,6 +70,8 @@ from _common import (  # noqa: E402
     job_plan_rows,
     parse_json_object,
     prepare_jobs,
+    profiles_needing_baseline_run,
+    resolve_base_model_id,
     split_csv,
     publish_adapter_files,
     pull_artifacts,
@@ -338,35 +340,33 @@ class GpuWorker:
         if plan_only:
             return {"preset": preset, "jobs": plan}
 
-        baselines_ok: dict[str, bool] = {}
-        if not eval_only and not skip_baseline:
-            for profile in profile_names:
-                exp = f"{preset}__baseline__{profile}"
-                cfg_path = config_for_profile(profile)
-                if baseline_is_cached(
-                    exp,
-                    cfg_path,
-                    tasks=eval_tasks,
-                    limit=eval_limit,
-                    num_fewshot=eval_num_fewshot,
-                    seed=eval_seed,
-                ):
-                    print(f"baseline {exp}: reusing cached results (config unchanged)")
-                    baselines_ok[profile] = True
-                    continue
-                result = self.lm_eval.local(
-                    experiment_name=exp,
-                    config=cfg_path,
-                    preset=preset,
-                    tasks=eval_tasks,
-                    limit=eval_limit,
-                    num_fewshot=eval_num_fewshot,
-                    batch_size=eval_batch_size,
-                    device=eval_device,
-                    dtype=eval_dtype,
-                    seed=eval_seed,
-                )
-                baselines_ok[profile] = bool(result.get("ok"))
+        baselines_ok = discover_cached_baselines(
+            profile_names,
+            preset=preset,
+            eval_tasks=eval_tasks,
+            eval_limit=eval_limit,
+            eval_num_fewshot=eval_num_fewshot,
+            eval_seed=eval_seed,
+        )
+        missing_baselines = profiles_needing_baseline_run(
+            profile_names, baselines_ok, skip_baseline=skip_baseline
+        )
+        for profile in missing_baselines:
+            exp = baseline_experiment_name(preset, profile)
+            cfg_path = config_for_profile(profile)
+            result = self.lm_eval.local(
+                experiment_name=exp,
+                config=cfg_path,
+                preset=preset,
+                tasks=eval_tasks,
+                limit=eval_limit,
+                num_fewshot=eval_num_fewshot,
+                batch_size=eval_batch_size,
+                device=eval_device,
+                dtype=eval_dtype,
+                seed=eval_seed,
+            )
+            baselines_ok[profile] = bool(result.get("ok"))
 
         train_results: dict[str, dict[str, Any]] = {}
         if train and not eval_only:
@@ -385,14 +385,15 @@ class GpuWorker:
                 else f"{FINETUNE_VOL_PATH}/{job_name}"
             )
 
-            baseline_path = f"{LM_EVAL_OUTPUT}/{preset}__baseline__{profile}/results.json"
+            baseline_path = f"{LM_EVAL_OUTPUT}/{baseline_experiment_name(preset, profile)}/results.json"
             compare_to = baseline_path if baselines_ok.get(profile) else None
+            base_model_id = resolve_base_model_id(j, defaults)
 
             exp_name = f"{job_name}__{profile}"
             eval_result = self.lm_eval.local(
                 experiment_name=exp_name,
                 config=config_for_profile(profile),
-                model_path=BASE_MODEL_ID,
+                model_path=base_model_id,
                 adapter_path=adapter_path,
                 compare_to=compare_to,
                 tasks=eval_tasks,
@@ -410,7 +411,7 @@ class GpuWorker:
             general_baseline_path: str | None = None
             if general_goals:
                 general_baseline_path = (
-                    f"{LM_EVAL_OUTPUT}/{preset}__baseline__{gen_profile}/results.json"
+                    f"{LM_EVAL_OUTPUT}/{baseline_experiment_name(preset, gen_profile)}/results.json"
                 )
                 gen_compare_to = (
                     general_baseline_path if baselines_ok.get(gen_profile) else None
@@ -419,7 +420,7 @@ class GpuWorker:
                 general_eval_result = self.lm_eval.local(
                     experiment_name=gen_exp_name,
                     config=config_for_profile(gen_profile),
-                    model_path=BASE_MODEL_ID,
+                    model_path=base_model_id,
                     adapter_path=adapter_path,
                     compare_to=gen_compare_to,
                     tasks=eval_tasks,

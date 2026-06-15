@@ -7,13 +7,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from research.modal._common import (  # noqa: E402
     COMMON_ENV,
+    baseline_experiment_name,
     baseline_profiles_for_jobs,
     build_finetune_cmd,
     build_lm_eval_cmd,
     check_publish_gate_files,
+    discover_cached_baselines,
     evaluate_gate,
     general_goals_for_job,
     prepare_jobs,
+    profiles_needing_baseline_run,
+    resolve_base_model_id,
     split_csv,
 )
 
@@ -153,6 +157,26 @@ def test_general_goals_only_for_publishable_jobs():
     defaults = {"general_goals": {"guard_tasks": [{"task": "piqa", "max_regress": 0.03}]}}
     assert general_goals_for_job(math_jobs[0], defaults) is not None
     assert general_goals_for_job(local_jobs[0], defaults) is None
+
+
+def test_resolve_base_model_id_from_preset():
+    _, jobs = prepare_jobs(job="math-lora")
+    defaults, job = {}, jobs[0]
+    assert resolve_base_model_id(job, defaults) == "openbmb/MiniCPM5-1B"
+
+
+def test_profiles_needing_baseline_run_respects_skip_and_cache():
+    cached = {"math": True, "compare_study": False}
+    assert profiles_needing_baseline_run(
+        ["math", "compare_study"], cached, skip_baseline=False
+    ) == ["compare_study"]
+    assert profiles_needing_baseline_run(
+        ["math", "compare_study"], cached, skip_baseline=True
+    ) == []
+
+
+def test_baseline_experiment_name_uses_preset():
+    assert baseline_experiment_name("minicpm5-1b", "math") == "minicpm5-1b__baseline__math"
 
 
 def test_common_env_redirects_xet_logs_off_hf_cache_volume():
