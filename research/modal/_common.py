@@ -318,21 +318,26 @@ def evaluate_gate(
 
 def pull_artifacts(job_name: str, exp_name: str, dest: str = "models/finetuned") -> None:
     """Download an adapter and its lm-eval results from the `slm-finetune` Volume (run locally)."""
+    import shutil
     import subprocess
+
+    def _get(remote: str, local: str) -> None:
+        # `modal volume get --force` errors with "[Errno 21] Is a directory" when
+        # the local destination already exists, so clear it for a clean download.
+        shutil.rmtree(local, ignore_errors=True)
+        Path(local).parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["modal", "volume", "get", "slm-finetune", remote, local, "--force"],
+            check=False,
+        )
 
     local_dir = f"{dest}/{job_name}"
     print(f"--- pulling {job_name} -> {local_dir} ---")
-    subprocess.run(
-        ["modal", "volume", "get", "slm-finetune", job_name, local_dir, "--force"],
-        check=False,
-    )
+    _get(job_name, local_dir)
 
     results_dir = f"results/lm_eval/{exp_name}"
     print(f"--- pulling {results_dir} ---")
-    subprocess.run(
-        ["modal", "volume", "get", "slm-finetune", results_dir, results_dir, "--force"],
-        check=False,
-    )
+    _get(results_dir, results_dir)
 
 
 def check_gate_files(
