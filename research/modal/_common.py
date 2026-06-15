@@ -145,7 +145,47 @@ _FINETUNE_FLAGS: dict[str, str] = {
     "lora_dropout": "--lora_dropout",
     "lora_targets": "--lora_targets",
     "val_split": "--val_split",
+    "device": "--device",
 }
+
+
+def split_csv(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or None
+
+
+def parse_json_object(value: str | None, *, flag: str) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{flag} must be a JSON object: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise SystemExit(f"{flag} must be a JSON object")
+    return parsed
+
+
+def job_plan_rows(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compact, printable description of selected jobs and their eval profile."""
+    rows = []
+    for job in jobs:
+        rows.append(
+            {
+                "name": job.get("name"),
+                "category": job.get("category"),
+                "usecase": job.get("usecase") or job.get("use_case"),
+                "profile": job.get("eval_profile", "compare_study"),
+                "dataset": "mix" if job.get("mix") else job.get("dataset"),
+                "mode": job.get("mode", "lora"),
+                "max_steps": job.get("max_steps"),
+                "max_samples": job.get("max_samples"),
+                "publish": bool(job.get("publish")),
+            }
+        )
+    return rows
 
 
 def build_finetune_cmd(job: dict[str, Any], out_dir: str) -> list[str]:
@@ -206,6 +246,13 @@ def build_lm_eval_cmd(
     model_path: str | None = None,
     adapter_path: str | None = None,
     compare_to: str | None = None,
+    tasks: list[str] | None = None,
+    limit: int | None = None,
+    num_fewshot: int | None = None,
+    batch_size: str | None = None,
+    device: str | None = None,
+    dtype: str | None = None,
+    seed: int | None = None,
 ) -> list[str]:
     cmd = [
         "uv",
@@ -228,14 +275,58 @@ def build_lm_eval_cmd(
         cmd.extend(["--adapter", adapter_path])
     if compare_to:
         cmd.extend(["--compare-to", compare_to])
+    if tasks:
+        cmd.append("--tasks")
+        cmd.extend(tasks)
+    if limit is not None:
+        cmd.extend(["--limit", str(int(limit))])
+    if num_fewshot is not None:
+        cmd.extend(["--num-fewshot", str(int(num_fewshot))])
+    if batch_size:
+        cmd.extend(["--batch-size", str(batch_size)])
+    if device:
+        cmd.extend(["--device", str(device)])
+    if dtype:
+        cmd.extend(["--dtype", str(dtype)])
+    if seed is not None:
+        cmd.extend(["--seed", str(int(seed))])
     return cmd
+
+
+def _matches_job_filters(
+    job: dict[str, Any],
+    *,
+    sector: str | None = None,
+    usecase: str | None = None,
+    profiles: list[str] | None = None,
+) -> bool:
+    if sector and job.get("sector", job.get("category")) != sector:
+        return False
+    if usecase:
+        values = {
+            job.get("usecase"),
+            job.get("use_case"),
+            job.get("category"),
+            job.get("name"),
+        }
+        values.update(job.get("tags") or [])
+        if usecase not in values:
+            return False
+    if profiles and job.get("eval_profile", "compare_study") not in profiles:
+        return False
+    return True
 
 
 def prepare_jobs(
     *,
     job: str | None = None,
     category: str | None = None,
+    sector: str | None = None,
+    usecase: str | None = None,
+    profiles: list[str] | None = None,
     max_steps: int | None = None,
+    max_samples: int | None = None,
+    finetune_overrides: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     spec = load_experiments()
     defaults = spec.get("defaults", {})
@@ -251,12 +342,41 @@ def prepare_jobs(
         jobs = [j for j in jobs if j.get("category") == category]
         if not jobs:
             raise SystemExit(f"No jobs with category {category!r}")
+    if sector or usecase or profiles:
+        jobs = [
+            j
+            for j in jobs
+            if _matches_job_filters(
+                j,
+                sector=sector,
+                usecase=usecase,
+                profiles=profiles,
+            )
+        ]
+        if not jobs:
+            filters = {
+                "sector": sector,
+                "usecase": usecase,
+                "profiles": profiles,
+            }
+            raise SystemExit(f"No jobs matched filters: {filters}")
 
     prepared: list[dict[str, Any]] = []
     for raw in jobs:
         merged = apply_defaults(raw, defaults)
         if max_steps is not None:
             merged["max_steps"] = max_steps
+        if max_samples is not None:
+            merged["max_samples"] = max_samples
+        if finetune_overrides:
+            args = {**(merged.get("args") or {})}
+            for key, value in finetune_overrides.items():
+                if key in _FINETUNE_FLAGS:
+                    args[key] = value
+                else:
+                    merged[key] = value
+            if args:
+                merged["args"] = args
         prepared.append(merged)
     return defaults, prepared
 
@@ -291,7 +411,15 @@ def primary_metric(task_metrics: dict[str, Any]) -> tuple[str, float] | None:
     return None
 
 
-def baseline_is_cached(experiment_name: str, config_path: str) -> bool:
+def baseline_is_cached(
+    experiment_name: str,
+    config_path: str,
+    *,
+    tasks: list[str] | None = None,
+    limit: int | None = None,
+    num_fewshot: int | None = None,
+    seed: int | None = None,
+) -> bool:
     """True if a baseline results.json exists AND its run_meta still matches the
     profile config's tasks/limit/num_fewshot. Config changes (e.g. new guard
     tasks or a higher limit) therefore correctly force a fresh baseline."""
@@ -309,11 +437,20 @@ def baseline_is_cached(experiment_name: str, config_path: str) -> bool:
         cfg = yaml.safe_load(cfg_file.read_text()) or {}
     except Exception:
         return False
-    return (
-        sorted(meta.get("tasks") or []) == sorted(cfg.get("tasks") or [])
-        and meta.get("limit") == cfg.get("limit")
-        and meta.get("num_fewshot") == cfg.get("num_fewshot", 0)
+    expected_tasks = tasks or cfg.get("tasks") or []
+    expected_limit = limit if limit is not None else cfg.get("limit")
+    expected_fewshot = (
+        num_fewshot if num_fewshot is not None else cfg.get("num_fewshot", 0)
     )
+    expected_seed = seed if seed is not None else cfg.get("seed")
+    same = (
+        sorted(meta.get("tasks") or []) == sorted(expected_tasks)
+        and meta.get("limit") == expected_limit
+        and meta.get("num_fewshot") == expected_fewshot
+    )
+    if expected_seed is not None:
+        same = same and meta.get("seed") == expected_seed
+    return same
 
 
 def evaluate_gate(
