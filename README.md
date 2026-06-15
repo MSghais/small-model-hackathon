@@ -111,7 +111,24 @@ A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `s
 - **OpenBMB** — `openbmb/MiniCPM5-1B`
 - **Sharing is Caring** — upload traces with `scripts/upload_trace.py`
 - **Off-the-Grid** — local inference only (no cloud LLM API)
-- **Well-Tuned** — optional fine-tuned preset in `models.yaml` (Phase 2)
+- **Well-Tuned** — per-skill QLoRA adapters trained + gated + published to the Hub via [`research/modal/`](research/modal/) (skill matrix in [`experiments.yaml`](research/modal/experiments.yaml))
+- **Modal** — GPU `train → eval → gate → publish` pipeline on [Modal](https://modal.com), no local CUDA required
+
+## Fine-tuning + Modal tracks
+
+Skill-matrix QLoRA adapters (math, science, coding, reasoning, teaching) fine-tuned on a Modal GPU, benchmarked with `slm-lm-eval`, gated on per-skill `goals`, and published to `MSGEncrypted/minicpm5-1b-<skill>-lora` only if they beat baseline. Fully wired — see [`research/modal/README.md`](research/modal/README.md) / [`SERVER.md`](research/modal/SERVER.md).
+
+```bash
+# Warm GPU worker (already deployed as slm-gpu-worker)
+modal run research/modal/server_app.py --ping                       # health check
+modal run research/modal/server_app.py --job math-lora --max-steps 20 --no-publish   # cheap smoke
+modal run research/modal/server_app.py --pipeline                   # full sweep: baselines → train → eval → gate → publish
+
+# Or one-shot batch app
+modal run research/modal/finetune_app.py --job math-lora --max-steps 20
+```
+
+Pull a passing adapter into the Space: `modal volume get slm-finetune math-lora ./models/finetuned/minicpm5-1b-lora`, then `ACTIVE_MODEL=minicpm5-1b-lesson-lora`.
 
 ## Agent trace upload
 

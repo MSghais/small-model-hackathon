@@ -22,8 +22,8 @@ defaults:
   mode: qlora
   gpu: A10G          # QLoRA fits on T4 too; override per job with `gpu: T4` for cheaper runs
   max_steps: 100
-  # Replace with your Hugging Face username/org before publishing.
-  hub_org: your-hf-username
+  # Hugging Face namespace for published adapters.
+  hub_org: MSGEncrypted
 
 finetune:
   # --- teaching: lesson-planning agent chat data (Well-Tuned primary) ---
@@ -38,7 +38,7 @@ finetune:
       min_score: 0.15
       min_improve: 0.02
     publish:
-      hub_repo: your-hf-username/minicpm5-1b-teaching-lora
+      hub_repo: MSGEncrypted/minicpm5-1b-teaching-lora
       private: true
 
   # --- science: factual + explanatory science tutoring ---
@@ -56,7 +56,7 @@ finetune:
         - task: arc_challenge
           max_regress: 0.03
     publish:
-      hub_repo: your-hf-username/minicpm5-1b-science-lora
+      hub_repo: MSGEncrypted/minicpm5-1b-science-lora
       private: true
 
   # --- math: grade-school word problems + instruction-style math solutions ---
@@ -76,7 +76,7 @@ finetune:
         - task: arc_challenge
           max_regress: 0.03
     publish:
-      hub_repo: your-hf-username/minicpm5-1b-math-lora
+      hub_repo: MSGEncrypted/minicpm5-1b-math-lora
       private: true
 
   # --- coding: Python instruction-following code generation ---
@@ -93,7 +93,7 @@ finetune:
       min_score: 0.05
       min_improve: 0.01
     publish:
-      hub_repo: your-hf-username/minicpm5-1b-coding-lora
+      hub_repo: MSGEncrypted/minicpm5-1b-coding-lora
       private: true
 
   # --- reasoning: multi-turn chat with reasoning-heavy conversations ---
@@ -114,7 +114,7 @@ finetune:
         - task: hellaswag
           max_regress: 0.03
     publish:
-      hub_repo: your-hf-username/minicpm5-1b-reasoning-lora
+      hub_repo: MSGEncrypted/minicpm5-1b-reasoning-lora
       private: true
 
   # --- general instructions baseline: no goals/publish -> local-only adapter ---
