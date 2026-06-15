@@ -51,7 +51,9 @@ huggingface-cli upload your-user/minicpm5-1b-lesson-lora \
   ./models/finetuned/minicpm5-1b-lora . --repo-type model
 ```
 
-Full guide (Volumes, Hub deploy, Space): **[modal/README.md](modal/README.md)** · [Modal Volumes docs](https://modal.com/docs/guide/volumes).
+Full guide: **[modal/README.md](modal/README.md)** · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal Notebooks](https://modal.com/docs/guide/notebooks)
+
+Interactive notebook: upload [`research/notebook/minicpm5-modal-finetune.ipynb`](notebook/minicpm5-modal-finetune.ipynb) at [modal.com/notebooks](https://modal.com/notebooks), attach GPU + Volume `slm-finetune` + Secret `huggingface`.
 
 ---
 

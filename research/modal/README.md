@@ -353,15 +353,78 @@ TRUST_REMOTE_CODE=true
 
 ---
 
-## Modal GPU Notebook
+## Modal Notebooks (interactive GPU)
 
-For demo videos or manual tweaking:
+Official guide: [Modal Notebooks](https://modal.com/docs/guide/notebooks)
 
-1. Create a [Modal GPU Notebook](https://modal.com/docs/guide/notebooks-modal).
-2. Open [`research/notebook/minicpm5-modal-finetune.ipynb`](../notebook/minicpm5-modal-finetune.ipynb).
-3. Clone this repo, `uv sync`, run smoke train + lm-eval cells.
+Use a hosted Jupyter kernel on Modal for demos, pair programming, and quick experiments. For reproducible sweeps and CI-style runs, prefer `modal run research/modal/finetune_app.py`.
 
-The scripted app (`modal run research/modal/finetune_app.py`) is what judges can reproduce; the notebook is for exploration.
+### Getting started
+
+1. Open [modal.com/notebooks](https://modal.com/notebooks) and **upload** [`research/notebook/minicpm5-modal-finetune.ipynb`](../notebook/minicpm5-modal-finetune.ipynb) (or create a notebook and copy the cells).
+2. In the **sidebar → Compute profile**, enable a **GPU** (e.g. A10G). Notebooks are serverless: you pay only while the kernel runs; idle shutdown defaults to 10 minutes.
+3. Attach resources in the sidebar **Files** panel:
+   - **Volume** `slm-finetune` → appears under `/mnt/slm-finetune` (share checkpoints with `modal run` jobs)
+   - **Secret** `huggingface` → injects `HF_TOKEN` for Hub downloads
+4. Run cells top to bottom.
+
+The default notebook image includes PyTorch, Transformers, and NumPy. Install extras with:
+
+```python
+%uv pip install uv peft bitsandbytes datasets
+```
+
+### Persist checkpoints on a Volume
+
+The container filesystem is **ephemeral**. Anything under `/root` is lost when the kernel stops. Write adapters to an attached Volume:
+
+```python
+OUT = "/mnt/slm-finetune/lesson-lora-notebook"  # survives kernel restarts
+```
+
+After training, download from the **Files** panel (⬇) or locally:
+
+```bash
+modal volume get slm-finetune lesson-lora-notebook ./models/finetuned/minicpm5-1b-lora
+```
+
+### Custom image (optional, full repo deps)
+
+To match the `modal run` environment exactly, deploy the app image once:
+
+```bash
+modal deploy research/modal/finetune_app.py
+```
+
+Then in the notebook sidebar, search for function `finetune_one` from app `slm-finetune-benchmark` and select that image as the kernel.
+
+Or call deployed functions from a cell with [`%modal` magic](https://modal.com/docs/guide/notebooks#cell-magic):
+
+```python
+%modal from slm-finetune-benchmark import finetune_one
+
+finetune_one.remote({
+    "name": "lesson-lora",
+    "dataset": "research/data/education-lesson-chat.jsonl",
+    "format": "chat",
+    "max_steps": 20,
+})
+```
+
+(Requires `modal deploy` and the repo baked into the image.)
+
+### Share for hackathon judges
+
+Use **Share** in the notebook editor → **public unlisted link** → **Can view and run** so reviewers can fork and execute without a Modal account ([docs](https://modal.com/docs/guide/notebooks#access-and-sharing)).
+
+### Notebook vs `modal run`
+
+| | Modal Notebook | `modal run finetune_app.py` |
+| --- | --- | --- |
+| Best for | Demo video, exploration | Reproducible sweep, Volume + lm-eval pipeline |
+| GPU | Sidebar compute profile | `gpu="A10G"` on functions |
+| Persistence | Attach Volume in sidebar | `slm-finetune` Volume auto-mounted |
+| Cost | Per kernel uptime | Per function invocation |
 
 ---
 
@@ -412,4 +475,4 @@ flowchart LR
 3. Adapter on Volume or Hub + `ACTIVE_MODEL=minicpm5-1b-lesson-lora` on Space.
 4. Optional: Notebook recording of smoke train cell.
 
-See also: [research/USAGE.md](../USAGE.md) · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal CUDA](https://modal.com/docs/guide/cuda)
+See also: [research/USAGE.md](../USAGE.md) · [Modal Volumes](https://modal.com/docs/guide/volumes) · [Modal Notebooks](https://modal.com/docs/guide/notebooks) · [Modal CUDA](https://modal.com/docs/guide/cuda)
