@@ -4,13 +4,13 @@ overview: "Sprint 1 (wow/teaching loop): bridge every Studio chat surface into t
 todos:
   - id: conv-helper
     content: Add conversation_helpers.py + EducationPptxInput.conversation_context + prompt/runner wiring
-    status: pending
+    status: completed
   - id: slides-from-chat-api
     content: Extend generate_lesson_slides + api_generate_slides_from_conversation with shared finalizer
-    status: pending
+    status: completed
   - id: studio-slide-buttons
     content: Add Generate-slides-from-chat on Research, Language lessons, Chat; extract renderSlideGenerationResult()
-    status: pending
+    status: in_progress
   - id: presenter-mode
     content: Fullscreen presenter overlay (gallery/HTML source, keyboard nav, Present toolbar button)
     status: pending
