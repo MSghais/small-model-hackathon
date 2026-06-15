@@ -9,6 +9,16 @@ app_file: app.py
 python_version: "3.12"
 pinned: false
 license: apache-2.0
+tags:
+  - build-small-hackathon
+  - backyard-ai
+  - tiny-titan
+  - best-agent
+  - best-demo
+  - openbmb
+  - sharing-is-caring
+  - off-the-grid
+  - off-brand
 ---
 
 # Lesson Agent
@@ -18,6 +28,8 @@ license: apache-2.0
 A local skill-based agent helps a teacher you know turn a **topic + grade level** into a downloadable **PowerPoint** — powered by a small transformers model (`MiniCPM5-1B` by default), no cloud LLM API.
 
 See **[USAGE.md](USAGE.md)** for local run, Gradio SDK / ZeroGPU Space deployment, and Docker (later).
+
+**Demo video:** [https://www.youtube.com/watch?v=bwtOiZvJ-7k](https://www.youtube.com/watch?v=bwtOiZvJ-7k)
 
 ## Prerequisites
 
@@ -100,7 +112,7 @@ A root `Dockerfile` is kept for a later **Docker SDK** deploy (flip README to `s
 
 - **Track:** Backyard AI — lesson slide builder for a teacher you know
 - Space live under build-small-hackathon
-- Demo video: real user enters topic → download `.pptx` → show agent trace
+- Demo video: [YouTube](https://www.youtube.com/watch?v=bwtOiZvJ-7k) — real user enters topic → download `.pptx` → show agent trace
 - Social post published
 - Submission by **June 15, 2026**
 
