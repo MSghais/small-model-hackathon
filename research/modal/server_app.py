@@ -85,6 +85,7 @@ app = modal.App(APP_NAME, image=image)
     timeout=DEFAULT_WORKER_TIMEOUT,
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     min_containers=1,
+    max_containers=1,  # single warm container; serialize work, never sprawl
 )
 class GpuWorker:
     """Single warm GPU container for sequential finetune / lm-eval / shell commands."""
